@@ -1,0 +1,1099 @@
+openapi: 3.1.0
+info:
+  title: QUANTMINE Web API
+  version: 0.0.0
+  description: |
+    阶段 0 契约草案。覆盖 FRONTEND_DESIGN_HANDOFF.md §7 全部端点，
+    不含任何业务实现细节。错误响应严格遵循 §8 统一错误格式。
+servers:
+  - url: http://localhost:8000
+    description: Local dev (FastAPI)
+
+tags:
+  - name: market
+  - name: rebalance
+  - name: workflows
+  - name: research
+  - name: data
+  - name: reports
+  - name: ai
+  - name: admin
+
+components:
+  parameters:
+    PageParam:
+      in: query
+      name: page
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSizeParam:
+      in: query
+      name: pageSize
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+
+  responses:
+    Error:
+      description: 统一错误响应
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Unauthorized:
+      description: 未认证（401）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Forbidden:
+      description: 无权限（403）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    NotFound:
+      description: 资源不存在（404）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    ValidationFailed:
+      description: 参数校验失败（422）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    UpstreamFailure:
+      description: 外部依赖失败（502/503）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+
+  schemas:
+    ApiError:
+      type: object
+      required: [code, title, status]
+      properties:
+        code:
+          type: string
+          enum:
+            - UNAUTHENTICATED
+            - FORBIDDEN
+            - NOT_FOUND
+            - VALIDATION_FAILED
+            - CONFLICT
+            - RATE_LIMITED
+            - UPSTREAM_FAILURE
+            - TASK_RUNNING
+            - INTERNAL_ERROR
+        title: { type: string }
+        detail: { type: string }
+        traceId: { type: string }
+        status: { type: integer }
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            required: [field, message]
+            properties:
+              field: { type: string }
+              message: { type: string }
+    Page:
+      type: object
+      required: [items, total, page, pageSize]
+      properties:
+        items: { type: array, items: {} }
+        total: { type: integer }
+        page: { type: integer }
+        pageSize: { type: integer }
+
+    # —— Market ——
+    Ticker:
+      type: object
+      required: [symbol, name, exchange, inSp500]
+      properties:
+        symbol: { type: string }
+        name: { type: string }
+        exchange: { type: string, enum: [NASDAQ, NYSE, SP500] }
+        sector: { type: string }
+        inSp500: { type: boolean }
+    SeriesPoint:
+      type: object
+      required: [date, value]
+      properties:
+        date: { type: string, format: date }
+        value: { type: number }
+    SeriesResponse:
+      type: object
+      required: [baseDate, series]
+      properties:
+        baseDate: { type: string, format: date }
+        series:
+          type: array
+          items:
+            type: object
+            required: [symbol, points]
+            properties:
+              symbol: { type: string }
+              points:
+                type: array
+                items: { $ref: '#/components/schemas/SeriesPoint' }
+
+    # —— Rebalance ——
+    RebalanceSummary:
+      type: object
+      required:
+        - rebalanceId
+        - backtestJob
+        - variant
+        - factor
+        - holdingPeriod
+        - type
+        - rebalanceDate
+        - netReturn
+        - spyReturn
+        - excessReturn
+        - turnover
+        - holdingsCount
+        - tradingDaysToNext
+        - unit
+      properties:
+        rebalanceId: { type: string }
+        backtestJob: { type: string }
+        variant: { type: string }
+        factor: { type: string }
+        holdingPeriod: { type: integer }
+        type: { type: string, enum: [quantile, long_short] }
+        rebalanceDate: { type: string, format: date }
+        netReturn: { type: number }
+        spyReturn: { type: number }
+        excessReturn: { type: number }
+        turnover: { type: number }
+        holdingsCount: { type: integer }
+        tradingDaysToNext: { type: integer }
+        unit: { type: string, enum: [percent, decimal] }
+
+    # —— Workflows ——
+    DagSummary:
+      type: object
+      required: [dagId, displayName, status]
+      properties:
+        dagId: { type: string }
+        displayName: { type: string }
+        status: { type: string, enum: [healthy, failed, running, idle, unknown] }
+        lastRunId: { type: string, nullable: true }
+        lastRunDate: { type: string, format: date, nullable: true }
+        durationMs: { type: integer, nullable: true }
+        nextRunDate: { type: string, format: date-time, nullable: true }
+    DagRunSummary:
+      type: object
+      required: [runId, status, startTime]
+      properties:
+        runId: { type: string }
+        status: { type: string, enum: [success, failed, running, queued] }
+        dataDate: { type: string, format: date, nullable: true }
+        startTime: { type: string, format: date-time }
+        endTime: { type: string, format: date-time, nullable: true }
+    TaskInstance:
+      type: object
+      required: [taskId, status, tryNumber]
+      properties:
+        taskId: { type: string }
+        status: { type: string, enum: [success, failed, running, skipped, upstream_failed] }
+        startTime: { type: string, format: date-time, nullable: true }
+        endTime: { type: string, format: date-time, nullable: true }
+        durationMs: { type: integer, nullable: true }
+        tryNumber: { type: integer }
+
+    # —— Research ——
+    ResearchRun:
+      type: object
+      required: [runId, variant, sampleScope, airflowBatch, configSnapshot, gitCommit, createdAt]
+      properties:
+        runId: { type: string }
+        variant: { type: string }
+        sampleScope: { type: string }
+        airflowBatch: { type: string }
+        configSnapshot: { type: string }
+        gitCommit: { type: string }
+        createdAt: { type: string, format: date-time }
+    TestSummary:
+      type: object
+      required: [testId, factor, icMean, icStd, ir, sampleSize, tStat, pValue, bhSignificant]
+      properties:
+        testId: { type: string }
+        factor: { type: string }
+        icMean: { type: number }
+        icStd: { type: number }
+        ir: { type: number }
+        sampleSize: { type: integer }
+        tStat: { type: number }
+        pValue: { type: number }
+        bhSignificant: { type: boolean }
+
+    # —— Data Explorer ——
+    CatalogField:
+      type: object
+      required: [name, type, description, filterable]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [string, number, date, boolean] }
+        description: { type: string }
+        filterable: { type: boolean }
+    Catalog:
+      type: object
+      required: [resource, label, description, fields]
+      properties:
+        resource:
+          type: string
+          enum: [market_latest, market_bars, research_runs, test_results, backtest_results, backtest_metrics]
+        label: { type: string }
+        description: { type: string }
+        fields:
+          type: array
+          items: { $ref: '#/components/schemas/CatalogField' }
+
+    # —— Reports ——
+    ReportJob:
+      type: object
+      required: [reportId, researchRunId, variants, tests, backtestJobs, sections, status, createdAt]
+      properties:
+        reportId: { type: string }
+        researchRunId: { type: string }
+        variants: { type: array, items: { type: string } }
+        tests: { type: array, items: { type: string } }
+        backtestJobs: { type: array, items: { type: string } }
+        sections:
+          type: array
+          items:
+            type: string
+            enum: [summary, data_quality, methodology, ic_significance, stability, backtest, monotonicity, risk, appendix]
+        status: { type: string, enum: [queued, running, success, failed] }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        downloadUrl: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+
+    # —— AI ——
+    AIModel:
+      type: object
+      required: [modelId, provider, displayName, capabilities, priceTier, enabled]
+      properties:
+        modelId: { type: string }
+        provider: { type: string }
+        displayName: { type: string }
+        capabilities:
+          type: array
+          items: { type: string, enum: [chat, tool, vision, long_context] }
+        priceTier: { type: string, enum: [low, medium, high] }
+        enabled: { type: boolean }
+    AIMessage:
+      type: object
+      required: [messageId, conversationId, role, content, createdAt]
+      properties:
+        messageId: { type: string }
+        conversationId: { type: string }
+        role: { type: string, enum: [user, assistant, system, tool] }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+        citations:
+          type: array
+          items:
+            type: object
+            required: [sourceId, title, snippet]
+            properties:
+              sourceId: { type: string }
+              title: { type: string }
+              snippet: { type: string }
+        toolCalls:
+          type: array
+          items:
+            type: object
+            required: [toolName, argsSummary, status]
+            properties:
+              toolName: { type: string }
+              argsSummary: { type: string }
+              status: { type: string, enum: [pending, confirmed, rejected, done] }
+    AIConversation:
+      type: object
+      required: [conversationId, title, researchRunIds, modelId, updatedAt]
+      properties:
+        conversationId: { type: string }
+        title: { type: string }
+        researchRunIds: { type: array, items: { type: string } }
+        modelId: { type: string }
+        updatedAt: { type: string, format: date-time }
+
+paths:
+  /api/v1/health:
+    get:
+      tags: [market]
+      summary: 健康检查
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok, degraded] }
+
+  # —— Market ——
+  /api/v1/market/tickers:
+    get:
+      tags: [market]
+      summary: 可用 ticker 列表
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Ticker' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/market/series:
+    get:
+      tags: [market]
+      summary: 多 ticker 时间序列（按区间 + 频率查询）
+      parameters:
+        - in: query
+          name: symbols
+          required: true
+          schema: { type: array, items: { type: string } }
+        - in: query
+          name: startDate
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: endDate
+          required: true
+          schema: { type: string, format: date }
+        - in: query
+          name: frequency
+          schema: { type: string, enum: [D, W, M], default: D }
+        - in: query
+          name: normalize
+          schema: { type: boolean, default: true }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeriesResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/market/compare:
+    post:
+      tags: [market]
+      summary: 自定义组合归一化比较（权重可选）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbols, startDate, endDate]
+              properties:
+                symbols: { type: array, items: { type: string } }
+                weights: { type: array, items: { type: number } }
+                startDate: { type: string, format: date }
+                endDate: { type: string, format: date }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeriesResponse' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/market/latest:
+    get:
+      tags: [market]
+      summary: 最新数据日 / 当日收益 / 上涨家数 / 市场宽度 / 任务状态
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asOfDate]
+                properties:
+                  asOfDate: { type: string, format: date }
+                  spyReturn: { type: number }
+                  advancers: { type: integer }
+                  breadth: { type: number }
+                  taskStatus: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+
+  # —— Rebalance ——
+  /api/v1/rebalances:
+    get:
+      tags: [rebalance]
+      summary: 调仓列表
+      parameters:
+        - in: query
+          name: backtestJob
+          schema: { type: string }
+        - in: query
+          name: variant
+          schema: { type: string }
+        - in: query
+          name: factor
+          schema: { type: string }
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/RebalanceSummary' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/rebalances/{rebalanceId}:
+    get:
+      tags: [rebalance]
+      summary: 调仓详情（含持仓与贡献）
+      parameters:
+        - in: path
+          name: rebalanceId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/RebalanceSummary'
+                  - type: object
+                    required: [asOfDate, holdings, contributions]
+                    properties:
+                      asOfDate: { type: string, format: date }
+                      holdings:
+                        type: array
+                        items:
+                          type: object
+                          required: [symbol, weight]
+                          properties:
+                            symbol: { type: string }
+                            weight: { type: number }
+                      contributions:
+                        type: array
+                        items:
+                          type: object
+                          required: [symbol, contribution]
+                          properties:
+                            symbol: { type: string }
+                            contribution: { type: number }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/rebalances/{rebalanceId}/returns:
+    get:
+      tags: [rebalance]
+      parameters:
+        - in: path
+          name: rebalanceId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [series]
+                properties:
+                  series:
+                    type: array
+                    items: { $ref: '#/components/schemas/SeriesPoint' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/rebalances/{rebalanceId}/holdings:
+    get:
+      tags: [rebalance]
+      parameters:
+        - in: path
+          name: rebalanceId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [symbol, weight]
+                  properties:
+                    symbol: { type: string }
+                    weight: { type: number }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/rebalances/{rebalanceId}/contributions:
+    get:
+      tags: [rebalance]
+      parameters:
+        - in: path
+          name: rebalanceId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [symbol, contribution]
+                  properties:
+                    symbol: { type: string }
+                    contribution: { type: number }
+        default: { $ref: '#/components/responses/Error' }
+
+  # —— Workflows ——
+  /api/v1/workflows:
+    get:
+      tags: [workflows]
+      summary: DAG 列表与当前状态
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DagSummary' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/workflows/{dagId}/runs:
+    get:
+      tags: [workflows]
+      parameters:
+        - in: path
+          name: dagId
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/DagRunSummary' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/workflows/{dagId}/runs/{runId}:
+    get:
+      tags: [workflows]
+      parameters:
+        - in: path
+          name: dagId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DagRunSummary' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/workflows/{dagId}/runs/{runId}/tasks:
+    get:
+      tags: [workflows]
+      parameters:
+        - in: path
+          name: dagId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TaskInstance' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/workflows/{dagId}/trigger:
+    post:
+      tags: [workflows]
+      parameters:
+        - in: path
+          name: dagId
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: 已接收
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DagRunSummary' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/workflows/{dagId}/runs/{runId}/retry:
+    post:
+      tags: [workflows]
+      parameters:
+        - in: path
+          name: dagId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: 已接收
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DagRunSummary' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # —— Research ——
+  /api/v1/research/runs:
+    get:
+      tags: [research]
+      parameters:
+        - in: query
+          name: variant
+          schema: { type: string }
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ResearchRun' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/research/runs/{runId}:
+    get:
+      tags: [research]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ResearchRun' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/research/runs/{runId}/tests:
+    get:
+      tags: [research]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/TestSummary' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/research/runs/{runId}/ic-series:
+    get:
+      tags: [research]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: factor
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [series]
+                properties:
+                  series:
+                    type: array
+                    items: { $ref: '#/components/schemas/SeriesPoint' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/research/runs/{runId}/backtests:
+    get:
+      tags: [research]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          type: object
+                          required: [backtestJob, factor, period, quantileReturns, longShortReturn, sharpe, maxDrawdown, turnover, netReturn]
+                          properties:
+                            backtestJob: { type: string }
+                            factor: { type: string }
+                            period: { type: integer }
+                            quantileReturns:
+                              type: object
+                              additionalProperties: { type: number }
+                            longShortReturn: { type: number }
+                            sharpe: { type: number }
+                            maxDrawdown: { type: number }
+                            turnover: { type: number }
+                            netReturn: { type: boolean }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/research/runs/{runId}/metrics:
+    get:
+      tags: [research]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                description: 由 backtest_metrics / factor_artifacts 聚合得到的指标集合
+                additionalProperties: true
+        default: { $ref: '#/components/responses/Error' }
+
+  # —— Data ——
+  /api/v1/data/catalog:
+    get:
+      tags: [data]
+      summary: 白名单资源与字段说明
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Catalog' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/data/{resource}:
+    get:
+      tags: [data]
+      parameters:
+        - in: path
+          name: resource
+          required: true
+          schema:
+            type: string
+            enum: [market_latest, market_bars, research_runs, test_results, backtest_results, backtest_metrics]
+        - in: query
+          name: filters
+          schema: { type: string, description: 'JSON 编码的筛选条件' }
+        - in: query
+          name: sortBy
+          schema: { type: string }
+        - in: query
+          name: sortDir
+          schema: { type: string, enum: [asc, desc] }
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Page' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/data/{resource}/export:
+    get:
+      tags: [data]
+      parameters:
+        - in: path
+          name: resource
+          required: true
+          schema: { type: string }
+        - in: query
+          name: filters
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            text/csv:
+              schema: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # —— Reports ——
+  /api/v1/reports:
+    get:
+      tags: [reports]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/ReportJob' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [reports]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReportJob' }
+      responses:
+        '202':
+          description: 已接收
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportJob' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/reports/{reportId}:
+    get:
+      tags: [reports]
+      parameters:
+        - in: path
+          name: reportId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportJob' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/reports/{reportId}/download:
+    get:
+      tags: [reports]
+      parameters:
+        - in: path
+          name: reportId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # —— AI ——
+  /api/v1/ai/conversations:
+    get:
+      tags: [ai]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AIConversation' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [ai]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [modelId]
+              properties:
+                modelId: { type: string }
+                title: { type: string }
+                researchRunIds: { type: array, items: { type: string } }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIConversation' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/ai/conversations/{conversationId}/messages:
+    get:
+      tags: [ai]
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/AIMessage' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [ai]
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content, modelId]
+              properties:
+                content: { type: string }
+                modelId: { type: string }
+                attachedContext:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '202':
+          description: 已接收（SSE/WS 流式输出）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIMessage' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/ai/models:
+    get:
+      tags: [ai]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AIModel' }
+        default: { $ref: '#/components/responses/Error' }
+
+  # —— Admin (AI 配置，仅管理员) ——
+  /api/v1/admin/ai/providers:
+    get:
+      tags: [admin]
+      responses:
+        '200': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin]
+      responses:
+        '201': { description: Created }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/admin/ai/knowledge-bases:
+    get:
+      tags: [admin]
+      responses:
+        '200': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin]
+      responses:
+        '201': { description: Created }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/admin/ai/skills:
+    get:
+      tags: [admin]
+      responses:
+        '200': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin]
+      responses:
+        '201': { description: Created }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/v1/admin/ai/connections:
+    get:
+      tags: [admin]
+      responses:
+        '200': { description: OK }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [admin]
+      responses:
+        '201': { description: Created }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        default: { $ref: '#/components/responses/Error' }

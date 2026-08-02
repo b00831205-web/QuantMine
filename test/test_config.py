@@ -8,6 +8,8 @@ Coverage:
 5. unknown top-level key behavior (current semantics: silently ignored --
    a known limitation, misspelled keys do not raise)
 """
+from pathlib import Path
+
 import pytest
 
 from quantmine.config import CONFIG_REGISTRY, ForwardReturnConfig, OrthogonalizeConfig
@@ -81,3 +83,11 @@ def test_unknown_field_raises_type_error(yaml_file):
     path = yaml_file("orthogonalize:\n  threshhold: 0.05\n")
     with pytest.raises(TypeError):
         load_configs(path)
+
+
+def test_example_config_is_accepted():
+    example_path = Path(__file__).parents[1] / "config.example.yaml"
+
+    configs = load_configs(example_path)
+
+    assert len(configs["backtest"].jobs) == 2

@@ -3,7 +3,6 @@ import pandas as pd
 import time
 import json
 import glob
-import pandas as pd
 import os
 import hashlib
 import pandas_datareader.data as web
@@ -90,15 +89,24 @@ def save_blacklist(tickers: list, checkpoint_dir:str):
     Returns:
         None.
     """
+    os.makedirs(checkpoint_dir, exist_ok=True)
     path = os.path.join(checkpoint_dir, "blacklist.json")
-    existing = load_blacklist(path)
+    existing = load_blacklist(checkpoint_dir)
     updated = list(existing | set(tickers))
     with open(path, "w") as f:
         json.dump(updated,f, indent=2)
     print(f"Blacklist updated: {updated}")
 
-def data_acquisition(tickers:list, start_date:str, end_date:str, batch_size:int, 
-                    max_retries: int =3, wait: int = 60, checkpoint_dir: str = "tmp/checkpoint") -> pd.DataFrame:
+def data_acquisition(
+    tickers: list,
+    start_date: str,
+    end_date: str,
+    batch_size: int,
+    max_retries: int = 3,
+    wait: int = 60,
+    checkpoint_dir: str = "tmp/checkpoint",
+    batch_wait: float = 1.0,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Download historical price and volume data in batches with checkpoints.
 
     Args:
@@ -117,8 +125,15 @@ def data_acquisition(tickers:list, start_date:str, end_date:str, batch_size:int,
         Each batch is cached to disk so repeated runs can resume from existing
         checkpoint files.
     """
-    close=[]
-    volume=[]
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if max_retries <= 0:
+        raise ValueError("max_retries must be positive")
+
+    # A stable order is essential: checkpoint names are batch-number based.
+    # Without this normalization, a resumed run could load another ticker's
+    # checkpoint when the caller originally supplied a set.
+    tickers = sorted(set(tickers))
     task_signature = hashlib.md5(f'{sorted(tickers)}_{start_date}_{end_date}'.encode()).hexdigest()[:8]
     task_checkpoint_dir = os.path.join(checkpoint_dir,task_signature)
     os.makedirs(task_checkpoint_dir,exist_ok=True)
@@ -149,19 +164,22 @@ def data_acquisition(tickers:list, start_date:str, end_date:str, batch_size:int,
                 if attempt < max_retries - 1:
                     print(f"Retrying after {wait} seconds...")
                     time.sleep(wait)
-        with open(os.path.join(task_checkpoint_dir, "failed_batches.json"), mode= "a") as f:
-            failed_log = os.path.join(task_checkpoint_dir, "failed_batches.json") 
-            existing_failed = set()
-            if os.path.exists(failed_log): #read existing records first, dedupe, then append
-                with open(failed_log) as f:
-                    for line in f:
+        failed_log = os.path.join(task_checkpoint_dir, "failed_batches.json")
+        existing_failed = set()
+        if os.path.exists(failed_log):
+            with open(failed_log, encoding="utf-8") as failed_file:
+                for line in failed_file:
+                    if line.strip():
                         existing_failed.add(json.loads(line)["batch_index"])
 
-            if batch_index not in existing_failed:
-                with open(failed_log, mode="a") as f:
-                    json.dump({"batch_index": batch_index, "tickers": batch}, f)
-                    f.write("\n")
-        print(f"Batch {batch_index} failed, logging to {os.path.join(checkpoint_dir, 'failed_batches.json')}")    
+        if batch_index not in existing_failed:
+            with open(failed_log, mode="a", encoding="utf-8") as failed_file:
+                json.dump(
+                    {"batch_index": batch_index, "tickers": batch},
+                    failed_file,
+                )
+                failed_file.write("\n")
+        print(f"Batch {batch_index} failed, logging to {failed_log}")
         return None    
     
     all_close = []
@@ -175,8 +193,14 @@ def data_acquisition(tickers:list, start_date:str, end_date:str, batch_size:int,
             if isinstance(data.columns, pd.MultiIndex):
                 all_close.append(data['Close'])
                 all_volume.append(data['Volume'])
-        time.sleep(10)
+        if batch_wait > 0:
+            time.sleep(batch_wait)
     
+    if not all_close:
+        raise RuntimeError(
+            "No market-data batch succeeded; inspect "
+            f"{os.path.join(task_checkpoint_dir, 'failed_batches.json')}"
+        )
     close = pd.concat(all_close, axis=1)
     volume = pd.concat(all_volume, axis=1)
     return close, volume
@@ -226,7 +250,21 @@ def retry_batches(start_date: str, end_date: str, max_retries: int, checkpoint_d
 
     for record in failed:
         batch_index = record["batch_index"]
-        batch = record["tickers"]
+        batch = [
+            ticker
+            for ticker in record["tickers"]
+            if ticker not in black_list
+        ]
+
+        if not batch:
+            print(f"Batch {record['batch_index']} is fully blacklisted, skipping")
+            retry_records.append({
+                "retry_call": retry_count,
+                "batch_index": record["batch_index"],
+                "status": "skipped_blacklist",
+                "attempts": 0,
+            })
+            continue
         
         checkpoint_path = os.path.join(checkpoint_dir, f"batch_{batch_index}.parquet")
         print(f"Retrying batch {batch_index}")
@@ -265,18 +303,6 @@ def retry_batches(start_date: str, end_date: str, max_retries: int, checkpoint_d
                 })
             still_failed.append(record)
         
-        if not batch:
-            print(f"Batch {record["batch_index"]} is fully delisted, skipping")
-            retry_records.append({
-                "retry_call": retry_count,
-                "batch_index":record["batch_index"],
-                "status":"skipped_blacklist",
-                "attempts":0,
-            })
-            continue
-        batch = [t for t in record["tickers"] if t not in black_list]
-        
-        
     with open(failed_log, "w") as f:
         for record in still_failed: #rewrite the failure log with the batches that still fail
             json.dump(record, f)
@@ -311,7 +337,7 @@ def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint") -> tuple:
     Notes:
         Only parquet files with a MultiIndex column layout are merged.
     """
-    files = sorted(glob.glob(os.path.join(checkpoint_dir, "batch_*.parquet")),
+    files = sorted(glob.glob(os.path.join(checkpoint_dir, "**", "batch_*.parquet"), recursive=True),
                    key=lambda x: int(x.split("batch_")[1].split(".")[0]))
     
     all_close, all_volume = [], []
@@ -321,6 +347,9 @@ def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint") -> tuple:
             all_close.append(data["Close"])
             all_volume.append(data["Volume"])
     
+    if not all_close:
+        return pd.DataFrame(), pd.DataFrame()
+
     close = pd.concat(all_close, axis=1)
     volume = pd.concat(all_volume, axis=1)
     return close, volume

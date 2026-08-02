@@ -10,6 +10,7 @@ run.log
 
 # --- airflow runtime (airflow.cfg contains secret keys; db/logs are local state) ---
 airflow/
+.airflow/
 *.db
 *.db-shm
 *.db-wal
@@ -19,6 +20,9 @@ __pycache__/
 *.pyc
 .venv/
 .venv-win/
+.uv-cache/
+.uv-python/
+.superpowers/
 .ipynb_checkpoints/
 
 # --- build & test artifacts ---
@@ -35,6 +39,24 @@ scripts/
 # --- generated dashboards (frontend being rebuilt) ---
 factor_analysis_dashboard.html
 
+# --- frontend (stage 0) ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/.DS_Store
+
+# --- webapi (stage 0) ---
+webapi/.venv/
+webapi/.venv-win/
+webapi/__pycache__/
+webapi/**/__pycache__/
+webapi/.pytest_cache/
+webapi/.coverage
+
 # --- editor/os noise ---
 .DS_Store
 Thumbs.db
+.env
+.env.*
+!.env.example

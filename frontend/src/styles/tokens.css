@@ -1,0 +1,61 @@
+/*
+ * QUANTMINE 设计 token
+ * 仅颜色、字号、间距、阴影。组件样式就近放在 .module.css。
+ */
+:root {
+  /* —— 颜色：低饱和深色科研风 —— */
+  --bg-app: #0e1116;
+  --bg-surface: #161a22;
+  --bg-surface-2: #1d2230;
+  --bg-elevated: #232a3a;
+  --border-subtle: #2a3142;
+  --border-strong: #3a4258;
+
+  --text-primary: #e6e8ee;
+  --text-secondary: #9aa3b8;
+  --text-muted: #6b7388;
+
+  --accent: #4f8cff;
+  --accent-hover: #6ea0ff;
+  --positive: #4ec98a;
+  --negative: #ef6464;
+  --warning: #f0b35e;
+  --info: #56b6ff;
+
+  /* —— 字体 —— */
+  --font-sans:
+    'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+  --fs-xxl: 22px;
+
+  /* —— 间距（4px 网格）—— */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  /* —— 圆角 —— */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* —— 阴影 —— */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+  /* —— 布局尺寸 —— */
+  --sidenav-w: 220px;
+  --sidenav-w-collapsed: 56px;
+  --topbar-h: 48px;
+  --ai-quickpanel-w: 360px;
+}

@@ -24,6 +24,11 @@ if __name__ == "__main__":
         missing_pct = new_data.isnull().mean()
         usable_cols = missing_pct[missing_pct < args.missing_threshold].index.tolist()
         dropped_cols = missing_pct[missing_pct >= args.missing_threshold].index.tolist()
+        if dropped_cols:
+            print(
+                f"[{args.batch}] dropping {len(dropped_cols)} columns above "
+                f"the missing-data threshold: {dropped_cols}"
+            )
 
         new_data = new_data[usable_cols]
         new_data = new_data.ffill()

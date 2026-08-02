@@ -40,7 +40,7 @@ class ForwardReturnConfig:
             self.periods = [self.periods]
         for period in self.periods:
             if not isinstance(period, int):
-                raise ValueError(f'periods should be integer')
+                raise TypeError('periods should be integers')
             if period < 1:
                 raise ValueError(f'periods should greater than 1, current{self.periods}')
 
@@ -75,9 +75,12 @@ class TimeSeriesStationaryTestConfig:
 @dataclass
 class BackTestingConfig:
     part: int = 5
+    jobs: list[dict] = field(default_factory=list)
     def __post_init__(self):
         if self.part < 2:
             raise ValueError(f"part should greater than two, current{self.part}")
+        if not isinstance(self.jobs, list):
+            raise TypeError("backtest jobs must be a list")
 
 @dataclass
 class TranscationCostConfig:

@@ -13,17 +13,17 @@ portable across machines:
                         needed).
 """
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from airflow.providers.standard.operators.bash import BashOperator
-from airflow.utils.trigger_rule import TriggerRule
 from airflow.sdk import DAG
 
 PROJECT_ROOT = os.environ.get("QUANT_PROJECT_ROOT",
                               os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PYTHON_BIN = os.environ.get("QUANT_PYTHON_BIN", "python")
+CONFIG_PATH = os.environ.get("QUANT_CONFIG_PATH", "config.example.yaml")
 
 
-def task_command(script: str) -> str:
+def task_command(script: str, *, uses_config: bool = False) -> str:
     """Build the bash command that runs one pipeline script.
 
     Args:
@@ -36,8 +36,13 @@ def task_command(script: str) -> str:
         The command runs from the repo root so that relative data paths
         (``tmp/``, ``data/``) resolve correctly.
     """
-    return (f'cd "{PROJECT_ROOT}" && "{PYTHON_BIN}" pipelines/{script} '
-            '--date {{ ds }} --batch {{ run_id }}')
+    command = (
+        f'cd "{PROJECT_ROOT}" && "{PYTHON_BIN}" pipelines/{script} '
+        '--date {{ ds }} --batch {{ run_id }}'
+    )
+    if uses_config:
+        command += f' --config "{CONFIG_PATH}"'
+    return command
 
 
 with DAG("quant_factor_mining",
@@ -47,7 +52,7 @@ with DAG("quant_factor_mining",
         },
         description="quant_factor_mining pipeline version 0.1, using S&P 500",
         schedule=timedelta(days=1),
-        start_date=datetime(2020, 1, 1),
+        start_date=datetime(2020, 1, 1, tzinfo=timezone.utc),
         catchup=False,
         tags=['quant_factor_mining'],
         ) as dag:
@@ -57,20 +62,24 @@ with DAG("quant_factor_mining",
     )
     t2 = BashOperator(
         task_id="data_cleaning",
-        depends_on_past=True,
         bash_command=task_command("task_2.py"),
-        trigger_rule=TriggerRule.ALL_DONE
     )
     t3 = BashOperator(
         task_id="factor_calculation",
         bash_command=task_command("task_3.py"),
     )
-    task_retry = BashOperator(
-        task_id="retry_downloading",
-        bash_command=task_command("task_retry.py"),
-        trigger_rule=TriggerRule.ALL_FAILED
+    t4 = BashOperator(
+        task_id="ic_calculation",
+        bash_command=task_command("task_ic_calculate.py", uses_config=True),
+    )
+    task_save_market_bars = BashOperator(
+        task_id="save_market_bars",
+        bash_command=task_command("task_save_market_bars.py"),
+    )
+    t5 = BashOperator(
+        task_id="backtest",
+        bash_command=task_command("task_backtest.py", uses_config=True),
     )
 
-
-t1 >> t2 >> t3
-t1 >> task_retry
+t1 >> t2 >> t3 >> t4
+t4 >> [task_save_market_bars, t5]

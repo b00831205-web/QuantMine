@@ -1,16 +1,8 @@
 import inspect
-import pandas as pd
 from . import datareader as dr
+from .registry import make_registry
 
-FACTOR_REGISTRY={}
-
-def factor_register(name:str):
-    def decorate(func):
-        if name in FACTOR_REGISTRY:
-            raise ValueError(f"factor '{name}' is already registered")
-        FACTOR_REGISTRY[name] = func
-        return func
-    return decorate
+FACTOR_REGISTRY, factor_registry=make_registry()
 
 def call_single_factors(func, param_pool: dict):
     sig = inspect.signature(func)

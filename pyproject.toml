@@ -12,14 +12,16 @@ dependencies = [
     "statsmodels>=0.14",
     "pyarrow>=24.0",
     "pyyaml>=6.0",
+    "fastapi>=0.136.3",
 ]
 
 [project.optional-dependencies]
 data = ["yfinance>=1.4", "beautifulsoup4>=4.14", "pandas-datareader>=0.11", "curl-cffi>=0.15"]
 viz = ["plotly>=6.8"]
+db = ["sqlalchemy>=2.0", "psycopg2-binary>=2.9.12"]
 
 [dependency-groups]
-dev = ["pytest>=9.1", "ipykernel>=7.2", "jupyter>=1.1"]
+dev = ["pytest>=9.1", "ipykernel>=7.2", "jupyter>=1.1", "sqlalchemy>=2.0"]
 pipeline = ["apache-airflow>=3.2"]
 
 [build-system]
@@ -28,6 +30,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["quantmine"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"quantmine/storage/schema.sql" = "quantmine/storage/schema.sql"
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

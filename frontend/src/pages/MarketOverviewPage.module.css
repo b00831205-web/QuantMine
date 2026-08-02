@@ -1,0 +1,123 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.rangeGroup {
+  display: inline-flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.range,
+.rangeActive {
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: none;
+  font-size: var(--fs-sm);
+}
+
+.range:hover {
+  background: var(--bg-surface-2);
+}
+
+.rangeActive {
+  background: var(--accent);
+  color: white;
+}
+
+.tickerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-primary);
+}
+
+.chipX {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.chipX:hover {
+  color: var(--negative);
+}
+
+.addTicker {
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+
+.addTicker input {
+  width: 120px;
+}
+
+.addTicker button {
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.chartWrap {
+  flex: 1;
+  min-height: 360px;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-3);
+}
+
+.kpi {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3) var(--sp-4);
+}
+
+.kpiLabel {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.kpiValue {
+  font-size: var(--fs-xxl);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--sp-1);
+}
+
+.kpiValueMuted {
+  font-size: var(--fs-xl);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--sp-1);
+}
+
+.kpiHint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  margin-top: var(--sp-1);
+}

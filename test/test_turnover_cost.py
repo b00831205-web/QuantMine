@@ -17,6 +17,7 @@ from quantmine.back_testing import (
     apply_transcation_cost,
     calculate_turnover,
     expand_to_daily_returns,
+    performance_summary,
 )
 
 
@@ -50,11 +51,9 @@ def test_cost_scales_with_actual_turnover(ticker_history):
     assert after["Q5"].iloc[1] == pytest.approx(0.01)
     # long_short charged on both legs: 0 - (0.5+0.0)*2*0.001 = -0.001
     assert after["long_short"].iloc[1] == pytest.approx(-0.001)
-    # first-period turnover is NaN -> net return NaN (known semantics: the first
-    # period is dropped by performance_summary's dropna; note this differs from
-    # expand_to_daily_returns' "initial build = full turnover" convention -- a
-    # documented inconsistency)
-    assert np.isnan(after["Q1"].iloc[0])
+    # The initial position build counts as full turnover, matching the daily
+    # return expansion path.
+    assert after["Q1"].iloc[0] == pytest.approx(0.008)
 
 
 def test_expand_to_daily_returns_window_and_cost():
@@ -83,3 +82,35 @@ def test_expand_to_daily_returns_window_and_cost():
     assert list(daily.index) == list(dates[1:])
     # identical holdings on both legs -> long_short = Q5 - Q1 = 0
     assert (daily["long_short"].abs() < 1e-12).all()
+
+
+def test_daily_expansion_with_no_complete_holding_window_is_empty():
+    date = pd.Timestamp("2024-01-01")
+    history = [
+        {
+            "date": date,
+            **{f"Q{i}": {"A"} for i in range(1, 6)},
+        }
+    ]
+    close = pd.DataFrame({"A": [100.0]}, index=[date])
+
+    result = expand_to_daily_returns(history, close)
+
+    assert result.empty
+    assert list(result.columns) == [
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q5",
+        "long_short",
+    ]
+
+
+def test_empty_turnover_and_performance_inputs_are_supported():
+    turnover = calculate_turnover([], "Q1")
+    summary, net_returns = performance_summary(pd.DataFrame(), periods=1)
+
+    assert turnover.empty
+    assert summary.empty
+    assert net_returns.empty

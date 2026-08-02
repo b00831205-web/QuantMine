@@ -3,6 +3,28 @@ import os
 from scipy import stats
 import numpy as np
 from statsmodels.stats.multitest import multipletests
+from .registry import make_registry
+import inspect
+from pathlib import Path
+
+# IC data models and factor selectors now live in ic_models; re-exported here so
+# existing `from quantmine.ic_calculator import ICVariant/TestResult/...` keep working.
+from .ic_models import (
+    ICVariant,
+    TestResult,
+    FactorSelector,
+    BHselector,
+    PValueSelector,
+    TStatSelector,
+    ICMeanSelector,
+    CompositeSelector,
+    selected_index_to_pairs,
+    REGISTER_FACTOR_SELECTOR,
+    register_factor_selector,
+)
+
+VARIANT_PROCESSORS, register_variant_processor = make_registry()
+TEST_METHOD, test_method_registry = make_registry()
 
 def forward_return(close:pd.DataFrame, tickers: list = None, periods: list[int] | int = None)->dict:
     """Build forward holding-period returns for each ticker.
@@ -85,7 +107,12 @@ def TM_Information_correlation(factors: dict[str, pd.DataFrame], forward_returns
     TM_IC_matrix.to_parquet(os.path.join(os.getcwd(), output_path))
     print("time Series information correlation computation complete")
 
-def CS_Information_Correlation(factors: dict[str, pd.DataFrame], forward_returns: dict[int, pd.DataFrame], output_path: str)-> pd.DataFrame:
+def CS_Information_Correlation(
+    factors: dict[str, pd.DataFrame],
+    forward_returns: dict[int, pd.DataFrame],
+    output_path: str | Path | None = None,
+    orthogonalized: bool = False,
+) -> tuple[pd.DataFrame, bool]:
     """Compute cross-sectional information correlation across dates.
 
     Args:
@@ -111,10 +138,11 @@ def CS_Information_Correlation(factors: dict[str, pd.DataFrame], forward_returns
             result[(factor_name, period)] = ic_series
     CS_IC_matrix=pd.DataFrame(result)
     CS_IC_matrix.columns.names = ['factor', 'period']
-    CS_IC_matrix.to_parquet(os.path.join(os.getcwd(), output_path))
+    if output_path is not None:
+        CS_IC_matrix.to_parquet(os.path.join(os.getcwd(), str(output_path)))
     print("Cross-sectional information correlation computation complete")
 
-    return CS_IC_matrix
+    return (CS_IC_matrix, orthogonalized)
 
 def summary(cross_section_IC_matrix:pd.DataFrame)->pd.DataFrame:
     """Summarize an IC dataframe with mean, std, IR, sign ratio, and count.
@@ -137,7 +165,7 @@ def summary(cross_section_IC_matrix:pd.DataFrame)->pd.DataFrame:
         'n': cross_section_IC_matrix.count(),
     })
 
-def resample_summary(cross_section_IC: pd.DataFrame, periods:list|int)-> pd.DataFrame:
+def resample_summary(cs_result: tuple[pd.DataFrame, bool], periods:list|int)-> pd.DataFrame:
     """Build IC summaries from down-sampled, approximately independent samples.
 
     Args:
@@ -151,6 +179,7 @@ def resample_summary(cross_section_IC: pd.DataFrame, periods:list|int)-> pd.Data
         The dataframe is sub-sampled using ``iloc[::period]`` to reduce overlap
         dependence when the holding period is longer than one day.
     """
+    cross_section_IC, orthogonalized = cs_result
     if isinstance(periods, int):
         periods = [periods]
     result = {}
@@ -159,9 +188,10 @@ def resample_summary(cross_section_IC: pd.DataFrame, periods:list|int)-> pd.Data
         summary_df = period_df.iloc[::period]
         result[f'{period}HoldingPeriodSummary']=summary(summary_df)   
     result_df = pd.concat(result.values())
-    return result_df
+    return result_df, orthogonalized
 
-def newey_west_summary(cross_section_IC: pd.DataFrame, lag_multiplier: int = 2)-> pd.DataFrame:
+@test_method_registry('newey_test')
+def newey_west_summary(cs_result: tuple[pd.DataFrame, bool], lag_multiplier: int = 2)-> pd.DataFrame:
     """Compute Newey-West adjusted IC statistics for overlapping returns.
 
     Args:
@@ -178,6 +208,7 @@ def newey_west_summary(cross_section_IC: pd.DataFrame, lag_multiplier: int = 2)-
         the method collapses to a standard t-test.
     """
     rows = {}
+    cross_section_IC , orthogonalized = cs_result
     for col in cross_section_IC.columns:
         factor, period = col
         lag = lag_multiplier * max(period - 1, 0)
@@ -195,9 +226,9 @@ def newey_west_summary(cross_section_IC: pd.DataFrame, lag_multiplier: int = 2)-
     nw_df = pd.DataFrame(rows).T
     nw_df.index =nw_df.index.set_names(['factor', 'period'])
     nw_df['p_value'] = stats.t.sf(nw_df['NW_t'].abs(), df=nw_df['n'] - 1) * 2
-    return nw_df
+    return nw_df, orthogonalized
 
-def multiple_testing(summary_df:pd.DataFrame)->pd.DataFrame:
+def multiple_testing(summary:tuple[pd.DataFrame, bool])->pd.DataFrame:
     """Apply multiple-testing corrections to IC significance results.
 
     Args:
@@ -212,6 +243,7 @@ def multiple_testing(summary_df:pd.DataFrame)->pd.DataFrame:
         If ``NW_t`` exists, the function uses the Newey-West corrected path.
         Otherwise it falls back to the IID resampled path.
     """
+    summary_df, orthogonalized = summary
     if 'NW_t' in summary_df.columns: #NW path: autocorrelation-corrected t and p (output of newey_west_summary)
         significant_t = pd.DataFrame({
             "t": summary_df['NW_t'],
@@ -222,12 +254,14 @@ def multiple_testing(summary_df:pd.DataFrame)->pd.DataFrame:
             "t":summary_df["IR"]*np.sqrt(summary_df["n"]),
             "p_value":stats.t.sf(x=abs(summary_df["IR"]*np.sqrt(summary_df["n"])), df=summary_df['n']-1)*2
             })
+    significant_t['orthogonalized'] = orthogonalized
     significant_t['significant'] = significant_t["p_value"] < 0.05
     significant_t['Bonferroni_significant'] = significant_t["p_value"] < 0.05/len(summary_df)
     significant_t['Rank'] = significant_t["p_value"].rank(ascending=1,method='max')
     rej_bonf, _, _, _ = multipletests(significant_t['p_value'], alpha = 0.05, method='fdr_bh')
     significant_t['BH_significant'] = rej_bonf
     return significant_t
+
 
 def orthogonal_analysis(factors: dict[str, pd.DataFrame]):
     """Compute average factor correlation and identify highly correlated pairs.
@@ -360,7 +394,7 @@ def orthogonalize(factors: dict[str, pd.DataFrame], high_corr_dict: dict, ic_sum
             orthogonalized.add(to_orthogonalize)
     return result
 
-def time_series_stationary_test(CS_IC_matrix:pd.DataFrame, rolling_period:int =126, periods:list = None)-> pd.DataFrame:
+def time_series_stationary_test(cs_result:tuple[pd.DataFrame,bool], rolling_period:int =126, periods:list = None)-> pd.DataFrame:
     """Compute rolling IC, autocorrelation, and yearly IC summaries.
 
     Args:
@@ -374,6 +408,7 @@ def time_series_stationary_test(CS_IC_matrix:pd.DataFrame, rolling_period:int =1
     Notes:
         The index is converted to ``datetime64`` before grouping and rolling.
     """
+    CS_IC_matrix , orthogonalized = cs_result
     if periods is None:
         periods = [1,5,20]
 
@@ -397,7 +432,7 @@ def time_series_stationary_test(CS_IC_matrix:pd.DataFrame, rolling_period:int =1
         yearly_summary[year] = summary(group)
     yearly_df = pd.concat(yearly_summary, axis= 0)
         
-    return rolling_ic_df, acf_df, yearly_df
+    return rolling_ic_df, acf_df, yearly_df, orthogonalized
 
 def get_constitunents_at_date(historical_df: pd.DataFrame, date: pd.Timestamp)->set:
     """Get the set of active constituents on a specific date.
@@ -417,129 +452,203 @@ def get_constitunents_at_date(historical_df: pd.DataFrame, date: pd.Timestamp)->
     mask = (historical_df['start_date'] <= date) & (historical_df['end_date'].isnull() | (historical_df['end_date'] >= date))
     return set(historical_df.loc[mask, 'ticker'].str.replace('.','-',regex = False))
 
-def train_test_analysis(cs_df: pd.DataFrame, factors: dict[str, pd.DataFrame], close: pd.DataFrame , train_end: str, test_start: str, periods: list|int = None):
-    """Run the full train/test IC workflow and orthogonalization pipeline.
 
-    Args:
-        cs_df: Cross-sectional IC dataframe for all available dates.
-        factors: Mapping of factor name to a date-by-ticker value dataframe.
-        close: Close price dataframe used to generate holding-period returns.
-        train_end: Last date included in the training sample.
-        test_start: First date included in the test sample.
-        periods: Holding periods in trading days.
+def split_train_test(data:pd.DataFrame, train_end:str, test_start:str):
+    if isinstance(data, dict):
+        return {
+            'train': {name: df.loc[:train_end] for name, df in data.items()},
+            'test': {name: df.loc[test_start:] for name, df in data.items()}
+        }
+    return{
+        'train': data.loc[:train_end],
+        'test': data.loc[test_start:]
+    }
 
-    Returns:
-        A dictionary containing training diagnostics, orthogonalized factor
-        outputs, test splits, and summary statistics.
+def prepare_ic_inputs(close: pd.DataFrame, factors: dict[str, pd.DataFrame], train_end: str, test_start :str,periods:list[int]|int):
+    forward_returns = forward_return(close, periods = periods)
+    return{
+        'factors': split_train_test(factors, train_end, test_start),
+        'forward_returns': split_train_test(forward_returns, train_end, test_start)
+    }
 
-    Notes:
-        The training sample is used to select significant factors and build the
-        orthogonalization mapping before evaluating the test period.
-    """
-    if isinstance(periods, int):
-        periods = [periods]
-    
-    if periods is None:
-        periods = [1,5,20]
+def calculate_ic(prepared_input, output_path: str | Path | None = None):
+    results = {}
+    path = Path(output_path) if output_path is not None else None
+    for scope in ('train', 'test'):
+        scope_output_path = None
+        if path is not None:
+            scope_output_path = str(
+                path.parent / f'{path.stem}_{scope}{path.suffix}'
+            )
 
-    train_cs_df = cs_df[cs_df.index <= train_end]
-    test_cs_df = cs_df[cs_df.index >= test_start]
+        cs_ic, _ = CS_Information_Correlation(
+            prepared_input['factors'][scope],
+            prepared_input['forward_returns'][scope],
+            scope_output_path,
+        )
+        results[scope] = cs_ic
+    return results
 
-    forward_return_train = forward_return(close[close.index<=train_end], close.columns, periods)
-    forward_return_train_stand = data_standarization(forward_return_train)
-    forward_return_test = forward_return(close[close.index>=test_start], close.columns, periods)
-    forward_return_test_stand = data_standarization(forward_return_test)
+@register_variant_processor('orthogonalize')
+def orthogonalize_analysis(
+    raw_variant: ICVariant,
+    periods: list[int],
+    output_path: str | Path | None = None,
+):
+    train_factors = raw_variant.train['factors']
+    test_factors = raw_variant.test['factors']
+    train_cs_ic = raw_variant.train['cs_ic']
+    train_orthogonalized = raw_variant.train['orthogonalized']
+    resample_summary_train, _ = resample_summary((train_cs_ic, train_orthogonalized), periods)
+    _ , high_corr_dict = orthogonal_analysis(train_factors)
+    orth_train = orthogonalize(train_factors, high_corr_dict, resample_summary_train)
+    orth_test = orthogonalize(test_factors, high_corr_dict, resample_summary_train)
 
-    train_factor_ticker = {factor_name : train_factor_ticker.loc[:train_end] for factor_name, train_factor_ticker in factors.items()}
-    test_factor_ticker = {factor_name : test_factor_ticker.loc[test_start:] for factor_name, test_factor_ticker in factors.items()}
-
-    resample_summary_train = resample_summary(train_cs_df, periods)
-    print(resample_summary_train)
-    print(resample_summary_train.index.tolist()[:5])
-
-    orth_analysis,  high_corr_dict= orthogonal_analysis(train_factor_ticker)
-    orthogonalize_result = orthogonalize(factors, high_corr_dict, resample_summary_train)
-    orthogonalize_result.pop('excess_return')
-    
-    orth_train = {factor_name : orth_result.loc[:train_end] for factor_name, orth_result in orthogonalize_result.items()}
-    orth_test = {factor_name : orth_result.loc[test_start: ] for factor_name, orth_result in orthogonalize_result.items()}
-
-    cs_df_orth_train = CS_Information_Correlation(factors = orth_train,
-                                                  forward_returns=forward_return_train_stand,
-                                                  output_path = 'tmp/ic_test/cs_df_orth_train.parquet')
-    #primary test: Newey-West on full daily ICs, correcting overlapping-holding-period autocorrelation
-    nw_summary_orth_train = newey_west_summary(cs_df_orth_train)
-    multiple_testing_train = multiple_testing(nw_summary_orth_train)
-    print("=== Newey-West test ===")
-    print(multiple_testing_train)
-    print("Number of True values in BH_significant:", multiple_testing_train['BH_significant'].sum())
-
-    #robustness control: down-sampling (iloc[::period], conservative but phase-dependent)
-    resample_summary_orth_train = resample_summary(cs_df_orth_train, periods)
-    multiple_testing_resample = multiple_testing(resample_summary_orth_train)
-    print("=== Down-sampling control ===")
-    print("Number of True values in BH_significant:", multiple_testing_resample['BH_significant'].sum())
-    significant_factor = (
-    multiple_testing_resample[multiple_testing_resample['BH_significant']]
-    .index.get_level_values('factor')
-    .unique()
-    .tolist()
+    orth_ic_input = {
+        'factors':{
+            'train': orth_train,
+            'test': orth_test,
+        },
+        'forward_returns':{
+            'train':raw_variant.train['forward_returns'],
+            'test':raw_variant.test['forward_returns'],
+        },
+    }
+    orth_ic_result = calculate_ic(
+        orth_ic_input,
+        output_path = output_path,
     )
-    significant_factor_nw = (
-    multiple_testing_train[multiple_testing_train['BH_significant']]
-    .index.get_level_values('factor')
-    .unique()
-    .tolist()
+
+    # ``excess_return`` exists in the built-in factor set but is not required
+    # for custom or synthetic factor collections.
+    orth_train.pop('excess_return', None)
+    orth_test.pop('excess_return', None)
+    return ICVariant(
+    train={
+        "factors": orth_train,
+        "forward_returns": raw_variant.train["forward_returns"],
+        "cs_ic": orth_ic_result["train"],
+        "orthogonalized": True,
+    },
+    test={
+        "factors": orth_test,
+        "forward_returns": raw_variant.test["forward_returns"],
+        "cs_ic": orth_ic_result["test"],
+        "orthogonalized": True,
+    },
+    transforms=[
+        *raw_variant.transforms,
+        {"name": "orthogonalize"},
+    ],
 )
-    rolling_ic_train , acf_train, yearly_train = time_series_stationary_test(cs_df_orth_train)
 
-    return {"resample_summary_train":resample_summary_train,
-            "nw_summary_orth_train": nw_summary_orth_train,
-            "multiple_testing_train": multiple_testing_train,
-            "multiple_testing_resample": multiple_testing_resample,
-            "orth_analysis": orth_analysis,
-            "orthogonalize_result_full": orthogonalize_result,
-            "orth_factors_test": orth_test,
-            "high_corr_dict": high_corr_dict,
-            "test_cs_df": test_cs_df,
-            "test_factor_ticker": test_factor_ticker,
-            "forward_return_train" : forward_return_train,
-            "forward_return_train_stand" : forward_return_train_stand,
-            "forward_return_test" : forward_return_test,
-            "forward_return_test_stand" : forward_return_test_stand,
-            "significant_factors": significant_factor,
-            "significant_factors_nw": significant_factor_nw,
-            "rolling_ic_train": rolling_ic_train,
-            "acf_train": acf_train,
-            "yearly_train" : yearly_train}
+def run_test(variant: ICVariant ,test_method:str, TEST_METHOD:dict, test_params: dict|None = None):
+    if test_method not in TEST_METHOD:
+        raise ValueError(f'{test_method} not in test_registry')
+    param_pool = {
+        'cs_result': (
+            variant.train['cs_ic'],
+            variant.train['orthogonalized'], #现在还是硬编码
+        ),
+        **(test_params or {})
+    }
 
+    test_result = call_test_method(
+        TEST_METHOD[test_method],
+        param_pool,
+    )
+    multiple_testing_result = multiple_testing(test_result)
+    return (test_result, test_method), (multiple_testing_result, test_method)
+
+def get_significant_factor(
+    test_result: TestResult,
+    selector_name: str,
+    selector_params: dict|None = None,
+    **params,
+) -> list[str]:
+    merged_params = {
+        **(selector_params or {}),
+        **params,
+    }
+    selected_pairs = select_significant_factor_periods(
+        test_result=test_result,
+        selector_name=selector_name,
+        selector_params=merged_params,
+    )
+
+    return sorted({
+        factor_name
+        for factor_name, _ in selected_pairs
+    })
+
+def select_significant_factor_periods(test_result: TestResult, selector_name: str, selector_params: dict|None = None)->list[tuple[str,int]]:
+    try:
+        selector_class = REGISTER_FACTOR_SELECTOR[selector_name]
+    except KeyError as error:
+        raise ValueError(
+            f"Unknown factor selector '{selector_name}'"
+        ) from error
+    selector = selector_class()
+    return selector.select(
+        test_result,
+        **(selector_params or {})
+    )
+
+def test_time_stationary(variant: ICVariant, rolling_period: int = 126):
+    rolling_ic_train , acf_train, yearly_train, orthogonalized = time_series_stationary_test((variant.train['cs_ic'], variant.train['orthogonalized']), rolling_period=rolling_period)
+    return {
+        'rolling_ic_train' : rolling_ic_train,
+        'acf_train' : acf_train,
+        'yearly_train': yearly_train,
+        'orthogonalized' : orthogonalized
+    }
+
+def call_test_method(func, param_pool: dict):
+    sig = inspect.signature(func)
+    kwargs = {}
+    for name, param in sig.parameters.items():
+        if name in param_pool:
+            kwargs[name] = param_pool[name]
+        elif param.default is not inspect.Parameter.empty:
+            kwargs[name] = param.default
+        else:
+            raise KeyError(name)
+    return func(**kwargs)
+
+def prepare_raw_variant(
+    close: pd.DataFrame,
+    factors: dict[str, pd.DataFrame],
+    train_end: str,
+    test_start: str,
+    periods: list[int] | int,
+    output_path: str | Path | None = None,
+):
+    split_result = prepare_ic_inputs(
+        close = close,
+        factors = factors,
+        train_end = train_end,
+        test_start = test_start,
+        periods = periods,
+    )
+
+    ic_result = calculate_ic(
+        split_result,
+        output_path= output_path
+    )
+
+    return ICVariant(
+        train={
+            'factors': split_result['factors']['train'],
+            'forward_returns' : split_result['forward_returns']['train'],
+            'cs_ic':ic_result['train'],
+            'orthogonalized': False
+        },
+        test={
+            'factors': split_result['factors']['test'],
+            'forward_returns' : split_result['forward_returns']['test'],
+            'cs_ic':ic_result['test'],
+            'orthogonalized': False
+        },
+        transforms=[],
+    )
     
-
-if __name__=='__main__':
-    #Packaged train/test research workflow. Expects the processed parquet files
-    #described in the README; run from the repo root as:
-    #    python -m quantmine.ic_calculator
-    from .datareader import MarketData
-    from .factor_register import build_param_pool, calculate_all_factors
-    from . import factor_mining  # noqa: F401  importing registers the built-in factors
-
-    pd.set_option('display.max_rows', None)
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.width', None)
-
-    close_data = pd.read_parquet("data/processed/processed_close.parquet")
-    volume_data = pd.read_parquet("data/processed/processed_volume.parquet")
-    os.makedirs("tmp/ic_test", exist_ok=True)
-
-    data = MarketData(close=close_data, volume=volume_data)
-    pool = build_param_pool(data, day=5, halflife=10, period=20)
-    failed, factors = calculate_all_factors(pool)
-
-    forward_returns = forward_return(close_data, periods=[1, 5, 20])
-    cs_df = CS_Information_Correlation(factors=factors, forward_returns=forward_returns,
-                                       output_path="tmp/ic_test/cs_df.parquet")
-
-    #one-month embargo between train_end and test_start keeps overlapping
-    #forward returns from leaking across the split
-    train_test_analysis_result = train_test_analysis(cs_df=cs_df, factors=factors, close=close_data,
-                                                     train_end='2023-12-31', test_start='2024-02-01')

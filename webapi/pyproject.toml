@@ -1,0 +1,51 @@
+[project]
+name = "quantmine-webapi"
+version = "0.0.0"
+description = "QUANTMINE research library + workflows + web API"
+requires-python = ">=3.13"
+# 注意：fastapi/uvicorn/httpx/pytest 等放在 ``dependencies`` 而不是 ``optional-dependencies``，
+# 这样 ``uv sync`` 会把它们无条件装进 webapi/.venv，避免父项目传递依赖的版本约束
+# （例如 statsmodels 强制 pytest<8）把它们卸掉。
+dependencies = [
+    # 研究库与工作流的现有依赖（与 pyproject.toml 其它部分保持一致）
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "pydantic>=2.5",
+    "sqlalchemy>=2.0",
+    # 本仓库的研究库，通过 [tool.uv.sources] 解析为父目录的 editable package
+    "quantmine",
+    # webapi 运行时（FastAPI app + TestClient）
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+    # webapi 测试
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "python-dotenv>=1.2.2",
+]
+
+[project.optional-dependencies]
+webapi = [
+    "psycopg2-binary>=2.9.12",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+# 把父目录的研究库声明为 editable path 依赖。
+# 这样 ``uv sync`` 会把 ``quantmine/`` 直接以 editable 方式安装到 webapi/.venv，
+# 无需 sys.path.insert 或 PYTHONPATH 也能 ``import quantmine``。
+quantmine = { path = "../", editable = true }
+
+[tool.hatch.build.targets.wheel]
+# 项目名 ``quantmine-webapi`` 与目录 ``app`` 不一致，因此必须显式声明 wheel 只打包 app。
+# 这样未来如果有人 ``pip install`` 这个 webapi 项目，wheel 里只会有 ``app/`` 包。
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

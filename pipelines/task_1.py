@@ -1,71 +1,140 @@
+"""Download the market-data increment required by the daily pipeline."""
+
+import argparse
+import os
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  #locate the repo root when executed as a script
+
+import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from quantmine.data_acquisition import data_acquisition
-import argparse
-import datetime
-import os
-import pandas as pd
-import requests
-from bs4 import BeautifulSoup
 
-if __name__ == "__main__":
-    parse=argparse.ArgumentParser(description="archive raw data using start date and the batch")
-    parse.add_argument("--date", type=str, required=True)
-    parse.add_argument("--batch", type=str, required=True)
-    args=parse.parse_args()
 
-    base_dir=os.getcwd()
-    tmp_dir = os.path.join(base_dir, "data")
-    os.makedirs(tmp_dir, exist_ok=True)
-    raw_close_path=os.path.join(tmp_dir, 'raw',"raw_close.parquet")
-    raw_volume_path=os.path.join(tmp_dir, 'raw',"raw_volume.parquet")
-    end_date = datetime.date.today().strftime("%Y-%m-%d")
-    
-    close_path=os.path.join(tmp_dir, 'processed',"close.parquet")
-    volume_path=os.path.join(tmp_dir, 'processed',"volume.parquet")
-    
-    r = requests.get(
-        'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies',
-        headers={'User-Agent': 'Mozilla/5.0'}
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+ANALYSIS_START = pd.Timestamp("2015-01-01")
+
+
+def determine_download_start(
+    processed_dir: Path,
+    *,
+    fallback_start: str | pd.Timestamp,
+) -> pd.Timestamp:
+    """Return the day after the latest fully cleaned close/volume observation."""
+    close_path = processed_dir / "processed_close.parquet"
+    volume_path = processed_dir / "processed_volume.parquet"
+    if not close_path.exists() or not volume_path.exists():
+        return pd.Timestamp(fallback_start)
+
+    close = pd.read_parquet(close_path)
+    volume = pd.read_parquet(volume_path)
+    if close.empty or volume.empty:
+        return pd.Timestamp(fallback_start)
+
+    last_complete_date = min(
+        pd.Timestamp(close.index.max()),
+        pd.Timestamp(volume.index.max()),
+    )
+    return last_complete_date.normalize() + pd.Timedelta(days=1)
+
+
+def load_relevant_tickers(
+    membership_path: Path,
+    *,
+    start_date: pd.Timestamp,
+    end_date: pd.Timestamp,
+) -> list[str]:
+    """Load members whose membership overlaps the requested date window."""
+    membership = pd.read_csv(membership_path)
+    required = {"ticker", "start_date", "end_date"}
+    missing = required.difference(membership.columns)
+    if missing:
+        raise ValueError(
+            f"Membership file is missing columns: {sorted(missing)}"
+        )
+
+    membership["start_date"] = pd.to_datetime(
+        membership["start_date"],
+        errors="coerce",
+    )
+    membership["end_date"] = pd.to_datetime(
+        membership["end_date"],
+        errors="coerce",
+    )
+    overlaps_window = (
+        membership["start_date"].fillna(pd.Timestamp.min) <= end_date
+    ) & (
+        membership["end_date"].isna()
+        | (membership["end_date"] >= start_date)
+    )
+    tickers = {
+        str(ticker).replace(".", "-")
+        for ticker in membership.loc[overlaps_window, "ticker"].dropna()
+    }
+    tickers.add("SPY")
+    return sorted(tickers)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Download the next raw market-data increment",
+    )
+    parser.add_argument("--date", required=True)
+    parser.add_argument("--batch", required=True)
+    args = parser.parse_args()
+
+    processed_dir = PROJECT_ROOT / "data" / "processed"
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    staging_close_path = processed_dir / "close.parquet"
+    staging_volume_path = processed_dir / "volume.parquet"
+
+    requested_date = pd.Timestamp(args.date).normalize()
+    start_date = determine_download_start(
+        processed_dir,
+        fallback_start=ANALYSIS_START,
+    )
+    if start_date > requested_date:
+        print(f"{args.batch} is current; no market-data download is needed")
+        return
+
+    default_membership_path = (
+        PROJECT_ROOT.parent / "sp500" / "sp500_ticker_start_end.csv"
+    )
+    membership_path = Path(
+        os.environ.get("SP500_MEMBERSHIP_CSV", default_membership_path)
+    ).expanduser()
+    if not membership_path.exists():
+        raise FileNotFoundError(
+            "S&P 500 membership file not found. Set SP500_MEMBERSHIP_CSV "
+            f"to a valid CSV path (looked for {membership_path})."
+        )
+
+    tickers = load_relevant_tickers(
+        membership_path,
+        start_date=start_date,
+        end_date=requested_date,
+    )
+    print(
+        f"Downloading {len(tickers)} tickers from "
+        f"{start_date.date()} through {requested_date.date()}"
     )
 
-    print("close_path:", close_path)
-    print("exists:", os.path.exists(close_path))
-    if os.path.exists(close_path):
-        existing = pd.read_parquet(close_path)
-        print("existing date range:", existing.index.min(), "-", existing.index.max())
-    #membership table is not part of the repo (data licensing); override via env var
-    historical_data = pd.read_csv(os.environ.get('SP500_MEMBERSHIP_CSV', '../sp500/sp500_ticker_start_end.csv'))
-    historical_data['start_date'] = pd.to_datetime(historical_data['start_date'])
-    historical_data['end_date'] = pd.to_datetime(historical_data['end_date'])
+    # yfinance treats ``end`` as exclusive, so request one day beyond ds.
+    exclusive_end = requested_date + pd.Timedelta(days=1)
+    close, volume = data_acquisition(
+        tickers=tickers,
+        start_date=start_date.strftime("%Y-%m-%d"),
+        end_date=exclusive_end.strftime("%Y-%m-%d"),
+        batch_size=50,
+    )
+    close.to_parquet(staging_close_path)
+    volume.to_parquet(staging_volume_path)
+    print(
+        f"Downloaded staging data to {staging_close_path} and "
+        f"{staging_volume_path}"
+    )
 
-    ANALYSIS_START = pd.Timestamp('2015-01-01')
 
-    # keep only tickers relevant to the analysis window (still in the index, or exited after the start)
-    relevant = historical_data[
-        historical_data['end_date'].isnull() |
-        (historical_data['end_date'] >= ANALYSIS_START)
-    ]
-    tickers = set(relevant['ticker'].unique())
-    # Yahoo Finance convention: BRK.B -> BRK-B
-    tickers = [t.replace('.', '-') for t in tickers]
-    tickers.append('SPY')  # market benchmark; drop this line if not needed
-    print(f"Loaded {len(tickers)} tickers")
-
-    if os.path.exists(close_path) and os.path.exists(volume_path):
-        existing_close = pd.read_parquet(close_path)
-        existing_volume = pd.read_parquet(volume_path)
-        last_date = min(existing_close.index.max(),existing_volume.index.max())
-        start_date=((last_date + datetime.timedelta(days=1))).strftime("%Y-%m-%d")
-    else:
-        start_date="2015-01-01"
-    
-    if start_date >= end_date:
-        print(f"{args.batch} is newest, no need to be updated")
-    else:   
-        close, volume =data_acquisition(tickers = tickers, start_date=start_date, end_date=end_date, batch_size=50)
-        close.to_parquet(close_path)
-        volume.to_parquet(volume_path)
-        print(f"data has been download to temp path {raw_close_path}, {raw_volume_path}")
+if __name__ == "__main__":
+    main()

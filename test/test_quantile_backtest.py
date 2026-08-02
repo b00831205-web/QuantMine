@@ -64,6 +64,23 @@ def test_all_factor_period_combinations_present(synthetic_factors, synthetic_for
     assert set(history.keys()) == {("toy", 1), ("toy", 5)}
 
 
+def test_selected_factor_periods_restricts_backtest(
+    synthetic_factors,
+    synthetic_forward_returns,
+):
+    """A selector-approved pair must not trigger other holding periods."""
+    result, history = quantile_backtest(
+        constituents=None,
+        factors=synthetic_factors,
+        significant_factor_list=["toy"],
+        forward_returns=synthetic_forward_returns,
+        selected_factor_periods=[("toy", 5)],
+    )
+
+    assert set(result) == {("toy", 5)}
+    assert set(history) == {("toy", 5)}
+
+
 def test_rebalance_dates_follow_period_stride(synthetic_factors, synthetic_forward_returns, dates):
     result, _ = quantile_backtest(None, synthetic_factors, ["toy"], synthetic_forward_returns)
     assert len(result[("toy", 1)]) == N_DAYS
@@ -121,3 +138,56 @@ def test_deterministic_across_runs(synthetic_factors, synthetic_forward_returns)
     for key in r1:
         pdt.assert_frame_equal(r1[key], r2[key])
         assert h1[key] == h2[key]
+
+
+def test_nan_factor_values_and_missing_return_columns_are_excluded(dates):
+    factor = pd.DataFrame(
+        {
+            "A": [1.0] * len(dates),
+            "B": [2.0] * len(dates),
+            "C": [3.0] * len(dates),
+            "D": [4.0] * len(dates),
+            "E": [5.0] * len(dates),
+            "NAN": [np.nan] * len(dates),
+            "NO_RETURN": [6.0] * len(dates),
+        },
+        index=dates,
+    )
+    forward = pd.DataFrame(
+        {ticker: [0.01] * len(dates) for ticker in ["A", "B", "C", "D", "E"]},
+        index=dates,
+    )
+
+    _, history = quantile_backtest(
+        None,
+        {"toy": factor},
+        ["toy"],
+        {1: forward},
+    )
+
+    members = set().union(
+        *(history[("toy", 1)][0][f"Q{i}"] for i in range(1, 6))
+    )
+    assert members == {"A", "B", "C", "D", "E"}
+
+
+def test_cross_section_smaller_than_group_count_is_skipped(dates):
+    factor = pd.DataFrame(
+        {"A": [1.0] * len(dates), "B": [2.0] * len(dates)},
+        index=dates,
+    )
+    forward = pd.DataFrame(
+        {"A": [0.01] * len(dates), "B": [0.02] * len(dates)},
+        index=dates,
+    )
+
+    result, history = quantile_backtest(
+        None,
+        {"toy": factor},
+        ["toy"],
+        {1: forward},
+        part=5,
+    )
+
+    assert result == {}
+    assert history == {}
