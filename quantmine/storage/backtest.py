@@ -45,6 +45,37 @@ def build_backtest_rows(
     return pd.concat(frames, ignore_index=True)
 
 
+def build_ticker_history_rows(
+    ticker_history: list[dict],
+) -> pd.DataFrame:
+    """Flatten one factor/period's per-rebalance holdings into long rows.
+
+    ``ticker_history`` is the list produced by ``quantile_backtest``: one dict
+    per rebalance date with keys ``date`` and ``Q1``..``Qn`` (each a set of
+    tickers). Returns a long frame ``[trade_date, quantile_rank, ticker]`` so
+    the API can read the holdings of any rebalance date and quantile. Members
+    are sorted for deterministic parquet output.
+    """
+    records = []
+    for snapshot in ticker_history:
+        trade_date = snapshot["date"]
+        for key, members in snapshot.items():
+            if key == "date":
+                continue
+            quantile_rank = int(str(key).removeprefix("Q"))
+            for ticker in sorted(members):
+                records.append(
+                    {
+                        "trade_date": trade_date,
+                        "quantile_rank": quantile_rank,
+                        "ticker": ticker,
+                    }
+                )
+    return pd.DataFrame(
+        records, columns=["trade_date", "quantile_rank", "ticker"]
+    )
+
+
 def save_backtest_results(
     engine: Engine,
     rows: pd.DataFrame,
@@ -321,6 +352,34 @@ def save_backtest_workflow_results(
                     'period': period
                 }
             )
+
+            #持仓(ticker_history)以前算了就丢, 现在落成长表 parquet 供详情页读取
+            holdings_history = job_result.get('ticker_history', {}).get((factor_name, period))
+            if holdings_history:
+                holdings_df = build_ticker_history_rows(holdings_history)
+                if not holdings_df.empty:
+                    holdings_path, holdings_count = write_dataframe_artifact(
+                        dataframe=holdings_df,
+                        artifact_dir=artifact_dir,
+                        run_id=run_id,
+                        backtest_id=backtest_id,
+                        artifact_type='ticker_history',
+                        artifact_key=artifact_key,
+                    )
+                    saved_artifact_rows += save_backtest_artifact_record(
+                        engine=engine,
+                        run_id=run_id,
+                        variant_name=variant_name,
+                        backtest_id=backtest_id,
+                        artifact_type='ticker_history',
+                        artifact_key=artifact_key,
+                        path=holdings_path,
+                        row_count=holdings_count,
+                        artifact_metadata={
+                            'factor_name': factor_name,
+                            'period': period,
+                        },
+                    )
         saved_counts[backtest_id] = {
             'status': 'ok',
             'result_rows': saved_result_rows,

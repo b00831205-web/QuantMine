@@ -19,7 +19,7 @@ export interface RebalanceSummary {
 
 export interface RebalanceDetail extends RebalanceSummary {
   asOfDate: string;
-  holdings: Array<{ symbol: string; weight: number }>;
+  holdings: Array<{ symbol: string; weight: number; quantile?: string }>;
   contributions: Array<{ symbol: string; contribution: number }>;
 }
 

@@ -13,6 +13,8 @@ from .v1.market.series import router as market_series_router
 from .v1.research.results import router as research_results_router
 from .v1.research.backtest_series import router as backtest_series_router
 from .v1.research.ic_series import router as ic_series_router
+from .v1.research.report import router as report_router
+from .v1.workflows.router import router as workflows_router
 
 api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
@@ -20,3 +22,5 @@ api_router.include_router(market_series_router, tags=["market"])
 api_router.include_router(research_results_router, tags=["research"])
 api_router.include_router(backtest_series_router, tags=['backtest'])
 api_router.include_router(ic_series_router, tags =['research'])
+api_router.include_router(report_router, tags=['research'])
+api_router.include_router(workflows_router, tags=['workflows'])

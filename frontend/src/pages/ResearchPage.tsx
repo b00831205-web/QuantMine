@@ -6,7 +6,10 @@ import { PaginatedTable } from '@/components/common/PaginatedTable';
 import type { FactorResultRow, FactorResultPage, BacktestSummaryCard, BacktestSummaryPage, ResearchFilterOptions, BacktestSeriesQuery, BacktestSeriesResponse } from '@/types/research';
 import type { AsyncState } from '@/types/api';
 import styles from './ResearchPage.module.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
+import type { TFunction } from 'i18next';
 import { fetchResearchOptions, fetchFactorResults, fetchBacktestSummaries, fetchBacktestSeries } from '@/api/client';
 import { HttpError } from '@/api/http';
 import { SeriesChart } from '@/components/chart/SeriesChart';
@@ -48,20 +51,20 @@ const EMPTY_FACTOR_PAGE : FactorResultPage = {
 ────────────────────────────────────────────── */
 const formatNumber = (value: number | null, digits : number): string =>
   value === null? '-': value.toFixed(digits);
-const TEST_COLUMNS: Array<{
+
+const buildTestColumns = (t: TFunction): Array<{
   key: string;
   header: string;
   align?: 'left' | 'center' |'right';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   render: (row: FactorResultRow) => React.ReactNode;
-}> = [
+}> => [
   {
-    key: 'factor', header: '因子名', align: 'left',
+    key: 'factor', header: t('research.factorCard.columnFactor'), align: 'left',
     render: (r) => <span className={styles.factorName}>{r.factorName}</span>,
   },
   {
-    key: 'period', header: 'Period', align: 'right',
-    render: (r) => String(r.period),  // TODO(USER_LEARNING): 取 r.period
+    key: 'period', header: t('research.factorCard.columnPeriod'), align: 'right',
+    render: (r) => String(r.period),
   },
   {
     key: 'icMean', header: 'IC Mean', align: 'right',
@@ -76,15 +79,15 @@ const TEST_COLUMNS: Array<{
     render: (r) => formatNumber(r.ir, 4),
   },
   {
-    key: 'tStat', header: 't 值', align: 'right',
+    key: 'tStat', header: t('metric.tStat'), align: 'right',
     render: (r) => formatNumber(r.tStat, 3),
   },
   {
-    key: 'pValue', header: 'p 值', align: 'right',
+    key: 'pValue', header: t('metric.pValue'), align: 'right',
     render: (r) => formatNumber(r.pValue, 4),
   },
   {
-    key: 'bhSignificant', header: 'BH 显著', align: 'center',
+    key: 'bhSignificant', header: t('metric.bhSignificant'), align: 'center',
     render: (r) => (r.bhSignificant ? '✓' : '—'),
   },
 ];
@@ -99,6 +102,9 @@ const TEST_COLUMNS: Array<{
    主组件
 ────────────────────────────────────────────── */
 export const ResearchPage = () => {
+  const { t } = useTranslation();
+  const TEST_COLUMNS = useMemo(() => buildTestColumns(t), [t]);
+
   /* ── 全局筛选状态 ── */
 
   const [variant,     setVariant]     = useState<string>('');
@@ -158,8 +164,8 @@ export const ResearchPage = () => {
         status: 'error',
         error:{
           code: 'NETWORK_ERROR',
-          title: '网络请求失败',
-          detail: '请确认后端服务正在运行',
+          title: i18n.t('common.networkError.title'),
+          detail: i18n.t('common.networkError.detail'),
           status: 0
         },
       });
@@ -198,8 +204,8 @@ export const ResearchPage = () => {
         status: 'error',
         error: {
           code: 'NETWORK_ERROR',
-          title: '网络请求失败',
-          detail: '请确认后端服务正在运行',
+          title: i18n.t('common.networkError.title'),
+          detail: i18n.t('common.networkError.detail'),
           status: 0,
         },
       });
@@ -250,8 +256,8 @@ export const ResearchPage = () => {
     status: 'error',
     error: {
       code: 'NETWORK_ERROR',
-      title: '网络请求失败',
-      detail: '请确认后端服务正在运行',
+      title: i18n.t('common.networkError.title'),
+      detail: i18n.t('common.networkError.detail'),
       status:0,
     },
   });
@@ -286,8 +292,8 @@ if (error instanceof HttpError){setBtState({status: 'error', error: error.apiErr
 
 setBtState({status: 'error', error:{
   code: 'NETWORK_ERROR',
-  title: "网络请求失败",
-  detail:'请确认后端服务正在运行',
+  title: i18n.t('common.networkError.title'),
+  detail:i18n.t('common.networkError.detail'),
   status: 0,
 },
 });
@@ -321,8 +327,8 @@ setCurveState({
   status: 'error',
   error:{
     code: 'NETWORK_ERROR',
-    title: '网络请求失败',
-    detail: '请确认后端服务正在运行',
+    title: i18n.t('common.networkError.title'),
+    detail: i18n.t('common.networkError.detail'),
     status: 0
   },
 });
@@ -344,12 +350,12 @@ setCurveState({
     <div className={styles.page}>
       {/* 1. 页面标题 */}
       <PageHeader
-        title="研究结果"
-        subtitle="同一 research run 内的因子与回测结论"
+        title={t('research.title')}
+        subtitle={t('research.subtitle')}
       />
 
       {/* 2. 顶部全局筛选卡 */}
-      <Card title="全局筛选">
+      <Card title={t('research.filter.title')}>
         <div className={styles.filterRow}>
           {/* research run 下拉 */}
           <label className={styles.filterField}>
@@ -366,7 +372,7 @@ setCurveState({
                 setSelectedFactor(null);
               }}
             >
-              <option value="">- 选择 research run -</option>
+              <option value="">{t('research.filter.selectRun')}</option>
                 {availableRuns.map((run) => (
                   <option key={run.runId} value = {run.runId}>
                     {`Run ${run.runId} · ${run.createdAt}`}
@@ -383,7 +389,7 @@ setCurveState({
               disabled = {filterOptionsState.status !== 'success'}
               onChange={(e) => setVariant(e.target.value)}
             >
-          <option value = ''>全部</option>
+          <option value = ''>{t('common.all')}</option>
 
           {filterOptions?.variants.map((value) => (<option key ={value} value = {value}>{value}</option>))}
           </select>
@@ -398,7 +404,7 @@ setCurveState({
               disabled = {filterOptionsState.status !== 'success'}
               onChange={(e) => setTestId(e.target.value)}
             >
-          <option value = ''>全部</option>
+          <option value = ''>{t('common.all')}</option>
           {filterOptions?.testIds.map((value)=><option key={value} value={value}>{value}</option>)}
           </select>
           </label>
@@ -412,7 +418,7 @@ setCurveState({
               disabled = {filterOptionsState.status !== 'success'}
               onChange={(e) => setSampleScope(e.target.value)}
             >
-          <option value = ''>全部</option>
+          <option value = ''>{t('common.all')}</option>
           {filterOptions?.sampleScopes.map((value)=>(<option key = {value} value={value}>{value}</option>))}
           </select>
           </label>
@@ -421,19 +427,19 @@ setCurveState({
 
       {/* 3. 因子 IC 与显著性区域（全宽纵向） */}
       <Card
-        title="因子 · IC 与显著性"
+        title={t('research.factorCard.title')}
         extra={
           <span className={styles.cardMeta}>
             {activeRunId!== null
               ? `${activeRunId}`
-              : '无选中 run'}
+              : t('research.noRun')}
           </span>
         }
       >
         <AsyncBoundary
           state={testsState}
           isEmpty={(data) => data.items.length === 0}
-          emptyTitle="该 run 暂无因子测试结果"
+          emptyTitle={t('research.factorCard.emptyTitle')}
           emptyHint={`Run: ${activeRunId}`}
         >
           {(data) => (
@@ -452,7 +458,7 @@ setCurveState({
                 void page;
                 // TODO(USER_LEARNING): 真实分页请求 — 携带 activeRunId + variant/testId/sampleScope 拉取 page=page
               }}
-              emptyHint="无匹配因子"
+              emptyHint={t('research.factorCard.noMatch')}
             />
           )}
         </AsyncBoundary>
@@ -469,17 +475,17 @@ setCurveState({
 
       {/* 4. 回测结果区域（全宽纵向，在因子区之后） */}
       <Card
-        title="回测 · Q1~Qn 与 Long-Short"
+        title={t('research.backtestCard.title')}
         extra={
           <span className={styles.cardMeta}>
-            扣除交易成本口径
+            {t('research.backtestCard.extra')}
           </span>
         }
       >
         <AsyncBoundary
           state={btState}
           isEmpty={(d) => d.items.length === 0}
-          emptyTitle="该 run 暂无回测结果"
+          emptyTitle={t('research.backtestCard.emptyTitle')}
           emptyHint={`Run: ${activeRunId}`}
         >
           {(data) => (
@@ -524,17 +530,23 @@ const FactorExpandSection = ({
   items: BacktestSummaryCard[];
   onClose: () => void;
 }) => {
+  const { t } = useTranslation();
   return (
     <div className={styles.expandSection}>
       <div className={styles.expandHeader}>
         <span className={styles.expandTitle}>
-          当前选中因子：<strong>{factor.factorName}</strong>
+          {t('research.expand.selected')}<strong>{factor.factorName}</strong>
           <span className={styles.expandMeta}>
-            {` · period ${factor.period} · ${factor.variantName} · ${factor.testId} · ${factor.sampleScope}`}
+            {t('research.expand.meta', {
+              period: factor.period,
+              variant: factor.variantName,
+              testId: factor.testId,
+              sampleScope: factor.sampleScope,
+            })}
           </span>
         </span>
         <button className={styles.expandClose} onClick={onClose}>
-          收起 ×
+          {t('research.expand.close')}
         </button>
       </div>
 
@@ -542,18 +554,18 @@ const FactorExpandSection = ({
         <ExpandKpi label="IC Mean"    value={formatNumber(factor.icMean, 4)} />
         <ExpandKpi label="IC Std"     value={formatNumber(factor.icStd, 4)} />
         <ExpandKpi label="IR"         value={formatNumber(factor.ir, 3)} />
-        <ExpandKpi label="t 值"       value={formatNumber(factor.tStat, 3)} />
-        <ExpandKpi label="p 值"       value={formatNumber(factor.pValue, 4)} />
-        <ExpandKpi label="BH 显著"    value={factor.bhSignificant ? '是' : '否'} />
+        <ExpandKpi label={t('metric.tStat')}       value={formatNumber(factor.tStat, 3)} />
+        <ExpandKpi label={t('metric.pValue')}       value={formatNumber(factor.pValue, 4)} />
+        <ExpandKpi label={t('metric.bhSignificant')}    value={factor.bhSignificant ? t('common.yes') : t('common.no')} />
       </div>
 
       <div className={styles.expandBtSummary}>
         <div className={styles.expandSubLabel}>
-          对应回测卡（{items.length}）
+          {t('research.expand.backtestCount', { count: items.length })}
         </div>
         {items.length === 0 ? (
           <div className={styles.expandPlaceholder}>
-            当前 run 暂无 {factor.factorName} 的回测卡。
+            {t('research.expand.noBacktest', { factor: factor.factorName })}
           </div>
         ) : (
           <div className={styles.expandBtList}>
@@ -594,8 +606,9 @@ const BacktestSection = ({ items,
     expandedBacktest: BacktestSeriesQuery|null;
     curveState : CurveState; 
     onToggleCurve: (item: BacktestSummaryCard)=>void; }) => {
+  const { t } = useTranslation();
   if (items.length === 0) {
-    return <div className={styles.btEmpty}>暂无回测数据</div>;
+    return <div className={styles.btEmpty}>{t('research.backtestCard.empty')}</div>;
   }
   return (
     <div className={styles.btGrid}>
@@ -632,17 +645,18 @@ const BacktestCurvePanel = ({
   query: BacktestSeriesQuery;
   state: CurveState;
 }) => {
+  const { t } = useTranslation();
   return (
     <div className={styles.btChartArea}>
       <div className={styles.expandSubLabel}>
-        {`净值曲线 · ${query.factorName} · ${query.period}天`}
+        {t('research.curve.title', { factor: query.factorName, period: query.period })}
       </div>
 
       <AsyncBoundary
         state={state}
         isEmpty={(data) => data.series.length === 0}
-        emptyTitle="该回测暂无逐日收益数据"
-        emptyHint="请先导入对应回测的日收益结果。"
+        emptyTitle={t('research.curve.emptyTitle')}
+        emptyHint={t('research.curve.emptyHint')}
       >
         {(data) => (
           <SeriesChart
@@ -672,6 +686,7 @@ const BtMetricCard = ({
   onToggleCurve?: () => void;
   compact?: boolean;
 }) => {
+  const { t } = useTranslation();
   return (
     <div className={compact ? styles.btCardCompact : styles.btCard}>
       <div className={styles.btCardHeader}>
@@ -694,9 +709,9 @@ const BtMetricCard = ({
 
       <div className={styles.btStatGrid}>
         <BtStat label="Sharpe"     value={formatNumber(item.sharpe, 2)} />
-        <BtStat label="最大回撤"   value={item.maxDrawdown === null ? '-' : `${(item.maxDrawdown * 100).toFixed(1)}%`} />
-        <BtStat label="胜率"       value={item.winRate === null ? '-' : `${(item.winRate * 100).toFixed(1)}%`} />
-        <BtStat label="持有期"     value={`${item.period}天`} />
+        <BtStat label={t('metric.maxDrawdown')}   value={item.maxDrawdown === null ? '-' : `${(item.maxDrawdown * 100).toFixed(1)}%`} />
+        <BtStat label={t('metric.winRate')}       value={item.winRate === null ? '-' : `${(item.winRate * 100).toFixed(1)}%`} />
+        <BtStat label={t('metric.holdingPeriod')}     value={t('metric.days', { count: item.period })} />
       </div>
       {!compact && onToggleCurve && (
         <button
@@ -704,7 +719,7 @@ const BtMetricCard = ({
           className={styles.btCurveButton}
           onClick={onToggleCurve}
         >
-          {isExpanded ? '收起净值曲线' : '查看净值曲线'}
+          {isExpanded ? t('research.curve.hide') : t('research.curve.show')}
         </button>
       )}
     </div>

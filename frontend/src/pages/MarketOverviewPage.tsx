@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card } from '@/components/common/Card';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
@@ -30,6 +32,7 @@ const RANGE_DAYS: Record<RangeKey, number | 'ALL'> = {
  * 这是第一次完整 useState + useEffect 切片。
  */
 export const MarketOverviewPage = () => {
+  const { t } = useTranslation();
   // —— 视图状态（已由我实现）——
   const [symbols, setSymbols] = useState<string[]>(['SPY', 'AAPL', 'MSFT']);
   const [range, setRange] = useState<RangeKey>('1Y');
@@ -82,8 +85,8 @@ export const MarketOverviewPage = () => {
         status: 'error',
         error: {
           code: 'NETWORK_ERROR',
-          title: '网络请求失败',
-          detail: '请确认后端服务正在运行。',
+          title: i18n.t('common.networkError.title'),
+          detail: i18n.t('common.networkError.detail'),
           status: 0,
         },
       });
@@ -123,8 +126,8 @@ export const MarketOverviewPage = () => {
   return (
     <div className={styles.page}>
       <PageHeader
-        title="市场总览"
-        subtitle="S&P 500 行情比较 · 自由查看，不展示正式调仓"
+        title={t('market.title')}
+        subtitle={t('market.subtitle')}
         actions={
           <div className={styles.rangeGroup}>
             {(['1M', '1Y', '5Y', 'ALL'] as RangeKey[]).map((r) => (
@@ -140,7 +143,7 @@ export const MarketOverviewPage = () => {
         }
       />
 
-      <Card title="对比组合">
+      <Card title={t('market.compareCard')}>
         <div className={styles.tickerRow}>
           {symbols.map((s) => (
             <span key={s} className={styles.chip}>
@@ -148,7 +151,7 @@ export const MarketOverviewPage = () => {
               <button
                 className={styles.chipX}
                 onClick={() => handleRemoveTicker(s)}
-                aria-label={`移除 ${s}`}
+                aria-label={t('market.removeTicker', { symbol: s })}
               >
                 ×
               </button>
@@ -156,14 +159,14 @@ export const MarketOverviewPage = () => {
           ))}
           <div className={styles.addTicker}>
             <input
-              placeholder="添加 ticker"
+              placeholder={t('market.addTickerPlaceholder')}
               value={tickerDraft}
               onChange={(e) => setTickerDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAddTicker();
               }}
             />
-            <button onClick={handleAddTicker}>添加</button>
+            <button onClick={handleAddTicker}>{t('market.add')}</button>
           </div>
         </div>
 
@@ -172,8 +175,8 @@ export const MarketOverviewPage = () => {
             state={seriesState}
             isEmpty={(d) => d.series.length === 0}
             onRetry={() => setRange(range)} // 触发 effect 重跑
-            emptyTitle="暂无行情数据"
-            emptyHint={`区间 ${query?.startDate?? '-'} → ${query?.endDate ?? '-'}`}
+            emptyTitle={t('market.emptyTitle')}
+            emptyHint={t('market.rangeHint', { start: query?.startDate ?? '-', end: query?.endDate ?? '-' })}
           >
             {(data) => <SeriesChart series={data.series} height={360} />}
           </AsyncBoundary>
@@ -181,11 +184,11 @@ export const MarketOverviewPage = () => {
       </Card>
 
       <section className={styles.kpis}>
-        <Kpi label="最新数据日" value={latestTradeDate ?? '-'} />
-        <Kpi label="当日收益 (SPY)" value={spyDailyReturnLabel} tone="muted" />
-        <Kpi label="上涨家数" value="—" tone="muted" />
-        <Kpi label="市场宽度" value="—" tone="muted" />
-        <Kpi label="最新任务状态" value="IDLE" tone="muted" />
+        <Kpi label={t('market.kpi.latestDate')} value={latestTradeDate ?? '-'} />
+        <Kpi label={t('market.kpi.dailyReturn')} value={spyDailyReturnLabel} tone="muted" />
+        <Kpi label={t('market.kpi.advancers')} value="—" tone="muted" />
+        <Kpi label={t('market.kpi.breadth')} value="—" tone="muted" />
+        <Kpi label={t('market.kpi.taskStatus')} value="IDLE" tone="muted" />
       </section>
     </div>
   );

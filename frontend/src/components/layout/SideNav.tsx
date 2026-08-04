@@ -1,24 +1,26 @@
 import { NavLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import styles from './SideNav.module.css';
 
 interface NavItem {
   to: string;
-  label: string;
+  labelKey: string;
   group: 'core' | 'ai';
 }
 
 const ITEMS: NavItem[] = [
-  { to: '/market', label: '市场总览', group: 'core' },
-  { to: '/rebalance', label: '调仓收益', group: 'core' },
-  { to: '/workflows', label: 'Airflow 工作流', group: 'core' },
-  { to: '/research', label: '研究结果', group: 'core' },
-  { to: '/data', label: '数据库速查', group: 'core' },
-  { to: '/reports', label: 'PDF 报告', group: 'core' },
-  { to: '/ai', label: 'AI 工作台', group: 'ai' },
-  { to: '/ai/config', label: 'AI 配置', group: 'ai' },
+  { to: '/market', labelKey: 'nav.market', group: 'core' },
+  { to: '/rebalance', labelKey: 'nav.rebalance', group: 'core' },
+  { to: '/workflows', labelKey: 'nav.workflows', group: 'core' },
+  { to: '/research', labelKey: 'nav.research', group: 'core' },
+  { to: '/data', labelKey: 'nav.data', group: 'core' },
+  { to: '/reports', labelKey: 'nav.reports', group: 'core' },
+  { to: '/ai', labelKey: 'nav.ai', group: 'ai' },
+  { to: '/ai/config', labelKey: 'nav.aiConfig', group: 'ai' },
 ];
 
 export const SideNav = () => {
+  const { t } = useTranslation();
   const core = ITEMS.filter((i) => i.group === 'core');
   const ai = ITEMS.filter((i) => i.group === 'ai');
   return (
@@ -27,13 +29,13 @@ export const SideNav = () => {
       <nav className={styles.list}>
         {core.map((item) => (
           <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}>
-            {item.label}
+            {t(item.labelKey)}
           </NavLink>
         ))}
         <div className={styles.divider} />
         {ai.map((item) => (
           <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}>
-            {item.label}
+            {t(item.labelKey)}
           </NavLink>
         ))}
       </nav>

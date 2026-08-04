@@ -1,0 +1,127 @@
+{
+  "nav": {
+    "market": "Market Overview",
+    "rebalance": "Rebalance Returns",
+    "workflows": "Airflow Workflows",
+    "research": "Research Results",
+    "data": "Database Explorer",
+    "reports": "PDF Reports",
+    "ai": "AI Workbench",
+    "aiConfig": "AI Settings"
+  },
+  "common": {
+    "all": "All",
+    "noData": "No data",
+    "networkError": {
+      "title": "Request failed",
+      "detail": "Please make sure the backend service is running"
+    },
+    "pagination": "{{total}} items · page {{page}} / {{pages}}",
+    "prevPage": "Previous",
+    "nextPage": "Next",
+    "noMatch": "No matching data",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "metric": {
+    "sharpe": "Sharpe",
+    "maxDrawdown": "Max Drawdown",
+    "winRate": "Win Rate",
+    "holdingPeriod": "Holding Period",
+    "tStat": "t-stat",
+    "pValue": "p-value",
+    "bhSignificant": "BH Sig.",
+    "days": "{{count}}d"
+  },
+  "research": {
+    "title": "Research Results",
+    "subtitle": "Factor and backtest conclusions within a single research run",
+    "filter": {
+      "title": "Global Filters",
+      "researchRun": "Research Run",
+      "selectRun": "- select research run -",
+      "runOption": "Run {{runId}} · {{createdAt}}",
+      "variant": "Variant",
+      "testId": "Test ID",
+      "sampleScope": "Sample Scope"
+    },
+    "noRun": "No run selected",
+    "factorCard": {
+      "title": "Factors · IC & Significance",
+      "columnFactor": "Factor",
+      "columnPeriod": "Period",
+      "emptyTitle": "This run has no factor test results",
+      "emptyHint": "Run: {{runId}}",
+      "noMatch": "No matching factors"
+    },
+    "backtestCard": {
+      "title": "Backtest · Q1~Qn & Long-Short",
+      "extra": "Net of transaction costs",
+      "emptyTitle": "This run has no backtest results",
+      "empty": "No backtest data"
+    },
+    "expand": {
+      "selected": "Selected factor: ",
+      "meta": " · period {{period}} · {{variant}} · {{testId}} · {{sampleScope}}",
+      "close": "Collapse ×",
+      "backtestCount": "Backtest cards ({{count}})",
+      "noBacktest": "This run has no backtest card for {{factor}}."
+    },
+    "curve": {
+      "title": "Equity Curve · {{factor}} · {{period}}d",
+      "emptyTitle": "This backtest has no daily return data",
+      "emptyHint": "Please import the daily returns for this backtest first.",
+      "show": "Show equity curve",
+      "hide": "Hide equity curve"
+    }
+  },
+  "factorDetail": {
+    "back": "← Back to research results",
+    "subtitle": "Factor detail · IC series · stability · backtests",
+    "noPeriod": "No period selected",
+    "selectedPeriod": "Selected period: {{period}} days",
+    "filterContext": "Filter Context",
+    "selectRun": "— select research run —",
+    "noRun": "No research run",
+    "noRunHint": "Please run a research pass on the workflow page first",
+    "holdingPeriodCard": "Holding Period",
+    "periodTab": "{{period}}d",
+    "totalCount": "{{total}} items",
+    "statsEmptyTitle": "No statistics for this factor in the current context",
+    "factorHint": "Factor: {{factor}}",
+    "icCard": "IC Series",
+    "icEmptyTitle": "No IC series data",
+    "icEmptyHintNoPeriod": "Please select a holding period first",
+    "icEmptyHint": "run {{runId}} · period {{period}}",
+    "statsCard": "Factor Statistics (all periods)",
+    "statsEmpty": "No statistics",
+    "backtestCard": "Related Backtests",
+    "backtestEmpty": "No backtests",
+    "columnScope": "Scope",
+    "noMatchPeriod": "No matching period",
+    "curveNotSaved": "This backtest has no saved equity curve"
+  },
+  "topbar": {
+    "dataDate": "Data Date",
+    "latestTask": "Latest Task",
+    "model": "Model",
+    "notConfigured": "Not configured"
+  },
+  "market": {
+    "title": "Market Overview",
+    "subtitle": "S&P 500 price comparison · free to browse, not official rebalancing",
+    "compareCard": "Comparison",
+    "removeTicker": "Remove {{symbol}}",
+    "addTickerPlaceholder": "Add ticker",
+    "add": "Add",
+    "emptyTitle": "No market data",
+    "rangeHint": "Range {{start}} → {{end}}",
+    "kpi": {
+      "latestDate": "Latest Data Date",
+      "dailyReturn": "Daily Return (SPY)",
+      "advancers": "Advancers",
+      "breadth": "Market Breadth",
+      "taskStatus": "Latest Task Status"
+    }
+  }
+}

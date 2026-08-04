@@ -126,7 +126,7 @@ def main() -> None:
         tickers=tickers,
         start_date=start_date.strftime("%Y-%m-%d"),
         end_date=exclusive_end.strftime("%Y-%m-%d"),
-        batch_size=50,
+        batch_size=20,  # 小批次 + 串行下载, 降低触发Yahoo限流的概率
     )
     close.to_parquet(staging_close_path)
     volume.to_parquet(staging_volume_path)

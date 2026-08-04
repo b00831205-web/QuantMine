@@ -7,8 +7,34 @@ from quantmine.storage import backtest as backtest_storage
 from quantmine.storage.backtest import (
     build_backtest_metric_rows,
     build_backtest_rows,
+    build_ticker_history_rows,
     write_dataframe_artifact,
 )
+
+
+def test_build_ticker_history_rows_flattens_holdings_to_long_form():
+    d1, d2 = pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-09")
+    ticker_history = [
+        {"date": d1, "Q1": {"B", "A"}, "Q2": {"C"}},
+        {"date": d2, "Q1": {"D"}, "Q2": {"E"}},
+    ]
+
+    rows = build_ticker_history_rows(ticker_history)
+
+    assert list(rows.columns) == ["trade_date", "quantile_rank", "ticker"]
+    # first snapshot Q1 members are sorted for deterministic output
+    assert rows[
+        (rows["trade_date"] == d1) & (rows["quantile_rank"] == 1)
+    ]["ticker"].tolist() == ["A", "B"]
+    # quantile label "Q2" -> rank 2
+    assert set(rows["quantile_rank"]) == {1, 2}
+    assert len(rows) == 5
+
+
+def test_build_ticker_history_rows_empty_input_has_columns():
+    rows = build_ticker_history_rows([])
+    assert rows.empty
+    assert list(rows.columns) == ["trade_date", "quantile_rank", "ticker"]
 
 
 def test_build_backtest_rows_adds_variant_and_quantile_identity():
@@ -145,9 +171,19 @@ def test_save_backtest_workflow_results_routes_one_successful_job(monkeypatch, t
             {"Q1": [0.01, 0.02], "long_short": [0.02, 0.03]}, index=dates
         )
     }
+    ticker_history = {
+        ("momentum", 5): [
+            {"date": dates[0], "Q1": {"AAA"}, "Q5": {"BBB"}},
+            {"date": dates[1], "Q1": {"CCC"}, "Q5": {"DDD"}},
+        ]
+    }
     workflow_results = {
         "raw_test": {
-            "job": {"status": "ok", "daily_returns": daily_returns},
+            "job": {
+                "status": "ok",
+                "daily_returns": daily_returns,
+                "ticker_history": ticker_history,
+            },
             "analysis": {
                 ("momentum", 5): {
                     "performance_summary": pd.DataFrame(
@@ -184,12 +220,20 @@ def test_save_backtest_workflow_results_routes_one_successful_job(monkeypatch, t
         "status": "ok",
         "result_rows": 4,
         "metric_rows": 2,
-        "artifact_rows": 1,
+        "artifact_rows": 2,  # net_return_curve + ticker_history
     }
     assert calls["result_rows"] is not None
     assert calls["metric_rows"] is not None
-    assert len(calls["artifacts"]) == 1
-    assert calls["artifacts"][0]["artifact_type"] == "net_return_curve"
+    artifact_types = [a["artifact_type"] for a in calls["artifacts"]]
+    assert artifact_types == ["net_return_curve", "ticker_history"]
+    # holdings artifact carries the same factor/period key as the curve
+    holdings_call = calls["artifacts"][1]
+    assert holdings_call["artifact_key"] == "momentum__5"
+    assert list(holdings_call["dataframe"].columns) == [
+        "trade_date",
+        "quantile_rank",
+        "ticker",
+    ]
 
 
 def test_save_backtest_workflow_results_reports_job_with_empty_analysis(

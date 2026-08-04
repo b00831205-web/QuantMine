@@ -41,7 +41,14 @@ export async function http<T>(path: string, options: HttpRequestOptions = {}): P
       }
     }
   }
-  const response = await fetch(url, {signal : options.signal ?? null});
+  const init: RequestInit = {
+    method: options.method ?? 'GET',
+    signal: options.signal ?? null,
+    ...(options.body !== undefined
+      ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options.body) }
+      : {}),
+  };
+  const response = await fetch(url, init);
   if (!response.ok){
     const apiError = (await response.json()) as ApiError;
     throw new HttpError(apiError)

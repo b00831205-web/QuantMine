@@ -1,0 +1,127 @@
+{
+  "nav": {
+    "market": "市场总览",
+    "rebalance": "调仓收益",
+    "workflows": "Airflow 工作流",
+    "research": "研究结果",
+    "data": "数据库速查",
+    "reports": "PDF 报告",
+    "ai": "AI 工作台",
+    "aiConfig": "AI 配置"
+  },
+  "common": {
+    "all": "全部",
+    "noData": "暂无数据",
+    "networkError": {
+      "title": "网络请求失败",
+      "detail": "请确认后端服务正在运行"
+    },
+    "pagination": "共 {{total}} 条 · 第 {{page}} / {{pages}} 页",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "noMatch": "无匹配数据",
+    "yes": "是",
+    "no": "否"
+  },
+  "metric": {
+    "sharpe": "Sharpe",
+    "maxDrawdown": "最大回撤",
+    "winRate": "胜率",
+    "holdingPeriod": "持有期",
+    "tStat": "t 值",
+    "pValue": "p 值",
+    "bhSignificant": "BH 显著",
+    "days": "{{count}}天"
+  },
+  "research": {
+    "title": "研究结果",
+    "subtitle": "同一 research run 内的因子与回测结论",
+    "filter": {
+      "title": "全局筛选",
+      "researchRun": "Research Run",
+      "selectRun": "- 选择 research run -",
+      "runOption": "Run {{runId}} · {{createdAt}}",
+      "variant": "Variant",
+      "testId": "Test ID",
+      "sampleScope": "Sample Scope"
+    },
+    "noRun": "无选中 run",
+    "factorCard": {
+      "title": "因子 · IC 与显著性",
+      "columnFactor": "因子名",
+      "columnPeriod": "Period",
+      "emptyTitle": "该 run 暂无因子测试结果",
+      "emptyHint": "Run: {{runId}}",
+      "noMatch": "无匹配因子"
+    },
+    "backtestCard": {
+      "title": "回测 · Q1~Qn 与 Long-Short",
+      "extra": "扣除交易成本口径",
+      "emptyTitle": "该 run 暂无回测结果",
+      "empty": "暂无回测数据"
+    },
+    "expand": {
+      "selected": "当前选中因子：",
+      "meta": " · period {{period}} · {{variant}} · {{testId}} · {{sampleScope}}",
+      "close": "收起 ×",
+      "backtestCount": "对应回测卡（{{count}}）",
+      "noBacktest": "当前 run 暂无 {{factor}} 的回测卡。"
+    },
+    "curve": {
+      "title": "净值曲线 · {{factor}} · {{period}}天",
+      "emptyTitle": "该回测暂无逐日收益数据",
+      "emptyHint": "请先导入对应回测的日收益结果。",
+      "show": "查看净值曲线",
+      "hide": "收起净值曲线"
+    }
+  },
+  "factorDetail": {
+    "back": "← 返回研究结果",
+    "subtitle": "因子详情 · IC 时序 · 稳定性 · 回测对应",
+    "noPeriod": "尚未选择周期",
+    "selectedPeriod": "选中周期：{{period}} 天",
+    "filterContext": "筛选上下文",
+    "selectRun": "— 选择 research run —",
+    "noRun": "暂无 research run",
+    "noRunHint": "请先在 workflow 页面跑一次研究",
+    "holdingPeriodCard": "持有期",
+    "periodTab": "{{period}} 天",
+    "totalCount": "共 {{total}} 条",
+    "statsEmptyTitle": "该因子在当前上下文下暂无统计",
+    "factorHint": "因子：{{factor}}",
+    "icCard": "IC 时序",
+    "icEmptyTitle": "暂无 IC 时序数据",
+    "icEmptyHintNoPeriod": "请先选择持有期",
+    "icEmptyHint": "run {{runId}} · period {{period}}",
+    "statsCard": "因子统计（全部周期）",
+    "statsEmpty": "暂无统计",
+    "backtestCard": "对应回测",
+    "backtestEmpty": "暂无回测",
+    "columnScope": "Scope",
+    "noMatchPeriod": "无匹配周期",
+    "curveNotSaved": "该回测未保存净值曲线"
+  },
+  "topbar": {
+    "dataDate": "数据日期",
+    "latestTask": "最新任务",
+    "model": "模型",
+    "notConfigured": "未配置"
+  },
+  "market": {
+    "title": "市场总览",
+    "subtitle": "S&P 500 行情比较 · 自由查看，不展示正式调仓",
+    "compareCard": "对比组合",
+    "removeTicker": "移除 {{symbol}}",
+    "addTickerPlaceholder": "添加 ticker",
+    "add": "添加",
+    "emptyTitle": "暂无行情数据",
+    "rangeHint": "区间 {{start}} → {{end}}",
+    "kpi": {
+      "latestDate": "最新数据日",
+      "dailyReturn": "当日收益 (SPY)",
+      "advancers": "上涨家数",
+      "breadth": "市场宽度",
+      "taskStatus": "最新任务状态"
+    }
+  }
+}

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from '@/i18n';
 import {
   useNavigate,
   useParams,
@@ -73,6 +75,7 @@ const formatNumber = (value: number | null, digits: number): string =>
    主组件
 ────────────────────────────────────────────── */
 export const FactorDetailPage = () => {
+  const { t } = useTranslation();
   const { factorName } = useParams<{ factorName: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -172,8 +175,8 @@ export const FactorDetailPage = () => {
           status: 'error',
           error: {
             code: 'NETWORK_ERROR',
-            title: '网络请求失败',
-            detail: '请确认后端服务正在运行',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
             status: 0,
           },
         });
@@ -272,8 +275,8 @@ export const FactorDetailPage = () => {
           status: 'error',
           error: {
             code: 'NETWORK_ERROR',
-            title: '网络请求失败',
-            detail: '请确认后端服务正在运行',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
             status: 0,
           },
         });
@@ -346,8 +349,8 @@ export const FactorDetailPage = () => {
           status: 'error',
           error: {
             code: 'NETWORK_ERROR',
-            title: '网络请求失败',
-            detail: '请确认后端服务正在运行',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
             status: 0,
           },
         });
@@ -393,8 +396,8 @@ export const FactorDetailPage = () => {
           status: 'error',
           error: {
             code: 'NETWORK_ERROR',
-            title: '网络请求失败',
-            detail: '请确认后端服务正在运行',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
             status: 0,
           },
         });
@@ -428,8 +431,8 @@ export const FactorDetailPage = () => {
           status: 'error',
           error: {
             code: 'NETWORK_ERROR',
-            title: '网络请求失败',
-            detail: '请确认后端服务正在运行',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
             status: 0,
           },
         });
@@ -464,26 +467,26 @@ export const FactorDetailPage = () => {
   return (
     <div className={styles.page}>
       <button className={styles.backBtn} onClick={() => navigate('/research')}>
-        ← 返回研究结果
+        {t('factorDetail.back')}
       </button>
 
       <PageHeader
         title={displayFactorName}
-        subtitle="因子详情 · IC 时序 · 稳定性 · 回测对应"
+        subtitle={t('factorDetail.subtitle')}
         actions={
           <span className={styles.selectedPeriod}>
-            {period === null ? '尚未选择周期' : `选中周期：${period} 天`}
+            {period === null ? t('factorDetail.noPeriod') : t('factorDetail.selectedPeriod', { period })}
           </span>
         }
       />
 
       {/* 4 个 selector */}
-      <Card title="筛选上下文">
+      <Card title={t('factorDetail.filterContext')}>
         <AsyncBoundary
           state={optionsState}
           isEmpty={(d) => d.runs.length === 0}
-          emptyTitle="暂无 research run"
-          emptyHint="请先在 workflow 页面跑一次研究"
+          emptyTitle={t('factorDetail.noRun')}
+          emptyHint={t('factorDetail.noRunHint')}
         >
           {() => (
             <div className={styles.selectorGrid}>
@@ -503,7 +506,7 @@ export const FactorDetailPage = () => {
                     });
                   }}
                 >
-                  <option value="">— 选择 research run —</option>
+                  <option value="">{t('factorDetail.selectRun')}</option>
                   {availableRuns.map((r) => (
                     <option key={r.runId} value={String(r.runId)}>
                       {`Run ${r.runId} · ${r.createdAt}`}
@@ -521,7 +524,7 @@ export const FactorDetailPage = () => {
                     updateSearch({ variant: e.target.value || null, period: null })
                   }
                 >
-                  <option value="">全部</option>
+                  <option value="">{t('common.all')}</option>
                   {options?.variants.map((v) => (
                     <option key={v} value={v}>{v}</option>
                   ))}
@@ -537,7 +540,7 @@ export const FactorDetailPage = () => {
                     updateSearch({ testId: e.target.value || null, period: null })
                   }
                 >
-                  <option value="">全部</option>
+                  <option value="">{t('common.all')}</option>
                   {options?.testIds.map((t) => (
                     <option key={t} value={t}>{t}</option>
                   ))}
@@ -557,7 +560,7 @@ export const FactorDetailPage = () => {
                     });
                   }}
                 >
-                  <option value="">全部</option>
+                  <option value="">{t('common.all')}</option>
                   {options?.sampleScopes.map((s) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
@@ -569,12 +572,12 @@ export const FactorDetailPage = () => {
       </Card>
 
       {/* Holding-period tabs */}
-      <Card title="持有期">
+      <Card title={t('factorDetail.holdingPeriodCard')}>
         <AsyncBoundary
           state={statsState}
           isEmpty={(d) => d.items.length === 0}
-          emptyTitle="该因子在当前上下文下暂无统计"
-          emptyHint={`因子：${displayFactorName}`}
+          emptyTitle={t('factorDetail.statsEmptyTitle')}
+          emptyHint={t('factorDetail.factorHint', { factor: displayFactorName })}
         >
           {(data) => (
             <div className={styles.tabRow} role="tablist">
@@ -586,11 +589,11 @@ export const FactorDetailPage = () => {
                   className={p === period ? styles.tabActive : styles.tab}
                   onClick={() => updateSearch({ period: p })}
                 >
-                  {p} 天
+                  {t('factorDetail.periodTab', { period: p })}
                 </button>
               ))}
               <span className={styles.tabHint}>
-                {`共 ${data.total} 条`}
+                {t('factorDetail.totalCount', { total: data.total })}
               </span>
             </div>
           )}
@@ -598,12 +601,12 @@ export const FactorDetailPage = () => {
       </Card>
 
       {/* IC 时序 */}
-      <Card title="IC 时序">
+      <Card title={t('factorDetail.icCard')}>
         <AsyncBoundary
           state={icState}
           isEmpty={(d) => d.series.length === 0 || d.series.every((s) => s.points.length === 0)}
-          emptyTitle="暂无 IC 时序数据"
-          emptyHint={period === null ? '请先选择持有期' : `run ${runId} · period ${period}`}
+          emptyTitle={t('factorDetail.icEmptyTitle')}
+          emptyHint={period === null ? t('factorDetail.icEmptyHintNoPeriod') : t('factorDetail.icEmptyHint', { runId, period })}
         >
           {(data) => (
             <div className={styles.chartWrap}>
@@ -619,12 +622,12 @@ export const FactorDetailPage = () => {
       </Card>
 
       {/* 全周期统计表 */}
-      <Card title="因子统计（全部周期）">
+      <Card title={t('factorDetail.statsCard')}>
         <AsyncBoundary
           state={statsState}
           isEmpty={(d) => d.items.length === 0}
-          emptyTitle="暂无统计"
-          emptyHint={`因子：${displayFactorName}`}
+          emptyTitle={t('factorDetail.statsEmpty')}
+          emptyHint={t('factorDetail.factorHint', { factor: displayFactorName })}
         >
           {(data) => (
             <StatsTable
@@ -637,12 +640,12 @@ export const FactorDetailPage = () => {
       </Card>
 
       {/* 对应回测卡 */}
-      <Card title="对应回测">
+      <Card title={t('factorDetail.backtestCard')}>
         <AsyncBoundary
           state={btState}
           isEmpty={(d) => d.items.length === 0}
-          emptyTitle="暂无回测"
-          emptyHint={`因子：${displayFactorName}`}
+          emptyTitle={t('factorDetail.backtestEmpty')}
+          emptyHint={t('factorDetail.factorHint', { factor: displayFactorName })}
         >
           {(data) => (
             <BacktestCardGrid
@@ -695,6 +698,7 @@ const StatsTable = ({
   selectedPeriod: number | null;
   onRowClick: (row: FactorResultRow) => void;
 }) => {
+  const { t } = useTranslation();
   const pageData: Page<FactorResultRow> = {
     items,
     total: items.length,
@@ -736,15 +740,15 @@ const StatsTable = ({
           render: (r) => formatNumber(r.ir, 3),
         },
         {
-          key: 'tStat', header: 't 值', align: 'right',
+          key: 'tStat', header: t('metric.tStat'), align: 'right',
           render: (r) => formatNumber(r.tStat, 3),
         },
         {
-          key: 'pValue', header: 'p 值', align: 'right',
+          key: 'pValue', header: t('metric.pValue'), align: 'right',
           render: (r) => formatNumber(r.pValue, 4),
         },
         {
-          key: 'bhSignificant', header: 'BH 显著', align: 'center',
+          key: 'bhSignificant', header: t('metric.bhSignificant'), align: 'center',
           render: (r) => (r.bhSignificant ? '✓' : '—'),
         },
       ]}
@@ -754,7 +758,7 @@ const StatsTable = ({
           ? undefined
           : findRowKey(items, selectedPeriod)
       }
-      emptyHint="无匹配周期"
+      emptyHint={t('factorDetail.noMatchPeriod')}
     />
   );
 };
@@ -782,6 +786,7 @@ const BacktestCardGrid = ({
   curveState: AsyncState<BacktestSeriesResponse>;
   onToggle: (item: BacktestSummaryCard) => void;
 }) => {
+  const { t } = useTranslation();
   return (
     <div className={styles.btGrid}>
       <div className={styles.btMetricsRow}>
@@ -802,13 +807,13 @@ const BacktestCardGrid = ({
       {expandedCard !== null && (
         <div className={styles.btChartArea}>
           <div className={styles.expandSubLabel}>
-            {`净值曲线 · ${expandedCard.factorName} · ${expandedCard.period}天`}
+            {t('research.curve.title', { factor: expandedCard.factorName, period: expandedCard.period })}
           </div>
           <AsyncBoundary
             state={curveState}
             isEmpty={(d) => d.series.length === 0}
-            emptyTitle="该回测未保存净值曲线"
-            emptyHint="请先导入对应回测的日收益结果。"
+            emptyTitle={t('factorDetail.curveNotSaved')}
+            emptyHint={t('research.curve.emptyHint')}
           >
             {(data) => (
               <SeriesChart
@@ -834,6 +839,7 @@ const DetailBtMetricCard = ({
   isExpanded: boolean;
   onToggleCurve: () => void;
 }) => {
+  const { t } = useTranslation();
   // 年化收益行：固定 6 列（Long-Short + Q1..Q5）。
   // 实际 quantile 数量由后端 quantileYearlyReturns.keys 决定。
   // spec 要求桌面端不得让 Q5 换行 → 用 6 列 grid。
@@ -859,9 +865,9 @@ const DetailBtMetricCard = ({
 
       <div className={styles.btStatRow}>
         <BtStat label="Sharpe"     value={formatNumber(item.sharpe, 2)} />
-        <BtStat label="最大回撤"   value={item.maxDrawdown === null ? '-' : `${(item.maxDrawdown * 100).toFixed(1)}%`} />
-        <BtStat label="胜率"       value={item.winRate === null ? '-' : `${(item.winRate * 100).toFixed(1)}%`} />
-        <BtStat label="持有期"     value={`${item.period}天`} />
+        <BtStat label={t('metric.maxDrawdown')}   value={item.maxDrawdown === null ? '-' : `${(item.maxDrawdown * 100).toFixed(1)}%`} />
+        <BtStat label={t('metric.winRate')}       value={item.winRate === null ? '-' : `${(item.winRate * 100).toFixed(1)}%`} />
+        <BtStat label={t('metric.holdingPeriod')}     value={t('metric.days', { count: item.period })} />
       </div>
 
       <button
@@ -869,7 +875,7 @@ const DetailBtMetricCard = ({
         className={styles.btCurveButton}
         onClick={onToggleCurve}
       >
-        {isExpanded ? '收起净值曲线' : '查看净值曲线'}
+        {isExpanded ? t('research.curve.hide') : t('research.curve.show')}
       </button>
     </div>
   );

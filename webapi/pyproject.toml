@@ -20,6 +20,11 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "httpx>=0.27",
     "python-multipart>=0.0.9",
+    # PDF 报告：Jinja2 模板 + matplotlib 图表 + WeasyPrint HTML→PDF
+    # WeasyPrint 需要 Pango/cairo 原生库（Linux/WSL 环境 pip 即可；Windows 需额外装 GTK）
+    "jinja2>=3.1",
+    "matplotlib>=3.8",
+    "weasyprint>=62",
     # webapi 测试
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

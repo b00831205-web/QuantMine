@@ -1,30 +1,24 @@
 import type { Page } from './api';
 
-export type ReportStatus = 'queued' | 'running' | 'success' | 'failed';
+export type ReportLang = 'zh' | 'en';
 
-export type ReportSection =
-  | 'summary'
-  | 'data_quality'
-  | 'methodology'
-  | 'ic_significance'
-  | 'stability'
-  | 'backtest'
-  | 'monotonicity'
-  | 'risk'
-  | 'appendix';
-
-export interface ReportJob {
-  reportId: string;
-  researchRunId: string;
-  variants: string[];
-  tests: string[];
-  backtestJobs: string[];
-  sections: ReportSection[];
-  status: ReportStatus;
-  createdAt: string;
-  finishedAt: string | null;
-  downloadUrl: string | null;
-  errorMessage: string | null;
+/** 同步报告接口（report.pdf / report.xlsx）的查询参数 */
+export interface ReportQuery {
+  runId: number;
+  testId?: string;
+  lang: ReportLang;
+  ai: boolean;
 }
 
-export type ReportPage = Page<ReportJob>;
+/** 报告历史记录（轻量版：同步生成，生成即完成） */
+export interface ReportHistoryItem {
+  reportId: string;
+  runId: number;
+  testId?: string;
+  lang: ReportLang;
+  ai: boolean;
+  createdAt: string;
+  status: 'ready' | 'failed';
+}
+
+export type ReportHistoryPage = Page<ReportHistoryItem>;

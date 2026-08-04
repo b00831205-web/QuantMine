@@ -9,6 +9,8 @@ import { DataExplorerPage } from './pages/DataExplorerPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AIWorkbenchPage } from './pages/AIWorkbenchPage';
 import { AIConfigPage } from './pages/AIConfigPage';
+import { RebalanceDetailPage } from './pages/RebalanceDetailPage';
+import { WorkflowDetailPage } from './pages/WorkflowDetailPage';
 
 export const router = createBrowserRouter([
   {
@@ -19,12 +21,14 @@ export const router = createBrowserRouter([
       { path: 'market', element: <MarketOverviewPage /> },
       { path: 'rebalance', element: <RebalancePage /> },
       { path: 'workflows', element: <WorkflowsPage /> },
+      { path: 'workflows/:dagId', element: <WorkflowDetailPage /> },
       { path: 'research', element: <ResearchPage /> },
       { path: 'research/factors/:factorName', element: <FactorDetailPage /> },
       { path: 'data', element: <DataExplorerPage /> },
       { path: 'reports', element: <ReportsPage /> },
       { path: 'ai', element: <AIWorkbenchPage /> },
       { path: 'ai/config', element: <AIConfigPage /> },
+      { path: `rebalance/:rebalanceId`, element: <RebalanceDetailPage />}
     ],
   },
 ]);

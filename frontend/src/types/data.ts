@@ -33,3 +33,23 @@ export interface DataQuery {
 }
 
 export type DataPage = Page<Record<string, unknown>>;
+
+/** 结构化查询：条件（字段 + 操作符 + 值） */
+export interface StructuredCondition {
+  field: string;
+  op: 'eq' | 'ne' | 'gt' | 'lt' | 'contains';
+  value: string | number;
+}
+
+export interface StructuredQueryPayload {
+  resource: DataResource;
+  fields: string[];
+  conditions: StructuredCondition[];
+  limit?: number;
+}
+
+/** 查询结果：列名 + 行数据 */
+export interface QueryResult {
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+}

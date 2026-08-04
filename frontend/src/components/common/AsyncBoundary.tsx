@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { AsyncState } from '@/types/api';
 import { LoadingView } from './LoadingView';
 import { ErrorView } from './ErrorView';
@@ -27,9 +28,11 @@ export function AsyncBoundary<T>({
   children,
   isEmpty,
   onRetry,
-  emptyTitle = '暂无数据',
+  emptyTitle,
   emptyHint,
 }: Props<T>) {
+  const { t } = useTranslation();
+  const resolvedEmptyTitle = emptyTitle ?? t('common.noData');
   if (state.status === 'loading' || state.status === 'idle') {
     return <LoadingView />;
   }
@@ -42,9 +45,9 @@ export function AsyncBoundary<T>({
   if (state.status === 'success') {
     if (isEmpty?.(state.data) === true) {
       if (emptyHint){
-      return <EmptyView title={emptyTitle} hint={emptyHint} />;
+      return <EmptyView title={resolvedEmptyTitle} hint={emptyHint} />;
     }
-    return <EmptyView title = {emptyTitle}/>}
+    return <EmptyView title = {resolvedEmptyTitle}/>}
     return <>{children(state.data)}</>;
   }
   return null;

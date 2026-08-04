@@ -1,5 +1,6 @@
 import styles from './TopBar.module.css';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { fetchLatestMarketDate } from '@/api/client';
 
 /**
@@ -8,6 +9,7 @@ import { fetchLatestMarketDate } from '@/api/client';
  */
 
 export const TopBar = () => {
+  const { t } = useTranslation();
   const [latestTradeDate, setLatestTradeDate] = useState<string | null> (null);
   useEffect(()=>{
     fetchLatestMarketDate().then((data) => {setLatestTradeDate(data.latestTradeDate);}).catch(()=>{setLatestTradeDate(null);})
@@ -15,16 +17,16 @@ export const TopBar = () => {
   return (
     <header className={styles.bar}>
       <div className={styles.left}>
-        <span className={styles.label}>数据日期</span>
+        <span className={styles.label}>{t('topbar.dataDate')}</span>
         <span className={styles.value}>{latestTradeDate ?? '-'}</span>
         <span className={styles.sep}>·</span>
-        <span className={styles.label}>最新任务</span>
+        <span className={styles.label}>{t('topbar.latestTask')}</span>
         <span className={styles.badge}>IDLE</span>
       </div>
       <div className={styles.right}>
-        <span className={styles.label}>模型</span>
+        <span className={styles.label}>{t('topbar.model')}</span>
         <select className={styles.modelSelect} disabled>
-          <option>未配置</option>
+          <option>{t('topbar.notConfigured')}</option>
         </select>
         <span className={styles.user}>guest</span>
       </div>

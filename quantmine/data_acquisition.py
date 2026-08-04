@@ -147,16 +147,20 @@ def data_acquisition(
 
         for attempt in range(max_retries):
             try:
+                #threads=False: 串行请求, 避免并发触发Yahoo限流(429被误报成"possibly delisted")
+                #timeout=30: 单请求超时, 卡住快速失败而非无限挂起
                 data = yf.download(batch, start=start_date, end=end_date,
-                                auto_adjust=True, progress=False)
+                                auto_adjust=True, progress=False,
+                                threads=False, timeout=30)
                 if data.empty:
                     raise ValueError("Empty data returned")
                 if isinstance(data.columns, pd.MultiIndex):
                     close = data["Close"]
                     empty_tickers = close.columns[close.isnull().all()].tolist()
+                    #不再自动拉黑: 空列多为限流的真实票, 拉黑会永久排除它们, 越跑数据越少。
+                    #真退市由历史成分股表(带end_date)判定; 这里只记录不排除。
                     if empty_tickers:
-                        save_blacklist(empty_tickers, task_checkpoint_dir)
-                        print(f"Blacklisted :{empty_tickers}")
+                        print(f"Empty columns (not blacklisted): {empty_tickers}")
                 data.to_parquet(checkpoint_path)
                 return data
             except Exception as e:
@@ -272,7 +276,8 @@ def retry_batches(start_date: str, end_date: str, max_retries: int, checkpoint_d
         for attempt in range(max_retries):
             try:
                 data = yf.download(batch, start=start_date, end=end_date,
-                                auto_adjust=True, progress=False)
+                                auto_adjust=True, progress=False,
+                                threads=False, timeout=30)
                 if data.empty:
                     raise ValueError("Empty data returned")
                 retry_records.append({

@@ -1,7 +1,8 @@
+import { useTranslation } from 'react-i18next';
 import type { Page as PageT } from '@/types/api';
 import styles from './PaginatedTable.module.css';
 
-interface Column<T> {
+export interface Column<T> {
   key: string;
   header: string;
   render: (row: T) => React.ReactNode;
@@ -31,8 +32,9 @@ export function PaginatedTable<T>({
   onRowDoubleClick,
   selectedRowKey,
 }: Props<T>) {
+  const { t } = useTranslation();
   if (page.items.length === 0) {
-    return <div className={styles.empty}>{emptyHint ?? '无匹配数据'}</div>;
+    return <div className={styles.empty}>{emptyHint ?? t('common.noMatch')}</div>;
   }
   return (
     <div className={styles.wrap}>
@@ -69,7 +71,11 @@ export function PaginatedTable<T>({
       </table>
       <footer className={styles.footer}>
         <span>
-          共 {page.total} 条 · 第 {page.page} / {Math.max(1, Math.ceil(page.total / page.pageSize))} 页
+          {t('common.pagination', {
+            total: page.total,
+            page: page.page,
+            pages: Math.max(1, Math.ceil(page.total / page.pageSize)),
+          })}
         </span>
         <div className={styles.pager}>
           <button
@@ -77,14 +83,14 @@ export function PaginatedTable<T>({
             onClick={() => onPageChange?.(page.page - 1)}
             className={styles.btn}
           >
-            上一页
+            {t('common.prevPage')}
           </button>
           <button
             disabled={page.page * page.pageSize >= page.total}
             onClick={() => onPageChange?.(page.page + 1)}
             className={styles.btn}
           >
-            下一页
+            {t('common.nextPage')}
           </button>
         </div>
       </footer>

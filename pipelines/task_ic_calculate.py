@@ -77,19 +77,25 @@ def main():
         test_results = test_results,
     )
 
-    save_test_result_artifacts(
-    engine=engine,
-    run_id=run_id,
-    test_results=test_results,
-    output_dir=artifact_dir / "test_results",
-    )
-
+    #关键 artifact 先存: ic_artifacts 驱动前端 IC 时序图, 必须落库
     save_ic_artifacts(
         engine=engine,
         run_id=run_id,
         variants=variants,
         output_dir=artifact_dir,
     )
+
+    #辅助 artifact 放最后且尽力而为: test_result_artifacts 只是完整 summary 的存档,
+    #不在展示路径上; 存档失败(如权限缺失)不应让整条 run 作废。
+    try:
+        save_test_result_artifacts(
+            engine=engine,
+            run_id=run_id,
+            test_results=test_results,
+            output_dir=artifact_dir / "test_results",
+        )
+    except Exception as error:
+        print(f"WARNING: skipped test_result_artifacts ({type(error).__name__}: {error})")
 
     print(f'IC workflow completed: run_id = {run_id},' f'variants = {list(variants)}, tests = {list(test_results)}')
 
