@@ -3,7 +3,6 @@ import type {
   DagRunSummary,
   DagRunsPage,
   DagSummary,
-  TaskInstance,
   DagGraph,
   DagListItem,
   PauseResult,
@@ -12,6 +11,8 @@ import type {
   GridResponse,
   WorkflowRunsPage,
   CodeResponse,
+  TaskInstanceInfo,
+  TaskActionResult,
 } from '@/types/workflow';
 
 /* ─── 列表页（第一页）客户端 ─── */
@@ -106,8 +107,8 @@ export function fetchRunTasks(
   dagId: string,
   runId: string,
   signal?: AbortSignal,
-): Promise<TaskInstance[]> {
-    return http<TaskInstance[]>(
+): Promise<TaskInstanceInfo[]> {
+    return http<TaskInstanceInfo[]>(
         `/api/v1/workflows/${dagId}/runs/${runId}/tasks`,
         {signal},
     )
@@ -146,8 +147,8 @@ export function updateTaskState(
   taskId: string,
   action: 'clear' | 'mark-success' | 'mark-failed',
   signal? : AbortSignal,
-): Promise<TaskInstance>{
-  return http<TaskInstance>(
+): Promise<TaskActionResult>{
+  return http<TaskActionResult>(
     `/api/v1/workflows/${dagId}/runs/${runId}/tasks/${taskId}/${action}`,
     {method: 'POST', signal}
   )

@@ -99,6 +99,19 @@ class GridResponse(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class TaskInstanceInfo(BaseModel):
+    """某次运行里单个任务实例的时间信息（甘特图数据源）。"""
+
+    task_id: str = Field(alias="taskId")
+    state: TaskState | None = None
+    start_date: datetime | None = Field(default=None, alias="startDate")
+    end_date: datetime | None = Field(default=None, alias="endDate")
+    duration_ms: int | None = Field(default=None, alias="durationMs")
+    try_number: int = Field(default=0, alias="tryNumber")
+
+    model_config = {"populate_by_name": True}
+
+
 class RunsPage(BaseModel):
     items: list[RunRef]
     total: int
@@ -119,6 +132,15 @@ class CodeResponse(BaseModel):
 class PauseResponse(BaseModel):
     dag_id: str = Field(alias="dagId")
     is_paused: bool = Field(alias="isPaused")
+
+    model_config = {"populate_by_name": True}
+
+
+class TaskActionResponse(BaseModel):
+    task_id: str = Field(alias="taskId")
+    action: str
+    state: TaskState | None = None
+    altered: int = 0
 
     model_config = {"populate_by_name": True}
 

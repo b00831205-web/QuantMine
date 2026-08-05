@@ -18,6 +18,7 @@ from .schemas import (
     GridRun,
     RunRef,
     RunsPage,
+    TaskInstanceInfo,
 )
 
 # 列表页每个 DAG 展示的“最近运行”色块数量。
@@ -282,6 +283,46 @@ def get_grid(dag_id: str, limit: int = 25) -> GridResponse:
                 )
             )
     return GridResponse(task_ids=ordered, runs=runs)
+
+
+def get_run_tasks(dag_id: str, run_id: str) -> list[TaskInstanceInfo]:
+    """某次运行的任务实例（按拓扑顺序，含未生成实例的任务占位）——甘特图数据源。"""
+    with connect() as conn:
+        task_ids, edges, _ = _graph_parts(conn, dag_id)
+        order = _topo_order(task_ids, edges)
+        rows = conn.execute(
+            """
+            SELECT task_id, state, start_date, end_date, duration, try_number
+            FROM task_instance WHERE dag_id = ? AND run_id = ?
+            """,
+            (dag_id, run_id),
+        ).fetchall()
+        by_id = {r["task_id"]: r for r in rows}
+
+        result: list[TaskInstanceInfo] = []
+        for tid in order:
+            r = by_id.get(tid)
+            if r is None:
+                result.append(TaskInstanceInfo(task_id=tid))
+                continue
+            start = _parse_dt(r["start_date"])
+            end = _parse_dt(r["end_date"])
+            dur = (
+                int(r["duration"] * 1000)
+                if r["duration"] is not None
+                else _duration_ms(start, end)
+            )
+            result.append(
+                TaskInstanceInfo(
+                    task_id=tid,
+                    state=r["state"],
+                    start_date=start,
+                    end_date=end,
+                    duration_ms=dur,
+                    try_number=r["try_number"] or 0,
+                )
+            )
+        return result
 
 
 def list_runs(dag_id: str, page: int, page_size: int) -> RunsPage:

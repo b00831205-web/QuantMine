@@ -10,8 +10,10 @@ import {
   fetchWorkflowGrid,
   fetchWorkflowRuns,
   fetchWorkflowCode,
+  fetchRunTasks,
   pauseDag,
   triggerWorkflow,
+  updateTaskState,
 } from '@/api/client';
 import type {
   DagDetail,
@@ -19,9 +21,11 @@ import type {
   GridResponse,
   WorkflowRunsPage,
   CodeResponse,
+  TaskInstanceInfo,
 } from '@/types/workflow';
 import type { AsyncState } from '@/types/api';
 import { DagGraphView } from '@/components/chart/DagGraph';
+import { TaskBarChart } from '@/components/chart/TaskBarChart';
 import { stateColor, stateLabel, CORE_LEGEND } from '@/utils/workflowStatus';
 import { fmtDateTime, fmtDuration } from '@/utils/format';
 import { Toggle } from '@/components/common/Toggle';
@@ -70,6 +74,22 @@ function useAsync<T>(
   return state;
 }
 
+/** 状态标记：成功/失败用旗帜（绿旗/红旗），其余用圆点。 */
+const StateMark = ({ state }: { state: string | null }) => {
+  if (state === 'success' || state === 'failed') {
+    return (
+      <span style={{ color: stateColor(state), fontSize: 13, lineHeight: 1 }} aria-hidden>
+        ⚑
+      </span>
+    );
+  }
+  return (
+    <span
+      style={{ width: 8, height: 8, borderRadius: '50%', background: stateColor(state) }}
+    />
+  );
+};
+
 const StateChip = ({ state }: { state: string | null }) => (
   <span
     style={{
@@ -83,9 +103,7 @@ const StateChip = ({ state }: { state: string | null }) => (
       fontSize: 12,
     }}
   >
-    <span
-      style={{ width: 8, height: 8, borderRadius: '50%', background: stateColor(state) }}
-    />
+    <StateMark state={state} />
     {stateLabel(state)}
   </span>
 );
@@ -132,12 +150,21 @@ export const WorkflowDetailPage = () => {
   const [confirmTrigger, setConfirmTrigger] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [runsPage, setRunsPage] = useState(1);
+  const [gridRefresh, setGridRefresh] = useState(0);
+  const [taskBusy, setTaskBusy] = useState<string | null>(null);
   const RUNS_PAGE_SIZE = 20;
 
   const detailState = useAsync<DagDetail>((s) => fetchWorkflowDetail(dagId, s), [dagId]);
   const graphState = useAsync<DagGraph>((s) => fetchDagGraph(dagId, s), [dagId]);
-  const gridState = useAsync<GridResponse>((s) => fetchWorkflowGrid(dagId, 25, s), [dagId]);
+  const gridState = useAsync<GridResponse>(
+    (s) => fetchWorkflowGrid(dagId, 25, s),
+    [dagId, gridRefresh],
+  );
   const codeState = useAsync<CodeResponse>((s) => fetchWorkflowCode(dagId, s), [dagId]);
+  const runTasksState = useAsync<TaskInstanceInfo[]>(
+    (s) => (selectedRunId ? fetchRunTasks(dagId, selectedRunId, s) : Promise.resolve([])),
+    [dagId, selectedRunId, gridRefresh],
+  );
   const runsState = useAsync<WorkflowRunsPage>(
     (s) => fetchWorkflowRuns(dagId, runsPage, RUNS_PAGE_SIZE, s),
     [dagId, runsPage],
@@ -199,6 +226,34 @@ export const WorkflowDetailPage = () => {
   const selectRunForGraph = (runId: string) => {
     setSelectedRunId(runId);
     setActiveTab('graph');
+  };
+
+  const TASK_ACTION_LABEL: Record<'mark-success' | 'mark-failed' | 'clear', string> = {
+    'mark-success': '标记成功',
+    'mark-failed': '标记失败',
+    clear: '清除重跑',
+  };
+
+  const runTaskAction = async (
+    taskId: string,
+    action: 'mark-success' | 'mark-failed' | 'clear',
+  ) => {
+    if (!selectedRunId) return;
+    setTaskBusy(`${taskId}:${action}`);
+    setActionMsg(null);
+    try {
+      await updateTaskState(dagId, selectedRunId, taskId, action);
+      setActionMsg(`${taskId} · ${TASK_ACTION_LABEL[action]} 成功`);
+      setGridRefresh((k) => k + 1); // 刷新网格 → 图与任务面板重新着色
+    } catch (error) {
+      setActionMsg(
+        error instanceof HttpError
+          ? `${TASK_ACTION_LABEL[action]}失败：${error.apiError.detail ?? error.apiError.title}`
+          : `${TASK_ACTION_LABEL[action]}失败`,
+      );
+    } finally {
+      setTaskBusy(null);
+    }
   };
 
   return (
@@ -388,16 +443,98 @@ export const WorkflowDetailPage = () => {
             emptyTitle="该 DAG 暂无拓扑"
             emptyHint="确认 serialized_dag 有数据"
           >
-            {(g) => (
-              <>
-                <DagGraphView
-                  graph={g}
-                  height={440}
-                  {...(selectedRun ? { taskStates: selectedRun.taskStates } : {})}
-                />
-                <Legend />
-              </>
-            )}
+            {(g) => {
+              const runLabel = selectedRun
+                ? `${stateLabel(selectedRun.state)} · ${fmtDateTime(selectedRun.startDate ?? selectedRun.logicalDate)}`
+                : '未选运行';
+              return (
+                <>
+                  {/* 上：图（大） */}
+                  <DagGraphView
+                    graph={g}
+                    height={440}
+                    {...(selectedRun ? { taskStates: selectedRun.taskStates } : {})}
+                  />
+                  <Legend />
+
+                  {/* 下：左甘特图 / 右任务操作 */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      // minmax(0,…) 关键：否则 fr 轨道有隐式 min-width:auto，
+                      // 右栏按钮会把它撑大，导致近似 1:1 而非 1:3。
+                      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 3fr)',
+                      gap: 'var(--sp-5)',
+                      marginTop: 'var(--sp-4)',
+                    }}
+                  >
+                    {/* 左：任务耗时柱状图 */}
+                    <div>
+                      <div style={sectionTitle}>任务耗时 · {runLabel}</div>
+                      <AsyncBoundary
+                        state={runTasksState}
+                        isEmpty={(rows) => rows.length === 0}
+                        emptyTitle="未选运行"
+                        emptyHint="在右上角选择一次运行"
+                      >
+                        {(rows) => <TaskBarChart tasks={rows} />}
+                      </AsyncBoundary>
+                    </div>
+
+                    {/* 右：任务操作 */}
+                    <div>
+                      <div style={sectionTitle}>任务操作 · {runLabel}</div>
+                      <div>
+                        {g.nodes.map((n) => {
+                          const st = selectedRun?.taskStates[n.id] ?? null;
+                          return (
+                            <div
+                              key={n.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 'var(--sp-2)',
+                                height: TASK_ROW_H,
+                                borderBottom: '1px solid var(--border-subtle)',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  flex: 1,
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  fontSize: 'var(--fs-sm)',
+                                }}
+                                title={n.id}
+                              >
+                                {n.id}
+                              </div>
+                              <div style={{ width: 92, flexShrink: 0 }}>
+                                <StateChip state={st} />
+                              </div>
+                              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                                {(['mark-success', 'mark-failed', 'clear'] as const).map((a) => (
+                                  <button
+                                    key={a}
+                                    type="button"
+                                    disabled={!selectedRunId || taskBusy !== null}
+                                    onClick={() => runTaskAction(n.id, a)}
+                                    style={taskBtnStyle(a, !selectedRunId || taskBusy !== null)}
+                                  >
+                                    {taskBusy === `${n.id}:${a}` ? '…' : TASK_ACTION_LABEL[a]}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            }}
           </AsyncBoundary>
         </Card>
       )}
@@ -702,3 +839,34 @@ const cellStyle: React.CSSProperties = {
   fontSize: 'var(--fs-sm)',
   whiteSpace: 'nowrap',
 };
+
+/** 任务操作列表每行行高。 */
+const TASK_ROW_H = 44;
+
+const sectionTitle: React.CSSProperties = {
+  fontSize: 'var(--fs-sm)',
+  color: 'var(--text-muted)',
+  marginBottom: 'var(--sp-2)',
+};
+
+const TASK_BTN_COLOR: Record<'mark-success' | 'mark-failed' | 'clear', string> = {
+  'mark-success': 'var(--positive)',
+  'mark-failed': 'var(--negative)',
+  clear: 'var(--text-muted)',
+};
+
+const taskBtnStyle = (
+  action: 'mark-success' | 'mark-failed' | 'clear',
+  disabled: boolean,
+): React.CSSProperties => ({
+  padding: '3px 8px',
+  fontSize: 12,
+  lineHeight: 1.4,
+  borderRadius: 6,
+  border: `1px solid ${TASK_BTN_COLOR[action]}`,
+  background: 'transparent',
+  color: TASK_BTN_COLOR[action],
+  cursor: disabled ? 'not-allowed' : 'pointer',
+  opacity: disabled ? 0.45 : 1,
+  whiteSpace: 'nowrap',
+});

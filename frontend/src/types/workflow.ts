@@ -110,10 +110,27 @@ export interface GridResponse {
 
 export type WorkflowRunsPage = Page<RunRef>;
 
+/** 某次运行里单个任务实例的时间信息（甘特图数据源）。 */
+export interface TaskInstanceInfo {
+  taskId: string;
+  state: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  durationMs: number | null;
+  tryNumber: number;
+}
+
 export interface CodeResponse {
   dagId: string;
   fileloc: string | null;
   sourceCode: string;
+}
+
+export interface TaskActionResult {
+  taskId: string;
+  action: string;
+  state: string | null;
+  altered: number;
 }
 
 export interface PauseResult {

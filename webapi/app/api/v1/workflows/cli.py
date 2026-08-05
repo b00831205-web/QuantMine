@@ -5,20 +5,26 @@
 调度器/执行器正常拾取。
 
 环境变量：
-    QUANT_AIRFLOW_BIN   airflow 可执行文件路径。默认 ``<项目根>/.venv/bin/airflow``
-                        （本项目 scheduler 即从此 venv 运行）。
-    AIRFLOW_HOME        Airflow 主目录。默认 ``<项目根>/airflow``（airflow.cfg 所在）。
+    QUANT_AIRFLOW_BIN     airflow 可执行文件。默认 ``<项目根>/.venv/bin/airflow``
+                          （本项目 scheduler 即从此 venv 运行）。
+    QUANT_AIRFLOW_PYTHON  运行任务级写操作脚本的 python。默认同 venv 的 python。
+    AIRFLOW_HOME          Airflow 主目录。默认 ``<项目根>/airflow``（airflow.cfg 所在）。
+    QUANT_AIRFLOW_DB（可选）当设置时，变更操作把 Airflow 的 sql_alchemy_conn 指到该库，
+                          与 webapi 只读的库保持一致（demo 场景指向 /tmp 副本）。
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[5]
 _DEFAULT_BIN = _PROJECT_ROOT / ".venv" / "bin" / "airflow"
+_DEFAULT_PYTHON = _PROJECT_ROOT / ".venv" / "bin" / "python"
 _DEFAULT_HOME = _PROJECT_ROOT / "airflow"
+_TASK_ACTION_SCRIPT = Path(__file__).resolve().parent / "_airflow_task_action.py"
 
 
 class AirflowCliError(RuntimeError):
@@ -29,9 +35,20 @@ def _airflow_bin() -> str:
     return os.environ.get("QUANT_AIRFLOW_BIN", str(_DEFAULT_BIN))
 
 
+def _airflow_python() -> str:
+    return os.environ.get("QUANT_AIRFLOW_PYTHON", str(_DEFAULT_PYTHON))
+
+
 def _airflow_env() -> dict[str, str]:
     env = dict(os.environ)
     env.setdefault("AIRFLOW_HOME", str(_DEFAULT_HOME))
+    # 让变更操作命中 webapi 正在读取的同一个库。
+    db = os.environ.get("QUANT_AIRFLOW_DB")
+    if db:
+        db_path = Path(db)
+        if not db_path.is_absolute():
+            db_path = _PROJECT_ROOT / db_path
+        env["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"] = f"sqlite:///{db_path.as_posix()}"
     return env
 
 
@@ -58,3 +75,33 @@ def run(*args: str, timeout: float = 60.0) -> str:
             (proc.stderr.strip() or proc.stdout.strip() or "airflow CLI 返回非零")
         )
     return proc.stdout
+
+
+def run_task_action(dag_id: str, run_id: str, task_id: str, action: str, timeout: float = 90.0) -> dict:
+    """执行任务级写操作（clear / mark-success / mark-failed）。
+
+    通过 Airflow venv 的 python 跑 `_airflow_task_action.py`（该脚本用 Airflow ORM
+    直接改 task_instance 状态）。返回脚本最后一行的 JSON dict。
+    """
+    cmd = [_airflow_python(), str(_TASK_ACTION_SCRIPT), dag_id, run_id, task_id, action]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, env=_airflow_env()
+        )
+    except FileNotFoundError as exc:
+        raise AirflowCliError(f"未找到 python：{_airflow_python()}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise AirflowCliError(f"任务操作超时（{timeout}s）") from exc
+
+    if proc.returncode != 0:
+        raise AirflowCliError(proc.stderr.strip() or proc.stdout.strip() or "任务操作失败")
+
+    # 脚本会打印 Airflow 日志到 stderr，结果 JSON 在 stdout 最后一行。
+    last = ""
+    for line in proc.stdout.splitlines():
+        if line.strip():
+            last = line.strip()
+    try:
+        return json.loads(last)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise AirflowCliError(f"无法解析任务操作输出：{last!r}") from exc

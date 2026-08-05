@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Body, HTTPException, Path, Query
 
 from . import service
-from .cli import AirflowCliError, run as airflow_cli
+from .cli import AirflowCliError, run as airflow_cli, run_task_action
 from .schemas import (
     CodeResponse,
     DagDetail,
@@ -20,8 +20,12 @@ from .schemas import (
     GridResponse,
     PauseResponse,
     RunsPage,
+    TaskActionResponse,
+    TaskInstanceInfo,
     TriggerResponse,
 )
+
+_TASK_ACTIONS = {"clear", "mark-success", "mark-failed"}
 
 router = APIRouter()
 
@@ -81,6 +85,16 @@ def get_workflow_grid(
 ) -> GridResponse:
     _ensure_dag(dag_id)
     return service.get_grid(dag_id, limit)
+
+
+@router.get(
+    "/workflows/{dag_id}/runs/{run_id}/tasks",
+    response_model=list[TaskInstanceInfo],
+    summary="某次运行的任务实例（甘特图）",
+)
+def get_run_tasks(dag_id: str = Path(...), run_id: str = Path(...)) -> list[TaskInstanceInfo]:
+    _ensure_dag(dag_id)
+    return service.get_run_tasks(dag_id, run_id)
 
 
 @router.get(
@@ -152,3 +166,30 @@ def trigger_workflow(dag_id: str = Path(...)) -> TriggerResponse:
     except AirflowCliError as exc:
         raise HTTPException(status_code=502, detail=f"airflow dags trigger 失败：{exc}") from exc
     return TriggerResponse(dag_id=dag_id, run_id=run_id, state="queued")
+
+
+@router.post(
+    "/workflows/{dag_id}/runs/{run_id}/tasks/{task_id}/{action}",
+    response_model=TaskActionResponse,
+    status_code=202,
+    summary="任务操作：清除重跑 / 标记成功 / 标记失败",
+)
+def task_action(
+    dag_id: str = Path(...),
+    run_id: str = Path(...),
+    task_id: str = Path(...),
+    action: str = Path(..., description="clear | mark-success | mark-failed"),
+) -> TaskActionResponse:
+    if action not in _TASK_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"不支持的操作：{action}")
+    _ensure_dag(dag_id)
+    try:
+        result = run_task_action(dag_id, run_id, task_id, action)
+    except AirflowCliError as exc:
+        raise HTTPException(status_code=502, detail=f"任务操作失败：{exc}") from exc
+    return TaskActionResponse(
+        task_id=task_id,
+        action=action,
+        state=result.get("state"),
+        altered=int(result.get("altered", 0)),
+    )
