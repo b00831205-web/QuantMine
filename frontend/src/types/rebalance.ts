@@ -7,6 +7,7 @@ export interface RebalanceSummary {
   factor: string;
   holdingPeriod: number; // 交易日
   type: 'quantile' | 'long_short';
+  quantile: string; // LS / Q1..Q5
   rebalanceDate: string;
   netReturn: number; // 净收益，单位见 unit
   spyReturn: number;
@@ -27,6 +28,7 @@ export interface RebalanceQuery {
   backtestJob?: string;
   variant?: string;
   factor?: string;
+  tradeDate?: string; // YYYY-MM-DD，按调仓日期搜索
   page?: number;
   pageSize?: number;
 }

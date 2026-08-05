@@ -2,21 +2,26 @@ import { useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import styles from './AIQuickPanel.module.css';
 
+interface Props {
+  open: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}
+
 /**
- * AI 快捷窗口：1~6 页面共享的浮层，AI 工作台自身不渲染。
- * 阶段 0 仅展示静态骨架 + 输入框；具体对话逻辑留待阶段 7。
+ * AI 快捷窗口：页面 1~6 共享的右侧栏，AI 工作台自身不渲染。
+ * 展开时作为 grid 第三列参与布局，主内容收窄；收起时显示右下角气泡。
  */
-export const AIQuickPanel = () => {
+export const AIQuickPanel = ({ open, onOpen, onClose }: Props) => {
   const { pathname } = useLocation();
   const showOnPage = pathname.startsWith('/ai') ? null : pathname;
-  const [collapsed, setCollapsed] = useState(false);
   const [draft, setDraft] = useState('');
 
   if (!showOnPage) return null;
 
-  if (collapsed) {
+  if (!open) {
     return (
-      <button className={styles.fab} onClick={() => setCollapsed(false)} aria-label="打开 AI 助手">
+      <button className={styles.fab} onClick={onOpen} aria-label="打开 AI 助手">
         AI
       </button>
     );
@@ -26,7 +31,7 @@ export const AIQuickPanel = () => {
     <aside className={styles.panel}>
       <header className={styles.header}>
         <span className={styles.title}>AI 助手</span>
-        <button className={styles.iconBtn} onClick={() => setCollapsed(true)} aria-label="收起">
+        <button className={styles.iconBtn} onClick={onClose} aria-label="收起">
           ×
         </button>
       </header>

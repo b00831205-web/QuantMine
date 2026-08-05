@@ -41,7 +41,7 @@ async def get_ic_series(
     engine: Engine = Depends(get_request_engine)
 )-> IcSeriesResponse:
     if not research_run_exists(engine, run_id):
-        raise HTTPException(status = 404, detail='Research run not found')
+        raise HTTPException(status_code=404, detail='Research run not found')
 
     variants = load_ic_variants(engine, run_id)
     selected_variant = variants.get(variant)

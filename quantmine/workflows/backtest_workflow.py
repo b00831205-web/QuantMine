@@ -46,16 +46,52 @@ def run_backtest_job(close: pd.DataFrame, variant: ICVariant, test_result: TestR
     }
 
 
-def back_test_workflow(back_test_job: dict, backtest_config: dict):
+def _annualized_return(daily: pd.Series) -> float:
+    """把一段日收益复利成年化收益（252 交易日/年）。空/无效返回 NaN。"""
+    daily = daily.dropna()
+    if daily.empty:
+        return float('nan')
+    n_years = len(daily) / 252
+    net = float((1 + daily).prod())
+    if net <= 0 or n_years <= 0:
+        return float('nan')
+    return net ** (1 / n_years) - 1
+
+
+def back_test_workflow(back_test_job: dict, backtest_config: dict, close: pd.DataFrame | None = None):
     if back_test_job['status'] == 'no_significant_factor':
         return {}
     quantile_backtest = back_test_job['quantile_returns']
     daily_returns = back_test_job['daily_returns']
+    ticker_history_by_fp = back_test_job.get('ticker_history', {})
+    part = backtest_config['part']
     BacktestJobResult = {}
     for factor_period, factor_df in quantile_backtest.items():
         daily_df = daily_returns[factor_period]
         summary_df, net_return_df = back_testing.performance_summary(daily_df, periods=1)
         monotonicity_test_result = back_testing.monotonicity_test(factor_df, backtest_config['part'])
+
+        # —— 换手率（turnover）：每组按调仓取平均换手；long_short 用 Q1+Q_top 两腿之和 ——
+        history = ticker_history_by_fp.get(factor_period, [])
+
+        def _group_turnover(group: str) -> float:
+            series = back_testing.calculate_turnover(history, group)
+            return float(series.mean()) if len(series) else float('nan')
+
+        turnover_map = {}
+        for group in summary_df.index:
+            if group == 'long_short':
+                turnover_map[group] = _group_turnover(f'Q{part}') + _group_turnover('Q1')
+            else:
+                turnover_map[group] = _group_turnover(group)
+        summary_df['turnover'] = pd.Series(turnover_map)
+
+        # —— 超额（excess）：各组年化收益 − SPY 同区间年化收益 ——
+        if close is not None and 'SPY' in close.columns and not daily_df.empty:
+            spy_annual = _annualized_return(close['SPY'].pct_change().reindex(daily_df.index))
+            summary_df['excess'] = summary_df['yearly_return'] - spy_annual
+        else:
+            summary_df['excess'] = float('nan')
         cache_dict = {
             'status': 'ok',
             'back_test_job': back_test_job,
@@ -109,7 +145,7 @@ def run_backtest_workflow(
                                  sample_scope = test_output['sample_scope'])
         job_result = run_backtest_job(close = close, variant=variant , test_result= test_result, job_config=job, constituents=constituents)
 
-        analysis = back_test_workflow(back_test_job= job_result, backtest_config=job)
+        analysis = back_test_workflow(back_test_job= job_result, backtest_config=job, close=close)
         sensitivity_config = job.get('sensitivity', {})
         sanity_results = None
 

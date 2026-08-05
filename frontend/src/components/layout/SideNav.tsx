@@ -6,6 +6,8 @@ interface NavItem {
   to: string;
   labelKey: string;
   group: 'core' | 'ai';
+  /** true 时 NavLink 精确匹配（/ai 不能匹配 /ai/config 前缀） */
+  end?: boolean;
 }
 
 const ITEMS: NavItem[] = [
@@ -15,7 +17,7 @@ const ITEMS: NavItem[] = [
   { to: '/research', labelKey: 'nav.research', group: 'core' },
   { to: '/data', labelKey: 'nav.data', group: 'core' },
   { to: '/reports', labelKey: 'nav.reports', group: 'core' },
-  { to: '/ai', labelKey: 'nav.ai', group: 'ai' },
+  { to: '/ai', labelKey: 'nav.ai', group: 'ai', end: true },
   { to: '/ai/config', labelKey: 'nav.aiConfig', group: 'ai' },
 ];
 
@@ -28,7 +30,12 @@ export const SideNav = () => {
       <div className={styles.brand}>QUANTMINE</div>
       <nav className={styles.list}>
         {core.map((item) => (
-          <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}>
+          <NavLink
+            key={item.to}
+            to={item.to}
+            {...(item.end ? { end: true } : {})}
+            className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
+          >
             {t(item.labelKey)}
           </NavLink>
         ))}

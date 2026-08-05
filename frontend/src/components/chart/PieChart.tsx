@@ -14,19 +14,21 @@ export interface PieDatum{
 interface Props{
     data: PieDatum[];
     height?: number;
+    /** 是否显示图例。持仓很多（几十只）时图例会铺满并盖住饼图，传 false 关闭。 */
+    showLegend?: boolean;
 }
 
-export const PieChart = ({data, height = 260}: Props) =>{
+export const PieChart = ({data, height = 260, showLegend = true}: Props) =>{
     const ref = useRef<HTMLDivElement| null>(null);
     const chartRef = useRef<echarts.ECharts|null>(null); 
 
     useEffect(()=>{
         if (!ref.current) return;
         chartRef.current = echarts.init(ref.current, undefined, {renderer: 'canvas'});
-        const onResize = ()=>chartRef.current?.resize();
-        window.addEventListener('resize', onResize);
+        const observer = new ResizeObserver(()=>chartRef.current?.resize());
+        observer.observe(ref.current);
         return ()=> {
-            window.removeEventListener('resize', onResize)
+            observer.disconnect();
             chartRef.current?.dispose();
             chartRef.current = null;
         };
@@ -37,7 +39,9 @@ export const PieChart = ({data, height = 260}: Props) =>{
         chartRef.current.setOption({
             color : data.map((_, i)=> `hsl(${Math.round((i/data.length) * 360)}, 65%, 55%)`),
             tooltip:{trigger: 'item'},
-            legend: {bottom: 0, textSyle: {color: '#9aa3b8'}},
+            legend: showLegend
+                ? {type: 'scroll', bottom: 0, textStyle: {color: '#9aa3b8'}}
+                : {show: false},
             series: [{
                 type: 'pie',
                 radius: ['45%','70%'],
@@ -46,6 +50,6 @@ export const PieChart = ({data, height = 260}: Props) =>{
             },
         ],
         });
-    },[data]);
+    },[data, showLegend]);
     return <div ref={ref} style = {{width: '100%', height}}/>
 };

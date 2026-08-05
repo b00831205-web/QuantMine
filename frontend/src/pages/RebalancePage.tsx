@@ -20,6 +20,9 @@ const formatReturn = (value: number, unit: Unit): string=>
 
 const REBALANCE_COLUMNS: Column<RebalanceSummary>[] = [
   { key: 'rebalanceDate', header: '调仓日期', align: 'left', render: (r) => r.rebalanceDate },
+  { key: 'variant', header: '变体', align: 'left', render: (r) => r.variant },
+  { key: 'holdingPeriod', header: '持有期', align: 'right', render: (r) => `${r.holdingPeriod}d` },
+  { key: 'quantile', header: '分位', align: 'left', render: (r) => r.quantile },
   { key: 'netReturn', header: '净收益', align: 'right', render: (r) => formatReturn(r.netReturn, r.unit) },
   { key: 'spyReturn', header: 'SPY', align: 'right', render: (r) => formatReturn(r.spyReturn, r.unit) },
   { key: 'excessReturn', header: '超额', align: 'right', render: (r) => formatReturn(r.excessReturn, r.unit) },
@@ -36,6 +39,8 @@ export const RebalancePage = () => {
   const [backtestJob, setBacktestJob] = useState('');
   const [variant, setVariant] = useState('');
   const [factor, setFactor] = useState('')
+  const [searchDate, setSearchDate] = useState('');
+  const [page, setPage] = useState(1);
 
   const filterOptions = listState.status ==='success'?{
     backtestJob: Array.from(new Set(listState.data.items.map((r)=> r.backtestJob))),
@@ -82,11 +87,12 @@ export const RebalancePage = () => {
     const controller = new AbortController();
     setListState({ status: 'loading' });
     fetchRebalances({
-      page : 1,
+      page,
       pageSize: 20,
       ...(backtestJob? {backtestJob}: {}),
       ...(variant? {variant}: {}),
       ...(factor? {factor}: {}),
+      ...(searchDate? {tradeDate: searchDate}: {}),
     },
   controller.signal)
       .then((data) => {
@@ -118,11 +124,13 @@ export const RebalancePage = () => {
       });
 
     return () => controller.abort();
-  }, [backtestJob, variant, factor]);
+  }, [backtestJob, variant, factor, searchDate, page]);
 
+  // 筛选/搜索变化时，回到第一页并清空选中
   useEffect(()=>{
     setSelectedId(null);
-  }, [backtestJob, variant, factor])
+    setPage(1);
+  }, [backtestJob, variant, factor, searchDate])
 
   useEffect(()=>{
     if (selectedId === null){
@@ -229,7 +237,23 @@ export const RebalancePage = () => {
       </Card>
 
       <Card title="筛选条件" minHeight={120}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--sp-4)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--sp-4)' }}>
+          <label style ={{display: 'flex', flexDirection: 'column', gap: 'var(--sp-1)'}}>
+            <span style = {{color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)'}}>调仓日期（搜索）</span>
+            <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
+              <input
+                type="date"
+                value={searchDate}
+                onChange={(e) => setSearchDate(e.target.value)}
+                style={{ flex: 1, minWidth: 0, padding: 'var(--sp-1) var(--sp-2)', background: 'var(--bg-surface-2)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)' }}
+              />
+              {searchDate && (
+                <button type="button" onClick={() => setSearchDate('')} title="清除" style={{ padding: '0 var(--sp-2)', background: 'transparent', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}>
+                  ×
+                </button>
+              )}
+            </div>
+          </label>
           <label style ={{display: 'flex', flexDirection: 'column', gap: 'var(--sp-1)'}}>
             <span style = {{color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)'}}>Backtest Job</span>
             <select
@@ -281,11 +305,14 @@ export const RebalancePage = () => {
               <PaginatedTable
                 columns={REBALANCE_COLUMNS}
                 page={data}
+                onPageChange={(p) => setPage(p)}
                 rowKey={(row) => row.rebalanceId}
                 onRowClick={(row) => setSelectedId(row.rebalanceId)}
-                onRowDoubleClick={(row) => navigate(`/rebalance/${row.rebalanceId}`)
-                  
-                }
+                onRowDoubleClick={(row) => {
+                  // LS（多空组合）没有单独持仓，详情页无内容可看，不跳转
+                  if (row.quantile === 'LS') return;
+                  navigate(`/rebalance/${row.rebalanceId}`);
+                }}
                 selectedRowKey={selectedId ?? undefined}
                 emptyHint="暂无调仓记录"
               />
@@ -296,12 +323,32 @@ export const RebalancePage = () => {
         <Card title="前 20 只股票收益">
           <AsyncBoundary state={detailState}>
             {(detail) => {
-              const quantileBySymbol = new Map(
-                detail.holdings.map((h)=> [h.symbol, h.quantile]),
+              // 以持仓为主，关联前向收益（contributions）。最新一期没有下一期价格 →
+              // 无 contributions，此时仍展示持仓、收益列显示「—」。
+              const contribBySymbol = new Map(
+                detail.contributions.map((c) => [c.symbol, c.contribution]),
               );
-              const top = [...detail.contributions]
-                .sort((a, b) => b.contribution - a.contribution)
-                .slice(0, 20);
+              const hasContrib = detail.contributions.length > 0;
+              const rows = detail.holdings.map((h) => ({
+                symbol: h.symbol,
+                quantile: h.quantile ?? '-',
+                contribution: contribBySymbol.get(h.symbol) ?? null,
+              }));
+              const top = (
+                hasContrib
+                  ? rows.sort(
+                      (a, b) => (b.contribution ?? -Infinity) - (a.contribution ?? -Infinity),
+                    )
+                  : rows
+              ).slice(0, 20);
+
+              if (top.length === 0) {
+                return (
+                  <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', padding: 'var(--sp-3)' }}>
+                    该调仓无单独持仓（如 LS 多空组合），请选择 Q1–Q5 的行查看。
+                  </div>
+                );
+              }
               return (
                 <table style = {{width: '100%', fontSize: 'var(--fs-sm)', borderCollapse: 'collapse'}}>
                   <thead>
@@ -313,20 +360,26 @@ export const RebalancePage = () => {
                       </tr>
                   </thead>
                   <tbody>
-                
-                  {top.map((c, index) => (
-                    <tr key = {c.symbol} style = {{borderBottom: '1px solid var(--border-subtle)'}}>
+                  {top.map((r, index) => (
+                    <tr key = {r.symbol} style = {{borderBottom: '1px solid var(--border-subtle)'}}>
                       <td style = {{color: 'var(--text-muted)'}}>{index+1}</td>
-                      <td>{c.symbol}</td>
+                      <td>{r.symbol}</td>
                       <td style = {{color: 'var(--text-muted)', background: 'var(--bg-surface-2)',textAlign: 'center'}}>
-                        {quantileBySymbol.get(c.symbol)?? '-'}
+                        {r.quantile}
                       </td>
                       <td style = {{textAlign: 'right',
                         fontWeight: 600,
-                        color: c.contribution>=0 ? 'var(--positive)': 'var(--negative)'
+                        color: (!hasContrib || r.contribution === null)
+                          ? 'var(--text-muted)'
+                          : r.contribution >= 0 ? 'var(--positive)' : 'var(--negative)'
                       }}
                       >
-                        {formatReturn(c.contribution, detail.unit)}
+                        {/* 最新一期无前向窗口 → 不适用；个股缺价 → — */}
+                        {!hasContrib
+                          ? '不适用'
+                          : r.contribution === null
+                            ? '—'
+                            : formatReturn(r.contribution, detail.unit)}
                       </td>
                     </tr>
                   ))}

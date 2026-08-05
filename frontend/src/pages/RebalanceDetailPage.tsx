@@ -123,31 +123,33 @@ export const RebalanceDetailPage = () => {
                 <PieChart
                   data = {detail.holdings.map((h)=>({name: h.symbol, value: h.weight}))}
                   height={380}
+                  showLegend={false}
                 />
-                <ul>
-                  <table style ={{
-                    width: '100%',
-                    marginTop: 'var(--sp-3)',
-                    fontSize: 'var(--fs-sm)',
-                    borderCollapse: 'collapse',
-                  }}
-                  >
-                    <thead>
-                      <tr style = {{color: 'var(--test-muted)', textAlign: 'left'}}>
-                        <th>Ticker</th>
-                        <th style ={{textAlign: 'right'}}>Percent</th>
+                <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-3)' }}>
+                  前 {Math.min(20, detail.holdings.length)} / 共 {detail.holdings.length} 只（完整明细见左侧「持仓明细」）
+                </div>
+                <table style ={{
+                  width: '100%',
+                  marginTop: 'var(--sp-2)',
+                  fontSize: 'var(--fs-sm)',
+                  borderCollapse: 'collapse',
+                }}
+                >
+                  <thead>
+                    <tr style = {{color: 'var(--text-muted)', textAlign: 'left'}}>
+                      <th>Ticker</th>
+                      <th style ={{textAlign: 'right'}}>Percent</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.holdings.slice(0, 20).map((h)=>(
+                      <tr key={h.symbol} style= {{borderBottom: '1px solid var(--border-subtle)'}}>
+                        <td>{h.symbol}</td>
+                        <td style={{textAlign: 'right'}}>{(h.weight*100).toFixed(2)}%</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {detail.holdings.map((h)=>(
-                        <tr key={h.symbol} style= {{borderBottom: '1px solid var(--border-subtle)'}}>
-                          <td>{h.symbol}</td>
-                          <td style={{textAlign: 'right'}}>{(h.weight*100).toFixed(2)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </ul>
+                    ))}
+                  </tbody>
+                </table>
               </Card>
             </div>
           );

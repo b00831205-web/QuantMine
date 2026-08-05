@@ -36,10 +36,10 @@ export const GanttChart = ({
   useEffect(() => {
     if (!ref.current) return;
     chartRef.current = echarts.init(ref.current, undefined, { renderer: 'canvas' });
-    const onResize = () => chartRef.current?.resize();
-    window.addEventListener('resize', onResize);
+    const observer = new ResizeObserver(() => chartRef.current?.resize());
+    observer.observe(ref.current);
     return () => {
-      window.removeEventListener('resize', onResize);
+      observer.disconnect();
       chartRef.current?.dispose();
       chartRef.current = null;
     };

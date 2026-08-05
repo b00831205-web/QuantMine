@@ -4,6 +4,7 @@
   background: var(--bg-surface);
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .fab {

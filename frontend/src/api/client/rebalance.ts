@@ -13,10 +13,11 @@ export function fetchRebalances(
 ): Promise<RebalancePage> {
   return http<RebalancePage>('/api/v1/rebalances',
   {
-    query:{ 
+    query:{
         backtestJob: query.backtestJob,
         variant: query.variant,
         factor: query.factor,
+        tradeDate: query.tradeDate,
         page: query.page,
         pageSize: query.pageSize
     },

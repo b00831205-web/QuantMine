@@ -10,6 +10,7 @@ import json
 import re
 
 from ..ic_calculator import ICVariant
+from .paths import resolve_artifact_path
 
 def _save_scope_value(
     value,
@@ -272,7 +273,7 @@ def load_ic_variants(
     for artifact_row in artifact_rows:
         variant_name = artifact_row['variant_name']
         sample_scope = artifact_row['sample_scope']
-        manifest_path = Path(artifact_row['path'])
+        manifest_path = resolve_artifact_path(artifact_row['path'])
         with manifest_path.open(encoding = 'utf-8') as file:
             manifest = json.load(file)
         scope_data = {
@@ -366,9 +367,9 @@ def load_test_results(
 
         test_results[test_id] = {
             "variant_name": test_data["variant_name"],
-            "summary": pd.read_parquet(artifact_paths["summary"]),
+            "summary": pd.read_parquet(resolve_artifact_path(artifact_paths["summary"])),
             "multiple_testing": (
-                pd.read_parquet(multiple_testing_path)
+                pd.read_parquet(resolve_artifact_path(multiple_testing_path))
                 if multiple_testing_path is not None
                 else None
             ),

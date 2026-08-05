@@ -1,4 +1,5 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
+import { useState } from 'react';
 import { SideNav } from './SideNav';
 import { TopBar } from './TopBar';
 import { AIQuickPanel } from '../ai/AIQuickPanel';
@@ -13,8 +14,20 @@ import styles from './AppShell.module.css';
  * - 小屏：AI 快捷窗口收起为右下角浮动按钮
  */
 export const AppShell = () => {
+  const { pathname } = useLocation();
+  const onAiPage = pathname.startsWith('/ai');
+  const [aiOpen, setAiOpen] = useState(false);
+
   return (
-    <div className={styles.shell}>
+    <div
+      className={styles.shell}
+      style={{
+        gridTemplateColumns:
+          onAiPage || !aiOpen
+            ? 'var(--sidenav-w) 1fr'
+            : 'var(--sidenav-w) 1fr var(--ai-quickpanel-w)',
+      }}
+    >
       <SideNav />
       <div className={styles.main}>
         <TopBar />
@@ -22,7 +35,7 @@ export const AppShell = () => {
           <Outlet />
         </main>
       </div>
-      <AIQuickPanel />
+      <AIQuickPanel open={aiOpen} onOpen={() => setAiOpen(true)} onClose={() => setAiOpen(false)} />
     </div>
   );
 };

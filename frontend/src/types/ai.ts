@@ -15,6 +15,15 @@ export interface AIMessage {
   createdAt: string;
   citations?: Array<{ sourceId: string; title: string; snippet: string }>;
   toolCalls?: Array<{ toolName: string; argsSummary: string; status: 'pending' | 'confirmed' | 'rejected' | 'done' }>;
+  /** 高影响操作确认请求（消息附属字段） */
+  confirmRequest?: AIConfirmRequest;
+}
+
+export interface AIConfirmRequest {
+  toolCallId: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'confirmed' | 'rejected';
 }
 
 export interface AIConversation {
@@ -35,4 +44,20 @@ export interface SendMessageRequest {
 export interface ConfirmActionRequest {
   toolCallId: string;
   approved: boolean;
+}
+
+/** AI 配置（参考 Dify 供应商管理，简化版） */
+export interface AIProviderConfig {
+  providerId: string;
+  name: string;
+  configured: boolean;
+  baseUrl: string;
+  models: string[];
+}
+
+export interface AIConfig {
+  providers: AIProviderConfig[];
+  defaultModel: string;
+  systemPrompt: string;
+  temperature: number;
 }
