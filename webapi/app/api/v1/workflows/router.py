@@ -8,11 +8,20 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Body, HTTPException, Path
+from fastapi import APIRouter, Body, HTTPException, Path, Query
 
 from . import service
 from .cli import AirflowCliError, run as airflow_cli
-from .schemas import DagListItem, PauseResponse, TriggerResponse
+from .schemas import (
+    CodeResponse,
+    DagDetail,
+    DagListItem,
+    GraphResponse,
+    GridResponse,
+    PauseResponse,
+    RunsPage,
+    TriggerResponse,
+)
 
 router = APIRouter()
 
@@ -34,6 +43,71 @@ def get_workflows() -> list[DagListItem]:
         return service.list_dags()
     except FileNotFoundError as exc:
         raise _guard_db(exc) from exc
+
+
+@router.get(
+    "/workflows/{dag_id}",
+    response_model=DagDetail,
+    summary="DAG 详情（元信息）",
+)
+def get_workflow_detail(dag_id: str = Path(...)) -> DagDetail:
+    try:
+        detail = service.get_dag_detail(dag_id)
+    except FileNotFoundError as exc:
+        raise _guard_db(exc) from exc
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"DAG 不存在：{dag_id}")
+    return detail
+
+
+@router.get(
+    "/workflows/{dag_id}/graph",
+    response_model=GraphResponse,
+    summary="DAG 拓扑（图视图）",
+)
+def get_workflow_graph(dag_id: str = Path(...)) -> GraphResponse:
+    _ensure_dag(dag_id)
+    return service.get_graph(dag_id)
+
+
+@router.get(
+    "/workflows/{dag_id}/grid",
+    response_model=GridResponse,
+    summary="网格视图（运行 × 任务状态）",
+)
+def get_workflow_grid(
+    dag_id: str = Path(...),
+    limit: int = Query(25, ge=1, le=100),
+) -> GridResponse:
+    _ensure_dag(dag_id)
+    return service.get_grid(dag_id, limit)
+
+
+@router.get(
+    "/workflows/{dag_id}/runs",
+    response_model=RunsPage,
+    summary="运行记录（分页）",
+)
+def get_workflow_runs(
+    dag_id: str = Path(...),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100, alias="pageSize"),
+) -> RunsPage:
+    _ensure_dag(dag_id)
+    return service.list_runs(dag_id, page, page_size)
+
+
+@router.get(
+    "/workflows/{dag_id}/code",
+    response_model=CodeResponse,
+    summary="DAG 源码",
+)
+def get_workflow_code(dag_id: str = Path(...)) -> CodeResponse:
+    _ensure_dag(dag_id)
+    code = service.get_code(dag_id)
+    if code is None:
+        raise HTTPException(status_code=404, detail=f"未找到 DAG 源码：{dag_id}")
+    return code
 
 
 def _ensure_dag(dag_id: str) -> None:

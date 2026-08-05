@@ -8,6 +8,10 @@ import type {
   DagListItem,
   PauseResult,
   TriggerResult,
+  DagDetail,
+  GridResponse,
+  WorkflowRunsPage,
+  CodeResponse,
 } from '@/types/workflow';
 
 /* ─── 列表页（第一页）客户端 ─── */
@@ -36,6 +40,40 @@ export function triggerWorkflow(dagId: string, signal?: AbortSignal): Promise<Tr
     method: 'POST',
     signal,
   });
+}
+
+/* ─── 详情页（第二页）客户端 ─── */
+
+/** GET /api/v1/workflows/{dagId} —— DAG 详情元信息 */
+export function fetchWorkflowDetail(dagId: string, signal?: AbortSignal): Promise<DagDetail> {
+  return http<DagDetail>(`/api/v1/workflows/${dagId}`, { signal });
+}
+
+/** GET /api/v1/workflows/{dagId}/grid —— 运行 × 任务状态矩阵 */
+export function fetchWorkflowGrid(
+  dagId: string,
+  limit = 25,
+  signal?: AbortSignal,
+): Promise<GridResponse> {
+  return http<GridResponse>(`/api/v1/workflows/${dagId}/grid`, { query: { limit }, signal });
+}
+
+/** GET /api/v1/workflows/{dagId}/runs —— 运行记录（分页） */
+export function fetchWorkflowRuns(
+  dagId: string,
+  page: number,
+  pageSize: number,
+  signal?: AbortSignal,
+): Promise<WorkflowRunsPage> {
+  return http<WorkflowRunsPage>(`/api/v1/workflows/${dagId}/runs`, {
+    query: { page, pageSize },
+    signal,
+  });
+}
+
+/** GET /api/v1/workflows/{dagId}/code —— DAG 源码 */
+export function fetchWorkflowCode(dagId: string, signal?: AbortSignal): Promise<CodeResponse> {
+  return http<CodeResponse>(`/api/v1/workflows/${dagId}/code`, { signal });
 }
 
 /** GET /api/v1/workflows —— DAG 列表与当前状态 */

@@ -8,6 +8,8 @@ import { fetchWorkflows, pauseDag, triggerWorkflow } from '@/api/client';
 import type { DagListItem, RunRef } from '@/types/workflow';
 import type { AsyncState } from '@/types/api';
 import { stateColor, stateLabel, CORE_LEGEND } from '@/utils/workflowStatus';
+import { fmtDateTime, fmtDuration } from '@/utils/format';
+import { Toggle } from '@/components/common/Toggle';
 import i18n from '@/i18n';
 
 type StateFilter = 'all' | 'running' | 'success' | 'failed' | 'paused';
@@ -22,26 +24,6 @@ const FILTERS: Array<{ key: StateFilter; label: string }> = [
 
 const RECENT_SQUARES = 10;
 
-/* ── 格式化助手 ── */
-const fmtDateTime = (iso: string | null): string => {
-  if (!iso) return '—';
-  const d = new Date(iso.includes('T') ? iso : iso.replace(' ', 'T'));
-  if (Number.isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
-const fmtDuration = (ms: number | null): string => {
-  if (ms === null || ms < 0) return '—';
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  if (m < 60) return `${m}m ${rem}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-};
-
 const networkError = (): AsyncState<never> => ({
   status: 'error',
   error: {
@@ -51,54 +33,6 @@ const networkError = (): AsyncState<never> => ({
     status: 0,
   },
 });
-
-/* ── 暂停开关 ── */
-const Toggle = ({
-  on,
-  disabled,
-  onChange,
-}: {
-  on: boolean;
-  disabled?: boolean;
-  onChange: () => void;
-}) => (
-  <button
-    type="button"
-    role="switch"
-    aria-checked={!on}
-    disabled={disabled}
-    title={on ? '已暂停，点击恢复' : '运行中，点击暂停'}
-    onClick={(e) => {
-      e.stopPropagation();
-      onChange();
-    }}
-    style={{
-      width: 38,
-      height: 20,
-      borderRadius: 999,
-      border: '1px solid var(--border-subtle)',
-      background: on ? 'var(--bg-surface-2)' : 'var(--positive)',
-      position: 'relative',
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      opacity: disabled ? 0.6 : 1,
-      transition: 'background 0.15s',
-      padding: 0,
-    }}
-  >
-    <span
-      style={{
-        position: 'absolute',
-        top: 1,
-        left: on ? 1 : 19,
-        width: 16,
-        height: 16,
-        borderRadius: '50%',
-        background: '#fff',
-        transition: 'left 0.15s',
-      }}
-    />
-  </button>
-);
 
 /* ── 最近运行色块 ── */
 const RecentRuns = ({ runs }: { runs: RunRef[] }) => {

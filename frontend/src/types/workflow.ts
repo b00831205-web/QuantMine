@@ -74,6 +74,48 @@ export interface DagListItem {
   recentRuns: RunRef[];
 }
 
+/* ─── 详情页（第二页）契约 ─── */
+
+export interface DagDetail {
+  dagId: string;
+  displayName: string;
+  isPaused: boolean;
+  description: string | null;
+  owners: string[];
+  tags: string[];
+  scheduleSummary: string | null;
+  timetableDescription: string | null;
+  fileloc: string | null;
+  nextRun: string | null;
+  lastRun: RunRef | null;
+  recentRuns: RunRef[];
+}
+
+/** 网格视图一列：一次运行 + 各任务状态。 */
+export interface GridRun {
+  runId: string;
+  state: string | null;
+  runType: string;
+  logicalDate: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  durationMs: number | null;
+  taskStates: Record<string, string | null>;
+}
+
+export interface GridResponse {
+  taskIds: string[];
+  runs: GridRun[];
+}
+
+export type WorkflowRunsPage = Page<RunRef>;
+
+export interface CodeResponse {
+  dagId: string;
+  fileloc: string | null;
+  sourceCode: string;
+}
+
 export interface PauseResult {
   dagId: string;
   isPaused: boolean;

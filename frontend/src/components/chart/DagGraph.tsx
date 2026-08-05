@@ -1,23 +1,16 @@
 import dagre from 'dagre';
-import ReactFlow, { Background, Controls, type Edge, type Node } from 'reactflow';
+import ReactFlow, { Background, Controls, Position, type Edge, type Node } from 'reactflow';
 import 'reactflow/dist/style.css';
-import type { DagGraph, TaskInstance } from '@/types/workflow';
+import type { DagGraph } from '@/types/workflow';
+import { stateColor } from '@/utils/workflowStatus';
 
-const NODE_WIDTH = 160;
+const NODE_WIDTH = 170;
 const NODE_HEIGHT = 44;
-
-const TASK_COLOR: Record<TaskInstance['status'], string> = {
-  success: 'var(--positive)',
-  failed: 'var(--negative)',
-  running: 'var(--info)',
-  skipped: 'var(--text-muted)',
-  upstream_failed: 'var(--warning)',
-};
 
 /** 用 dagre 把 DAG 拓扑排版成从左到右的节点坐标（Airflow 同款思路） */
 const layoutGraph = (
   graph: DagGraph,
-  taskStatus?: Record<string, TaskInstance['status']>,
+  taskStates?: Record<string, string | null>,
 ): { nodes: Node[]; edges: Edge[] } => {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
@@ -34,15 +27,25 @@ const layoutGraph = (
 
   const nodes: Node[] = graph.nodes.map((n) => {
     const pos = g.node(n.id);
-    const status = taskStatus?.[n.id];
+    const state = taskStates?.[n.id] ?? null;
+    const color = stateColor(state);
     return {
       id: n.id,
-      // dagre 返回的是节点中心坐标，ReactFlow 用的是左上角，所以要减去宽高的一半
+      // dagre 返回的是节点中心坐标，ReactFlow 用左上角，故减去半宽高
       position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 },
       data: { label: n.label },
-      ...(status
-        ? { style: { background: TASK_COLOR[status], color: '#ffffff', border: 'none' } }
-        : {}),
+      // 句柄放在左右两侧，边才会水平相接（否则默认在上/下，连线会从底部绕出）
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: {
+        background: 'var(--bg-surface)',
+        color: 'var(--text-primary)',
+        border: `2px solid ${color}`,
+        borderLeft: `8px solid ${color}`,
+        borderRadius: 8,
+        width: NODE_WIDTH,
+        fontSize: 12,
+      },
     };
   });
 
@@ -50,9 +53,8 @@ const layoutGraph = (
     id: `${e.source}-${e.target}-${i}`,
     source: e.source,
     target: e.target,
-    type: 'straight',
-    sourcePosition: 'right',
-    targetPosition: 'left',
+    type: 'smoothstep',
+    animated: taskStates?.[e.source] === 'running',
   }));
 
   return { nodes, edges };
@@ -60,17 +62,19 @@ const layoutGraph = (
 
 export const DagGraphView = ({
   graph,
-  taskStatus,
+  taskStates,
+  height = 420,
 }: {
   graph: DagGraph;
-  taskStatus?: Record<string, TaskInstance['status']>;
+  taskStates?: Record<string, string | null>;
+  height?: number;
 }) => {
-  const { nodes, edges } = layoutGraph(graph, taskStatus);
+  const { nodes, edges } = layoutGraph(graph, taskStates);
 
   return (
     <div
       style={{
-        height: 420,
+        height,
         border: '1px solid var(--border-subtle)',
         borderRadius: 'var(--radius-md)',
         background: 'var(--bg-surface-2)',
