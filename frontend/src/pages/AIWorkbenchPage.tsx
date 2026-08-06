@@ -211,7 +211,11 @@ export const AIWorkbenchPage = () => {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const sendControllerRef = useRef<AbortController | null>(null);
-  const conversationsState = useAsync<AIConversation[]>((s) => fetchAIConversations(s), []);
+  const [conversationRefreshKey, setConversationRefreshKey] = useState(0);
+  const conversationsState = useAsync<AIConversation[]>(
+    (s) => fetchAIConversations(s),
+    [conversationRefreshKey],
+  );
   const modelsState = useAsync<string[]>((s) => fetchAIModels(s), []);
   const messagesState = useAsync<AIMessage[]>(
     (s) => (activeId ? fetchAIMessages(activeId, s) : Promise.resolve([])),
@@ -227,7 +231,9 @@ export const AIWorkbenchPage = () => {
 
   // 消息就绪 → 灌入本地可变副本（便于乐观追加 / 更新确认卡状态）
   useEffect(() => {
-    if (messagesState.status === 'success') setMessages(messagesState.data);
+    // 隐藏 role='tool' 的原始查询结果（噪音）；保留 assistant 的工具调用摘要 + 最终答复
+    if (messagesState.status === 'success')
+      setMessages(messagesState.data.filter((m) => m.role !== 'tool'));
     if (activeId === null) setMessages([]);
   }, [messagesState, activeId]);
 
@@ -240,10 +246,17 @@ export const AIWorkbenchPage = () => {
     sendControllerRef.current?.abort();
   }, [activeId]);
 
-  const startNewConversation = () => {
+  const startNewConversation = async () => {
     setActiveId(null);
     setMessages([]);
     setDraft('');
+    try {
+      const conv = await createAIConversation();
+      setActiveId(conv.conversationId);
+      setConversationRefreshKey((k) => k + 1);
+    } catch {
+      // 创建失败：保留空会话状态，可稍后重试
+    }
   };
 
   
@@ -275,12 +288,14 @@ export const AIWorkbenchPage = () => {
         setActiveId(conversationId);
       }
     
-    const reply = await sendAIMessage(
+    await sendAIMessage(
       conversationId,
       {content: text, modelId: selectedModel},
       controller.signal,
     );
-    setMessages((prev)=> [...prev, reply]);
+    // 后端可能自动跑了多步白名单工具，刷新整段对话（隐藏原始工具结果）
+    const all = await fetchAIMessages(conversationId, controller.signal);
+    setMessages(all.filter((m) => m.role !== 'tool'));
   } catch {setMessages((prev)=>prev.filter((m)=> m.messageId !== userMsg.messageId));
 
   }finally {
@@ -312,16 +327,21 @@ export const AIWorkbenchPage = () => {
     );
     const msg = messages.find((m)=> m.messageId === messageId);
     if(!msg?.confirmRequest || activeId === null) return;
-    
+
+    setSending(true); // 确认后执行工具 + 生成答复期间，同样算“思考中”，禁用输入框
     try {
-      const reply = await confirmAIAction(activeId, {
+      await confirmAIAction(activeId, {
         toolCallId: msg.confirmRequest.toolCallId,
         approved,
       })
-      setMessages((prev)=>[...prev, reply]);
+      // 确认后端可能继续自动跑白名单工具，刷新整段对话
+      const all = await fetchAIMessages(activeId);
+      setMessages(all.filter((m) => m.role !== 'tool'));
     } catch{
-      setMessages((prev)=> prev.map((m)=> m.messageId === messageId && m.confirmRequest? {...m, confrimRequest: {...m.confirmRequest, status: 'pending'}}: m
+      setMessages((prev)=> prev.map((m)=> m.messageId === messageId && m.confirmRequest? {...m, confirmRequest: {...m.confirmRequest, status: 'pending'}}: m
     ),);
+    } finally {
+      setSending(false);
     }
     // TODO(USER_LEARNING): 回传后端
     //   const msg = messages.find(m => m.messageId === messageId);
@@ -533,8 +553,10 @@ export const AIWorkbenchPage = () => {
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-sm)',
                 color: 'var(--text-primary)',
+                opacity: sending ? 0.5 : 1,
               }}
-              placeholder="向 AI 提问…（Enter 发送）"
+              disabled={sending}
+              placeholder={sending ? 'AI 思考中，请稍候…' : '向 AI 提问…（Enter 发送）'}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {

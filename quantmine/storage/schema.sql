@@ -200,3 +200,42 @@ CREATE TABLE test_result_artifacts (
         artifact_type
     )
 );
+
+CREATE TABLE report_history (
+    id SERIAL PRIMARY KEY,
+    run_id INT NOT NULL REFERENCES research_runs(run_id),
+    test_id VARCHAR,
+    lang VARCHAR(2) NOT NULL,
+    ai BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'failed')),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE ai_conversations (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR NOT NULL DEFAULT '新对话',
+    model_id VARCHAR,
+    research_run_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE ai_messages (
+    id SERIAL PRIMARY KEY,
+    conversation_id INT NOT NULL REFERENCES ai_conversations(id),
+    role VARCHAR NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
+    content TEXT NOT NULL DEFAULT '',
+    citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+    tool_calls JSONB NOT NULL DEFAULT '[]'::jsonb,
+    confirm_request JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE ai_config (
+    id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    providers JSONB NOT NULL DEFAULT '[]'::jsonb,
+    default_model VARCHAR,
+    system_prompt TEXT NOT NULL DEFAULT '',
+    temperature NUMERIC(3,2) NOT NULL DEFAULT 0.7,
+    capabilities JSONB NOT NULL DEFAULT '{"read_research": true, "read_market": true, "read_reports": true, "query_database": true, "use_chat_history": true, "rag_corpus": false}'::jsonb
+);

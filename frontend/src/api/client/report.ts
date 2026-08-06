@@ -19,7 +19,7 @@ export function buildReportXlsxUrl(query: ReportQuery): string{
         ai: String(query.ai),
         ...(query.testId? {testId: query.testId}: {}),
     });
-    return `/api/v1/reseach/report.xlsx?${params}`;
+    return `/api/v1/research/report.xlsx?${params}`;
 }
 
 export function fetchReportHistory(

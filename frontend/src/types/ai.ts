@@ -53,6 +53,9 @@ export interface AIProviderConfig {
   configured: boolean;
   baseUrl: string;
   models: string[];
+  capabilities?: Partial<AICapabilities> | undefined;
+  /** API Key 所在的环境变量名；缺省 OPENAI_API_KEY */
+  apiKeyEnv?: string;
 }
 
 export interface AIConfig {
@@ -60,4 +63,14 @@ export interface AIConfig {
   defaultModel: string;
   systemPrompt: string;
   temperature: number;
+  capabilities: AICapabilities;
+}
+
+export interface AICapabilities{
+  read_research: boolean;
+  read_market: boolean;
+  read_reports: boolean;
+  query_database: boolean;
+  use_chat_history: boolean;
+  rag_corpus: boolean;
 }

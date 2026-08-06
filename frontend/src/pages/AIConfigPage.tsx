@@ -3,11 +3,11 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Card } from '@/components/common/Card';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
 import { HttpError } from '@/api/http';
-import type { AIConfig, AIProviderConfig} from '@/types/ai';
 // TODO(USER_LEARNING): 保存时需要 `saveAIConfig`——从 '@/api/client' 引入。
 import type { AsyncState } from '@/types/api';
 import i18n from '@/i18n';
 import {fetchAIConfig, saveAIConfig} from '@/api/client';
+import type { AIConfig, AICapabilities, AIProviderConfig } from '@/types/ai';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -39,12 +39,21 @@ const dangerBtn: React.CSSProperties = {
 const CUSTOM_PREFIX = 'custom-';
 const isCustomProvider = (providerId: string) => providerId.startsWith(CUSTOM_PREFIX);
 
+
+const CAPABILITY_LABELS: Array<{ key: keyof AICapabilities; label: string; hint: string }> = [
+  { key: 'read_research', label: '读取研究数据', hint: 'IC / 回测 / 因子检验结果' },
+  { key: 'read_market', label: '读取行情数据', hint: '市场总览、行情序列' },
+  { key: 'read_reports', label: '读取报告', hint: 'PDF / Excel 报告内容' },
+  { key: 'query_database', label: '只读 SQL 查库', hint: '工具调用需逐次确认' },
+  { key: 'use_chat_history', label: '使用当前会话历史', hint: '多轮对话上下文' },
+  { key: 'rag_corpus', label: '跨对话语料检索', hint: '历史聊天作为本地语料库（RAG）' },
+];
+
 export const AIConfigPage = () => {
+  const [overrideIds, setOverrideIds] = useState<Record<string, boolean>>({});
   const [configState, setConfigState] = useState<AsyncState<AIConfig>>({ status: 'idle' });
   const [draft, setDraft] = useState<AIConfig | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  // API Key 只写不回显（密钥不应随 GET 往返）；单独存草稿。
-  const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState('')
 
@@ -84,21 +93,35 @@ export const AIConfigPage = () => {
       ...prev, providers: prev.providers.map((p)=>
       p.providerId === providerId? {...p, ...patch} : p,
     ),
+  
     }
   : prev,
 );
   };
 
+  const patchGlobalCapability= (key: keyof AICapabilities, value: boolean): void => {
+    setDraft((prev) =>
+    prev? {...prev, capabilities: {...prev.capabilities, [key]: value}} : prev,)
+  }
+
   /** 新增一个空白自定义供应商并立即进入编辑。 */
   const addCustomProvider = (): void => {
     const id = `${CUSTOM_PREFIX}${Date.now()}`;
+    
     setDraft((prev) =>
       prev
         ? {
             ...prev,
             providers: [
               ...prev.providers,
-              { providerId: id, name: '自定义供应商', configured: false, baseUrl: '', models: [] },
+              {
+                providerId: id,
+                name: '自定义供应商',
+                configured: false,
+                baseUrl: '',
+                models: [],
+                apiKeyEnv: '',
+              },
             ],
           }
         : prev,
@@ -121,17 +144,10 @@ export const AIConfigPage = () => {
     setSaving(true);
     setSavedMsg('')
 
-    const next: AIConfig ={
-      ...draft,
-      providers: draft.providers.map((p) => 
-      keyDrafts[p.providerId] ? {...p, configured: true} : p,),
-    };
-
     try {
-      const saved = await saveAIConfig(next);
+      const saved = await saveAIConfig({...draft});
       setConfigState({status: 'success', data: saved});
       setDraft(saved);
-      setKeyDrafts({});
       setSavedMsg('已保存');
     } catch {
       setSavedMsg('保存失败，请重试');
@@ -252,18 +268,16 @@ export const AIConfigPage = () => {
                       </div>
                     )}
 
-                    {/* API Key —— 已实现：写入 keyDrafts（局部 state，不回显） */}
+                    {/* API Key 环境变量名 —— key 本身只放环境变量，不回传后端 */}
                     <div>
-                      <label style={fieldLabel}>
-                        API Key {editing.configured && '（已配置，留空则不修改）'}
-                      </label>
+                      <label style={fieldLabel}>API Key 环境变量名（留空默认 OPENAI_API_KEY）</label>
                       <input
-                        type="password"
+                        type="text"
                         style={inputStyle}
-                        placeholder={editing.configured ? '••••••••（留空保持不变）' : 'sk-...'}
-                        value={keyDrafts[editing.providerId] ?? ''}
+                        placeholder="OPENAI_API_KEY"
+                        value={editing.apiKeyEnv ?? ''}
                         onChange={(e) =>
-                          setKeyDrafts((prev) => ({ ...prev, [editing.providerId]: e.target.value }))
+                          patchProvider(editing.providerId, { apiKeyEnv: e.target.value })
                         }
                       />
                     </div>
@@ -308,6 +322,50 @@ export const AIConfigPage = () => {
                         }}
                       />
                     </div>
+                    <div>
+                      <label
+                      style = {{...fieldLabel, display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', cursor: 'pointer'}}>
+                        <input
+                        type = 'checkbox'
+                        checked = {overrideIds[editing.providerId]?? false}
+                        onChange={(e)=> {
+                          const on = e.target.checked;
+                          setOverrideIds((prev)=>({...prev, [editing.providerId]: on}));
+                          patchProvider(
+                            editing.providerId,
+                            on?{capabilities: {...(draft?.capabilities ?? {})}} : {capabilities:undefined},
+                          );
+                        }}
+                        />
+                        覆盖全局权限
+                      </label>
+                      {overrideIds[editing.providerId] && (
+                        <div
+                        style = {{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 'var(--sp-2)',
+                          marginTop: 'var(--sp-2)'
+                        }}>
+                          {CAPABILITY_LABELS.map(({key, label, hint})=>(
+                            <label
+                            key = {key}
+                            style = {{display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', cursor: 'pointer'}}>
+                              <input
+                              type = 'checkbox'
+                              checked = {editing.capabilities?.[key]?? true}
+                              onChange={(e) =>
+                                patchProvider(editing.providerId,{
+                                  capabilities: {...(editing.capabilities ?? {}), [key]: e.target.checked},
+                                })
+                              }/>
+                              <span style={{fontSize: 'var(--fs-sm)'}}>{label}</span>
+                              <span style={{color: 'var(--text-muted)', fontSize: 'var(--fs-xs)'}}>{hint}</span>
+                            </label>
+                          ))}
+                          </div>
+                      )}
+                    </div>
 
                     {/* 删除自定义供应商 */}
                     {isCustomProvider(editing.providerId) && (
@@ -334,7 +392,7 @@ export const AIConfigPage = () => {
           <select
             value={draft.defaultModel}
             onChange={(e) => {
-              setDraft((prev)=>(prev ? {...prev, systemPrompt: e.target.value} : prev))
+              setDraft((prev)=>(prev ? {...prev, defaultModel: e.target.value} : prev))
             }}
             style={{ ...inputStyle, width: 'auto', minWidth: 260 }}
           >
@@ -365,7 +423,7 @@ export const AIConfigPage = () => {
                 style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
                 value={draft.systemPrompt}
                 onChange={(e) => {
-                  setDraft((prev)=> (prev ? {...prev, defaultModel: e.target.value}: prev))
+                  setDraft((prev)=> (prev ? {...prev, systemPrompt: e.target.value}: prev))
                 }}
               />
             </div>
@@ -384,6 +442,29 @@ export const AIConfigPage = () => {
               />
             </div>
           </div>
+        )}
+      </Card>
+      <Card title= 'AI权限(全局默认)'>
+        {draft ?(
+          <div style = {{display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)'}}>
+            {CAPABILITY_LABELS.map(({key, label, hint})=>(
+              <label
+              key = {key}
+              style = {{display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', cursor: 'pointer'}}>
+                <input
+                type = 'checkbox'
+                checked = {draft.capabilities?.[key]?? false}
+                onChange = {(e) => patchGlobalCapability(key, e.target.checked)}/>
+                <span style = {{fontSize: 'var(--fs-sm)'}}>{label}</span>
+                <span style = {{color: 'var(--text-muted)', fontSize: 'var(--fs-xs)'}}>{hint}</span>
+              </label>
+            ))}
+            <div style = {{color: 'var(--text-muted)', fontSize: 'var(--fs-xs)'}}>
+              全局权限作用于所有AI入口，单个供应商可在编辑表单里覆盖。
+            </div>
+          </div>
+        ):(
+          <div style = {{color: 'var(--text-muted)', fontSize: 'var(--fs-sm)'}}>加载中...</div>
         )}
       </Card>
 

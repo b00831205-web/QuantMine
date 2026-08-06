@@ -3,17 +3,18 @@
 <head>
 <meta charset="utf-8">
 <style>
-  @page { size: A4; margin: 16mm 14mm 18mm; }
+  @page { size: A4; margin: 12mm 12mm 14mm; }
   * { box-sizing: border-box; }
-  body { font-family: "Noto Sans", "Noto Sans CJK SC", "DejaVu Sans", sans-serif;
-         color: #111; font-size: 11.5px; margin: 0; line-height: 1.35; }
-  .section { page-break-after: always; }
-  .section:last-child { page-break-after: auto; }
+  body { font-family: "Noto Sans", "Noto Sans CJK SC", "Microsoft YaHei","DejaVu Sans", sans-serif;
+         color: #111; font-size: 11px; margin: 0; line-height: 1.3; }
+  /* 封面单独一页，其余章节自然流动，避免“有效因子少→每页很空” */
+  .section { page-break-after: auto; }
+  body > .section:first-child { page-break-after: always; }
   .sn { font-size: 10px; color: #666; letter-spacing: .03em; }
   h1 { font-size: 20px; font-weight: 800; margin: 4px 0 2px; }
-  h2 { font-size: 14px; font-weight: 700; margin: 2px 0 8px; padding-bottom: 5px;
+  h2 { font-size: 14px; font-weight: 700; margin: 0 0 6px; padding-bottom: 4px;
        border-bottom: 1.5px solid #000; }
-  .cap { font-size: 10.5px; color: #666; margin: 11px 0 3px; font-weight: 600; }
+  .cap { font-size: 10.5px; color: #666; margin: 8px 0 2px; font-weight: 600; }
   table { width: 100%; border-collapse: collapse; font-size: 9px;
           font-variant-numeric: tabular-nums; }
   th, td { padding: 2px 3px; text-align: right; border-bottom: 1px solid #ccc; }
@@ -26,19 +27,20 @@
   .meta td { border: none; padding: 3px 14px 3px 0; }
   .meta td:first-child { color: #666; }
   /* 图不铺满整页：约半页宽，避免"图大字小"；matplotlib 内部字号已相应放大 */
-  figure { margin: 6px 0; text-align: center; }
-  figure img { display: block; margin: 0 auto; width: 75%; height: auto; }
+  figure { margin: 4px 0; text-align: center; page-break-inside: avoid; }
+  figure img { display: block; margin: 0 auto; width: 82%; height: auto; }
+  figure.wide img { width: 94%; }
   .ai { border: 1px dashed #8a6d1f; background: #fbf8ee; border-radius: 4px;
         padding: 8px 10px; margin-top: 12px; }
   .ai .h { font-size: 9px; font-weight: 700; color: #8a6d1f; text-transform: uppercase;
            letter-spacing: .03em; display: flex; justify-content: space-between; }
   .ai .b { font-size: 11px; color: #333; line-height: 1.5; margin-top: 4px; }
   .ai .sw { font-size: 9px; color: #8a6d1f; border: 1px solid #8a6d1f; border-radius: 8px; padding: 0 6px; }
-  .fn { font-size: 10px; color: #666; line-height: 1.5; margin-top: 8px; }
+  .fn { font-size: 10px; color: #666; line-height: 1.4; margin-top: 6px; }
   .cover-note { font-size: 10.5px; color: #666; margin-top: 14px; }
   ul.apx { font-size: 10px; line-height: 1.7; padding-left: 16px; }
   ul.apx small { color: #666; }
-  .missing { font-size: 10px; color: #999; font-style: italic; padding: 8px 0; }
+  .missing { font-size: 10px; color: #999; font-style: italic; padding: 4px 0; }
   /* IC 表：固定布局 + 显式列宽，避免身份列过宽、指标列被挤压 */
   table.ic { table-layout: fixed; }
   table.ic col.c-ident { width: 11%; }
@@ -79,6 +81,7 @@
   {% if tables.ic %}<figure><img src="{{ tables.ic }}" alt=""></figure>{% endif %}
   {% if charts.ic_series %}<div class="cap">{{ L.fig_ic_series }}</div><figure><img src="{{ charts.ic_series }}"></figure>{% endif %}
   {% if charts.ic_hist %}<div class="cap">{{ L.fig_ic_hist }}</div><figure><img src="{{ charts.ic_hist }}"></figure>{% endif %}
+  {% if charts.ic_heatmap %}<div class="cap">{{ L.fig_ic_heatmap }}</div><figure class="wide"><img src="{{ charts.ic_heatmap }}"></figure>{% endif %}
   {% if include_ai and ai.ic %}
   <div class="ai"><div class="h"><span>◈ {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.ic }}</div></div>
   {% endif %}

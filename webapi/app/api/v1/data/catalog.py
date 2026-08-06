@@ -1,0 +1,88 @@
+"""数据速查白名单目录：只暴露这些资源/字段，其余一律拒绝。"""
+
+DATA_CATALOG = [
+    {
+        "resource": "market_latest",
+        "label": "行情最新快照",
+        "description": "S&P 500 成分股最新交易快照",
+        "fields": [
+            {"name": "ticker", "type": "string", "description": "股票代码", "filterable": True},
+            {"name": "trade_date", "type": "date", "description": "交易日", "filterable": True},
+            {"name": "close", "type": "number", "description": "收盘价", "filterable": False},
+            {"name": "volume", "type": "number", "description": "成交量", "filterable": False},
+        ],
+    },
+    {
+        "resource": "market_bars",
+        "label": "行情日线",
+        "description": "每日收盘价与成交量",
+        "fields": [
+            {"name": "trade_date", "type": "date", "description": "交易日", "filterable": True},
+            {"name": "ticker", "type": "string", "description": "股票代码", "filterable": True},
+            {"name": "close", "type": "number", "description": "收盘价", "filterable": False},
+            {"name": "volume", "type": "number", "description": "成交量", "filterable": False},
+        ],
+    },
+    {
+        "resource": "research_runs",
+        "label": "研究批次",
+        "description": "一次 research run 的元信息",
+        "fields": [
+            {"name": "run_id", "type": "number", "description": "批次 ID", "filterable": True},
+            {"name": "run_timestamp", "type": "date", "description": "运行时间", "filterable": False},
+            {"name": "git_commit", "type": "string", "description": "代码版本", "filterable": False},
+        ],
+    },
+    {
+        "resource": "test_results",
+        "label": "因子检验结果",
+        "description": "因子 IC 检验明细",
+        "fields": [
+            {"name": "run_id", "type": "number", "description": "批次 ID", "filterable": True},
+            {"name": "variant_name", "type": "string", "description": "变体", "filterable": True},
+            {"name": "test_id", "type": "string", "description": "检验 ID", "filterable": True},
+            {"name": "factor_name", "type": "string", "description": "因子", "filterable": True},
+            {"name": "period", "type": "number", "description": "持有期", "filterable": True},
+            {"name": "test_method", "type": "string", "description": "检验方法", "filterable": False},
+            {"name": "sample_scope", "type": "string", "description": "样本范围", "filterable": True},
+            {"name": "ic_mean", "type": "number", "description": "IC 均值", "filterable": False},
+            {"name": "ic_std", "type": "number", "description": "IC 标准差", "filterable": False},
+            {"name": "ir", "type": "number", "description": "IR", "filterable": False},
+            {"name": "n", "type": "number", "description": "样本量", "filterable": False},
+            {"name": "t_stat", "type": "number", "description": "t 值", "filterable": False},
+            {"name": "p_value", "type": "number", "description": "p 值", "filterable": False},
+            {"name": "significant", "type": "boolean", "description": "是否显著", "filterable": False},
+            {"name": "bh_significant", "type": "boolean", "description": "BH 校正后显著", "filterable": False},
+        ],
+    },
+    {
+        "resource": "backtest_results",
+        "label": "分位回测收益",
+        "description": "每次调仓各分组的收益",
+        "fields": [
+            {"name": "run_id", "type": "number", "description": "批次 ID", "filterable": True},
+            {"name": "variant_name", "type": "string", "description": "变体", "filterable": True},
+            {"name": "backtest_id", "type": "string", "description": "回测 ID", "filterable": True},
+            {"name": "factor_name", "type": "string", "description": "因子", "filterable": True},
+            {"name": "period", "type": "number", "description": "持有期", "filterable": True},
+            {"name": "trade_date", "type": "date", "description": "调仓日", "filterable": True},
+            {"name": "quantile_rank", "type": "number", "description": "分组（0=多空）", "filterable": True},
+            {"name": "return_value", "type": "number", "description": "收益", "filterable": False},
+        ],
+    },
+    {
+        "resource": "backtest_metrics",
+        "label": "回测指标",
+        "description": "各分组的绩效指标",
+        "fields": [
+            {"name": "run_id", "type": "number", "description": "批次 ID", "filterable": True},
+            {"name": "variant_name", "type": "string", "description": "变体", "filterable": True},
+            {"name": "backtest_id", "type": "string", "description": "回测 ID", "filterable": True},
+            {"name": "factor_name", "type": "string", "description": "因子", "filterable": True},
+            {"name": "period", "type": "number", "description": "持有期", "filterable": True},
+            {"name": "quantile_rank", "type": "number", "description": "分组（0=多空）", "filterable": True},
+            {"name": "metric_name", "type": "string", "description": "指标名", "filterable": True},
+            {"name": "metric_value", "type": "number", "description": "指标值", "filterable": False},
+        ],
+    },
+]

@@ -11,10 +11,11 @@ import type { SeriesQuery, SeriesResponse } from '@/types/market';
 import styles from './MarketOverviewPage.module.css';
 import { HttpError } from '@/api/http';
 import { useMemo} from 'react';
-import { symbol } from 'zod/v4';
 
 
 type RangeKey = '1M' | '1Y' | '5Y' | 'ALL';
+
+const INITIAL_SYMBOLS = ['SPY', 'AAPL', 'MSFT'];
 
 const RANGE_DAYS: Record<RangeKey, number | 'ALL'> = {
   '1M': 30,
@@ -34,7 +35,7 @@ const RANGE_DAYS: Record<RangeKey, number | 'ALL'> = {
 export const MarketOverviewPage = () => {
   const { t } = useTranslation();
   // —— 视图状态（已由我实现）——
-  const [symbols, setSymbols] = useState<string[]>(['SPY', 'AAPL', 'MSFT']);
+  const [symbols, setSymbols] = useState<string[]>(INITIAL_SYMBOLS);
   const [range, setRange] = useState<RangeKey>('1Y');
   const [tickerDraft, setTickerDraft] = useState('');
   
@@ -58,7 +59,7 @@ export const MarketOverviewPage = () => {
     if (days === 'ALL') return { symbols, startDate: '2015-01-01', endDate: endDate, normalize: true };
     const start = new Date(end.getTime() - days * 86400_000).toISOString().slice(0,10);
     return { symbols, startDate: start, endDate: endDate, normalize: true };
-  }, [latestTradeDate, symbol, range]);
+  }, [latestTradeDate, symbols, range]);
 
   useEffect(() => {
   if (query === null) return;
@@ -93,7 +94,7 @@ export const MarketOverviewPage = () => {
     });
 
   return () => controller.abort();
-}, [latestTradeDate, symbols, range]);
+}, [latestTradeDate, symbols, range, query]);
   
   useEffect(() => {fetchLatestMarketDate().then((data)=>{setLatestTradeDate(data.latestTradeDate);});},[])
 
@@ -178,7 +179,16 @@ export const MarketOverviewPage = () => {
             emptyTitle={t('market.emptyTitle')}
             emptyHint={t('market.rangeHint', { start: query?.startDate ?? '-', end: query?.endDate ?? '-' })}
           >
-            {(data) => <SeriesChart series={data.series} height={360} />}
+            {(data) => (
+              <SeriesChart
+                series={data.series}
+                height={360}
+                onReset={() => {
+                  setSymbols(INITIAL_SYMBOLS);
+                  setRange('1Y');
+                }}
+              />
+            )}
           </AsyncBoundary>
         </div>
       </Card>

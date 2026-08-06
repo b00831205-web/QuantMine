@@ -15,6 +15,9 @@ from sqlalchemy.engine import Engine
 from ....dependencies import get_request_engine
 from ....reports import assemble_context, html_to_pdf, render_html, resolve_lang
 from .results import research_run_exists
+from ..reports.db import insert_report_history
+
+from ....reports.chart_data import build_report_charts
 
 router = APIRouter()
 
@@ -25,6 +28,7 @@ def get_research_report_pdf(
     test_id: str | None = Query(None, alias="testId"),
     lang: str | None = Query(None),
     ai: bool = Query(False),
+    inline: bool = Query(False),
     accept_language: str | None = Header(None, alias="Accept-Language"),
     engine: Engine = Depends(get_request_engine),
 ) -> Response:
@@ -33,7 +37,7 @@ def get_research_report_pdf(
 
     language = resolve_lang(lang, accept_language)
     context = assemble_context(
-        engine, run_id=run_id, test_id=test_id, lang=language, include_ai=ai
+        engine, run_id=run_id, test_id=test_id, lang=language, include_ai=ai, charts = build_report_charts(engine, run_id, test_id)
     )
     html = render_html(context)
 
@@ -43,8 +47,17 @@ def get_research_report_pdf(
         raise HTTPException(status_code=503, detail=str(error)) from error
 
     filename = f"report_{test_id or run_id}_{language}.pdf"
+    disposition = "inline" if inline else "attachment"
+    insert_report_history(
+        engine,
+        run_id=run_id,
+        test_id=test_id,
+        lang=language,
+        ai=ai,
+    )
+
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'{disposition}; filename="{filename}"'},
     )

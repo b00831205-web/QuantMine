@@ -114,6 +114,7 @@ def install_exception_handlers(app: FastAPI) -> None:
             409: "CONFLICT",
             422: 'VALIDATION_FAILED',
             429: "RATE_LIMITED",
+            502: 'UPSTREAM_FAILURE'
         }
         title_map: dict[int, str] = {
             400: "请求参数错误",
@@ -123,6 +124,7 @@ def install_exception_handlers(app: FastAPI) -> None:
             409: "状态冲突",
             422: '参数校验失败',
             429: "请求过于频繁",
+            502: '上游服务错误'
         }
         code = code_map.get(exc.status_code, "INTERNAL_ERROR")
         title = title_map.get(exc.status_code, "服务器内部错误")

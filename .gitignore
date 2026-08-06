@@ -1,5 +1,5 @@
 # --- market data & run artifacts (never committed: size + data licensing) ---
-data/
+/data/
 tmp/
 analysis/
 output.txt

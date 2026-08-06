@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import io
 from collections.abc import Sequence
+import pandas as pd
 
 import matplotlib
 matplotlib.use("Agg")
@@ -54,7 +55,7 @@ def ic_series_png(dates: Sequence, ic: Sequence[float], rolling: Sequence[float]
 def ic_hist_png(ic: Sequence[float]) -> str | None:
     if not len(ic):
         return None
-    fig, ax = plt.subplots(figsize=(3.4, 1.35))
+    fig, ax = plt.subplots(figsize=(3.0, 1.15))
     ax.hist(ic, bins=25, color="#444444", edgecolor="white", linewidth=0.3)
     mean = sum(ic) / len(ic)
     ax.axvline(mean, color="#999999", linewidth=0.9, linestyle="--")
@@ -63,10 +64,39 @@ def ic_hist_png(ic: Sequence[float]) -> str | None:
     return _to_uri(fig)
 
 
+def ic_heatmap_png(matrix: pd.DataFrame) -> str | None:
+    """分年（或分月）均值 IC 热力图：行=时间，列=组合，颜色=均值 IC。"""
+    if matrix is None or matrix.empty or matrix.shape[0] == 0 or matrix.shape[1] == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(5.2, 2.6))
+    vmax = max(abs(float(matrix.values.min())), abs(float(matrix.values.max())), 1e-9)
+    image = ax.imshow(matrix.values, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
+
+    ax.set_xticks(range(matrix.shape[1]))
+    ax.set_xticklabels(matrix.columns, rotation=30, ha="right", fontsize=_TICK)
+    ax.set_yticks(range(matrix.shape[0]))
+    ax.set_yticklabels(matrix.index, fontsize=_TICK)
+    ax.tick_params(length=0)
+
+    for row in range(matrix.shape[0]):
+        for col in range(matrix.shape[1]):
+            value = matrix.iat[row, col]
+            if pd.isna(value):
+                continue
+            ax.text(
+                col, row, f"{value:.2f}",
+                ha="center", va="center", fontsize=_TICK, color="#111111",
+            )
+
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, ticks=[-vmax, 0, vmax])
+    return _to_uri(fig)
+
+
 def quantile_curve_png(dates: Sequence, quantiles: dict[str, Sequence[float]], spy: Sequence[float] | None) -> str | None:
     if not quantiles or not len(dates):
         return None
-    fig, ax = plt.subplots(figsize=(3.6, 1.6))
+    fig, ax = plt.subplots(figsize=(4.6, 2.0))
     ordered = sorted(quantiles.items(), key=lambda kv: kv[0])
     for i, (name, series) in enumerate(ordered):
         shade = _GRAYS[min(i, len(_GRAYS) - 1)]
@@ -76,7 +106,7 @@ def quantile_curve_png(dates: Sequence, quantiles: dict[str, Sequence[float]], s
         ax.plot(dates, spy, color="#111111", linewidth=1.0, linestyle="--", label="SPY")
     ax.margins(x=0)
     ax.tick_params(labelsize=_TICK)
-    ax.legend(fontsize=_LEG, ncol=3, frameon=False, loc="upper left")
+    ax.legend(fontsize=_LEG, ncol=3, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.32))
     ax.spines[["top", "right"]].set_visible(False)
     return _to_uri(fig)
 
@@ -113,4 +143,39 @@ def loadings_png(
     ax.invert_yaxis()
     ax.tick_params(labelsize=_TICK)
     ax.spines[["top", "right"]].set_visible(False)
+    return _to_uri(fig)
+
+_LINE_STYLES = ['-','--','-.',':']
+
+def ic_multi_series_png(
+        series: Sequence[dict],
+        *,
+        window: int = 20,
+        max_lines: int = 8,
+) -> str | None:
+    usable = [
+        item
+        for item in series
+        if item.get('dates') and item.get('ic')
+    ][:max_lines]
+    if not usable:
+        return None
+
+    fig, ax = plt.subplots(figsize = (5.2, 2.2))
+    ax.axhline(0, color = '#cccccc', linewidth = 0.8)
+    for i, item in enumerate(usable):
+        rolling = pd.Series(item['ic']).rolling(window, min_periods = 1).mean()
+        ax.plot(
+            item['dates'],
+            rolling,
+            color = _GRAYS[min(i, len(_GRAYS)-1)],
+            linestyle = _LINE_STYLES[i % len(_LINE_STYLES)],
+            linewidth = 1.2,
+            label = item['label'],
+        )
+    ax.margins(x=0)
+    ax.tick_params(labelsize = _TICK)
+    ax.xaxis.set_major_locator(plt.MaxNLocator(6))
+    ax.legend(fontsize = _LEG, ncol=3, frameon= False, loc = 'upper center', bbox_to_anchor = (0.5, -0.32))
+    ax.spines[['top', 'right']].set_visible(False)
     return _to_uri(fig)

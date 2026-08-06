@@ -36,15 +36,21 @@ interface Props {
   height?: number;
   /** 是否对所有曲线归一化到基期 100（默认 true） */
   normalize?: boolean;
+  /** 点击“还原”图标后回调（由页面负责重置回初始状态） */
+  onReset?: () => void;
 }
 
-export const SeriesChart = ({ series, height = 360, normalize = true }: Props) => {
+export const SeriesChart = ({ series, height = 360, normalize = true, onReset }: Props) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+  const onResetRef = useRef(onReset);
+  onResetRef.current = onReset;
 
   useEffect(() => {
     if (!ref.current) return;
     chartRef.current = echarts.init(ref.current, undefined, { renderer: 'canvas' });
+    // 内置 restore 图标点击后，除了重置图表本身，还要通知页面恢复初始股票/区间
+    chartRef.current.on('restore', () => onResetRef.current?.());
     const observer = new ResizeObserver(() => chartRef.current?.resize());
     observer.observe(ref.current);
     return () => {
@@ -60,24 +66,28 @@ export const SeriesChart = ({ series, height = 360, normalize = true }: Props) =
       name: s.symbol,
       data: (normalize ? normalizeToBase100(s.points) : s.points).map((p) => [p.date, p.value]),
     }));
-    chartRef.current.setOption({
+    const option = {
       tooltip: { trigger: 'axis' },
       legend: { top: 0, textStyle: { color: '#9aa3b8' } },
       grid: { left: 50, right: 20, top: 36, bottom: 50 },
       xAxis: { type: 'time' },
       yAxis: { type: 'value', scale: true },
       dataZoom: [
-        { type: 'inside' },
-        { type: 'slider', height: 18, bottom: 12 },
+        { type: 'inside', xAxisIndex: 0 },
+        { type: 'slider', xAxisIndex: 0, height: 18, bottom: 12 },
       ],
-      toolbox: { right: 8, feature: { dataZoom: {}, restore: {} } },
+      toolbox: {
+        right: 8,
+        feature: { dataZoom: { yAxisIndex: 'none' }, restore: {} },
+      },
       series: datasets.map((d) => ({
         name: d.name,
         type: 'line',
         showSymbol: false,
         data: d.data,
       })),
-    });
+    };
+    chartRef.current.setOption(option);
   }, [series, normalize]);
 
   return <div ref={ref} style={{ width: '100%', height }} />;

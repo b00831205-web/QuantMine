@@ -33,7 +33,11 @@ export function AsyncBoundary<T>({
 }: Props<T>) {
   const { t } = useTranslation();
   const resolvedEmptyTitle = emptyTitle ?? t('common.noData');
-  if (state.status === 'loading' || state.status === 'idle') {
+  if (state.status === 'idle') {
+    // 未开始：不渲染任何加载/占位内容（例如查询页还没点“执行”时）
+    return null;
+  }
+  if (state.status === 'loading') {
     return <LoadingView />;
   }
   if (state.status === 'error') {
