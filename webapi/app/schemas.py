@@ -1,6 +1,6 @@
 """Pydantic schemas mirroring docs/api/openapi.yaml.
 
-阶段 0 仅保留契约，不连接数据库。
+契约的唯一来源：端点的请求/响应模型都在这里定义，改动需同步 openapi.yaml。
 """
 
 from __future__ import annotations

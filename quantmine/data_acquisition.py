@@ -158,7 +158,7 @@ def data_acquisition(
     file_prefix: str = 'batch',
     with_market_cap: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Download historical price and volume data in batches with checkpoints.
+    """Download historical price, volume, and market-cap data in batches.
 
     Args:
         tickers: List of tickers to download.
@@ -168,9 +168,21 @@ def data_acquisition(
         max_retries: Maximum retries for each batch download.
         wait: Seconds to wait between retry attempts.
         checkpoint_dir: Directory used to store batch checkpoints and logs.
+        batch_wait: Seconds to sleep between batches, to ease Yahoo rate limits.
+        shares_start_date: Start date for the share-count history. Defaults to
+            ``start_date``. Set it earlier than the price window so the sparse
+            share series has a value to forward-fill from on day one.
+        auto_adjust: Reserved for callers that need raw prices from the price
+            leg; the market-cap leg always downloads unadjusted prices.
+        file_prefix: Checkpoint filename prefix for the price leg.
+        with_market_cap: When False, skip the market-cap leg entirely and
+            return empty frames for it. Price-only consumers should pass False
+            to avoid the per-ticker share-count requests.
 
     Returns:
-        A tuple of ``(close_dataframe, volume_dataframe)``.
+        A tuple of ``(close, volume, shares, market_cap)``. All four are wide
+        date-by-ticker frames. ``shares`` and ``market_cap`` are empty frames
+        when ``with_market_cap`` is False.
 
     Notes:
         Each batch is cached to disk so repeated runs can resume from existing
@@ -382,7 +394,38 @@ def acquire_market_cap(
         tickers: list, start_date: str, end_date: str, batch_size,
         max_retries: int=3, wait: int=60, checkpoint_dir: str = 'tmp/checkpoint',
         batch_wait = 1.0, shares_start_date: str| None = None
-)-> pd.DataFrame:
+)-> tuple[pd.DataFrame, pd.DataFrame]:
+    """Download share counts and derive market capitalization.
+
+    Market cap is ``unadjusted close * shares outstanding``. Adjusted prices
+    must not be used here: the adjustment factor differs per ticker, which
+    distorts the cross-sectional size ordering that market-cap weighting
+    depends on.
+
+    Args:
+        tickers: Tickers to download. Blacklisted names are dropped.
+        start_date: Price-window start in ``YYYY-MM-DD`` format.
+        end_date: Price-window end in ``YYYY-MM-DD`` format.
+        batch_size: Number of tickers per price-download batch.
+        max_retries: Maximum retries per price batch and per share request.
+        wait: Seconds to wait between retry attempts.
+        checkpoint_dir: Directory used to store checkpoints.
+        batch_wait: Seconds to sleep between price batches.
+        shares_start_date: Start date for the share history. Defaults to
+            ``start_date``.
+
+    Returns:
+        A tuple of ``(shares, market_cap)`` as wide date-by-ticker frames,
+        aligned to the price index. Tickers whose share count cannot be
+        fetched stay NaN and therefore drop out of any weighting downstream.
+
+    Notes:
+        Prices download in batches, but share counts have no batch endpoint and
+        are fetched one ticker at a time, each with its own checkpoint file.
+        ``get_shares_full`` is called without ``end``: passing it makes the
+        request fail outright, and the trailing surplus is trimmed by the
+        reindex onto the price index anyway.
+    """
     tickers = sorted(set(tickers) - load_blacklist(checkpoint_dir))
     task_sig = hashlib.md5(
         f'{tickers}_{start_date}_{end_date}'.encode()).hexdigest()[:8]

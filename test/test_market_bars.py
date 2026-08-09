@@ -25,9 +25,13 @@ def test_build_market_bars_merges_close_volume_and_builds_latest_snapshot():
 
     bars = build_market_bars(close, volume, source_run_id=42)
 
+    # shares/market_cap 未传时列仍然存在（填 NA），下游 snapshot 与 upsert 依赖这一保证
     assert list(bars.columns) == [
-        "trade_date", "ticker", "close", "volume", "source_run_id"
+        "trade_date", "ticker", "close", "volume",
+        "shares_outstanding", "market_cap", "source_run_id",
     ]
+    assert bars["shares_outstanding"].isna().all()
+    assert bars["market_cap"].isna().all()
     # BBB on 2026-07-20 has neither close nor volume, so it is excluded.
     assert len(bars) == 3
     assert bars.loc[

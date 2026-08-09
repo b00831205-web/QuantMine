@@ -13,10 +13,23 @@ def build_market_bars(
     close: pd.DataFrame,
     volume: pd.DataFrame,
     source_run_id: int,
-    shares: pd.DataFrame,
-    market_cap: pd.DataFrame
+    shares: pd.DataFrame | None = None,
+    market_cap: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Convert wide close/volume frames into database-ready long rows."""
+    """Convert wide close/volume frames into database-ready long rows.
+
+    Args:
+        close: Wide date-by-ticker close prices.
+        volume: Wide date-by-ticker volumes.
+        source_run_id: Research run that produced this load.
+        shares: Optional wide share counts, aligned onto ``close``.
+        market_cap: Optional wide market caps, aligned onto ``close``.
+
+    Returns:
+        Long rows keyed by ``(trade_date, ticker)``. The ``shares_outstanding``
+        and ``market_cap`` columns are always present, filled with NA when the
+        corresponding frame is omitted.
+    """
     close_long = (
         close.rename_axis("trade_date")
         .rename_axis("ticker", axis="columns")

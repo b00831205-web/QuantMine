@@ -158,7 +158,11 @@ def api_error_response(
     trace_id: str,
     field_errors: list[FieldError] | None = None,
 ) -> JSONResponse:
-    """供业务代码手动抛出统一错误的便捷方法（阶段 0 暂不强制使用）。"""
+    """供业务代码手动构造统一错误响应的便捷方法。
+
+    端点通常 raise HTTPException 即可（异常处理器会归一化格式）；只有需要
+    自定义 code 或附带 field_errors 时才直接用这个函数。
+    """
     return _error_response(
         status_code=status_code,
         code=code,

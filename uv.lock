@@ -2796,8 +2796,10 @@ viz = [
 dev = [
     { name = "ipykernel" },
     { name = "jupyter" },
+    { name = "pandas-datareader" },
     { name = "pytest" },
     { name = "sqlalchemy" },
+    { name = "yfinance" },
 ]
 pipeline = [
     { name = "apache-airflow" },
@@ -2826,8 +2828,10 @@ provides-extras = ["data", "viz", "db"]
 dev = [
     { name = "ipykernel", specifier = ">=7.2" },
     { name = "jupyter", specifier = ">=1.1" },
+    { name = "pandas-datareader", specifier = ">=0.11" },
     { name = "pytest", specifier = ">=9.1" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "yfinance", specifier = ">=1.4" },
 ]
 pipeline = [{ name = "apache-airflow", specifier = ">=3.2" }]
 

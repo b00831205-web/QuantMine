@@ -1,7 +1,4 @@
-"""GET /api/v1/market/series — 多 ticker 时间序列查询。
-
-阶段 0 仅固化契约，handler 函数体留 TODO(USER_LEARNING)。
-"""
+"""行情查询端点：多 ticker 时间序列、最新交易日与市场宽度。"""
 
 from __future__ import annotations
 from fastapi import Depends
@@ -49,18 +46,12 @@ async def get_market_series(
 ) -> SeriesResponse:
     """查询多 ticker 时间序列，按区间与频率返回。
 
-    TODO(USER_LEARNING):
-        目标：实现参数校验后的查询逻辑，返回 SeriesResponse；
-        输入：symbols / start_date / end_date / frequency / normalize；
-        输出：SeriesResponse（baseDate + series[]）；
-        约束：
-          ① start_date ≤ end_date；区间过长应考虑降采样或 422；
-          ② symbols 必须为大写；建议在调用服务前归一化；
-          ③ 不要直接连数据库；调用占位 service 或返回明确 TODO 错误；
-          ④ 必须使用统一错误格式（raise HTTPException 或 api_error_response）。
-        提示：① 当前服务层尚未实现，可先 raise 501；
-              ② 后续接 storage.market.get_series(...)；
-              ③ 频率 frequency 与 quantmine/storage/market.py 对齐。
+    ticker 去重并统一大写后查询；frequency 为 W/M 时按周/月重采样。
+    normalize 为真时各序列归一化到基期 100，便于同图比较走势。
+
+    Raises:
+        HTTPException: start_date 晚于 end_date 或 ticker 超过 20 个时 422；
+            区间内无数据时 404。
     """
     if start_date > end_date:
         raise HTTPException(status_code=422, detail='start_date cannot be later than end_date')

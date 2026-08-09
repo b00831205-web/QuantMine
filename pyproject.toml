@@ -24,7 +24,17 @@ viz = ["plotly>=6.8"]
 db = ["sqlalchemy>=2.0", "psycopg2-binary>=2.9.12"]
 
 [dependency-groups]
-dev = ["pytest>=9.1", "ipykernel>=7.2", "jupyter>=1.1", "sqlalchemy>=2.0"]
+# yfinance/pandas-datareader 对库使用者是可选的（见 optional-dependencies.data），
+# 但 quantmine.data_acquisition 在模块顶层 import 它们，因此本仓库的测试与
+# pipelines 缺了就无法导入。放进 dev 组，保证 `uv sync` 不会把它们清掉。
+dev = [
+    "pytest>=9.1",
+    "ipykernel>=7.2",
+    "jupyter>=1.1",
+    "sqlalchemy>=2.0",
+    "yfinance>=1.4",
+    "pandas-datareader>=0.11",
+]
 pipeline = ["apache-airflow>=3.2"]
 
 [build-system]
