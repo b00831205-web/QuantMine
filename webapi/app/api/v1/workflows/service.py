@@ -102,7 +102,7 @@ def list_dags() -> list[DagListItem]:
             SELECT dag_id, is_paused, dag_display_name, description, owners,
                    timetable_summary, next_dagrun
             FROM dag
-            WHERE is_stale = 0
+            WHERE is_stale = false
             ORDER BY dag_id
             """
         ).fetchall()
@@ -131,7 +131,7 @@ def list_dags() -> list[DagListItem]:
 def dag_exists(dag_id: str) -> bool:
     with connect() as conn:
         row = conn.execute(
-            "SELECT 1 FROM dag WHERE dag_id = ? AND is_stale = 0", (dag_id,)
+            "SELECT 1 FROM dag WHERE dag_id = ? AND is_stale = false", (dag_id,)
         ).fetchone()
         return row is not None
 
@@ -146,7 +146,7 @@ def get_dag_detail(dag_id: str) -> DagDetail | None:
             SELECT dag_id, is_paused, dag_display_name, description, owners,
                    timetable_summary, timetable_description, next_dagrun, fileloc
             FROM dag
-            WHERE dag_id = ? AND is_stale = 0
+            WHERE dag_id = ? AND is_stale = false
             """,
             (dag_id,),
         ).fetchone()

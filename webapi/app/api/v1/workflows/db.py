@@ -1,51 +1,73 @@
-"""Airflow 元数据库（SQLite）连接助手。
+"""Airflow 元数据库（Postgres）连接助手。
+
+历史：早期 Airflow 元数据库是放在 /mnt/e（WSL 的 9p/drvfs 挂载）上的 SQLite。
+9p 不支持 SQLite 需要的文件锁：读要 ``immutable=1`` 绕锁，写（trigger/pause，经
+airflow CLI）会直接 "unable to open database file"。现已把 Airflow 元数据库迁到
+Postgres（airflow 库/角色），读写都走 pg，CLI 写路径也随 airflow.cfg 指向 pg。
 
 设计要点：
-- 路径解析：优先环境变量 ``QUANT_AIRFLOW_DB``；否则从本文件推导项目根下的
-  ``airflow/airflow.db``（`parents[5]` = 项目根，见下方注释）。
-- 只读路径：以 ``mode=ro&immutable=1`` URI 打开。项目里 airflow.db 落在 WSL 的
-  drvfs 挂载盘（/mnt/e）上，普通读写连接会 "unable to open database file"（drvfs
-  不支持 SQLite 需要的文件锁/shm）；``immutable=1`` 绕过加锁与 WAL 直接读主库文件。
-  数据可能略滞后于未 checkpoint 的 WAL，对“看板式”读取可接受。
-- 写路径（暂停/触发）不走这里，改用 airflow CLI（见 cli.py），更稳且语义正确。
-- 每次请求开一个短连接并及时关闭；`row_factory` 设为 ``sqlite3.Row`` 便于按列名取值。
+- 连接串来自环境变量 ``QUANT_AIRFLOW_PG_DSN``（libpq DSN 或 URL），例如
+  ``postgresql://airflow:***@localhost:5432/airflow``。
+- ``connect()`` 返回一个薄封装 ``_PgConnection``，暴露 service.py 沿用的
+  ``execute(sql, params)`` 接口：把 ``?`` 占位符换成 psycopg2 的 ``%s``，并用
+  RealDictCursor 让按列名取值（``row["col"]``）与原 sqlite3.Row 行为一致。
+- 只读会话；连接失败/未配置一律转成 ``FileNotFoundError``，沿用上层 503 映射
+  （见 router 的 ``_guard_db``）。
 """
 
 from __future__ import annotations
 
 import os
-import sqlite3
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Iterator
 
-# webapi/app/api/v1/workflows/db.py → parents: [0]workflows [1]v1 [2]api [3]app
-# [4]webapi [5]项目根。WSL 下 __file__ = /mnt/e/.../webapi/... 亦成立。
-_PROJECT_ROOT = Path(__file__).resolve().parents[5]
-_DEFAULT_DB = _PROJECT_ROOT / "airflow" / "airflow.db"
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 
-def airflow_db_path() -> Path:
-    """返回 Airflow 元数据库文件路径（不保证存在）。"""
-    override = os.environ.get("QUANT_AIRFLOW_DB")
-    return Path(override) if override else _DEFAULT_DB
+class _PgConnection:
+    """把 psycopg2 连接包成 service.py 期望的 sqlite3 风格 ``execute`` 接口。"""
+
+    def __init__(self, conn: "psycopg2.extensions.connection") -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, params: tuple = ()):
+        """执行一条查询并返回游标（``fetchall``/``fetchone`` 得到 dict 行）。
+
+        service.py 沿用 sqlite3 的 ``?`` 占位符；这里统一转成 psycopg2 的 ``%s``。
+        本域全部为字面 SQL，不含真正的问号字面量，替换是安全的。
+        """
+        cur = self._conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def close(self) -> None:
+        self._conn.close()
+
+
+def _dsn() -> str:
+    dsn = os.environ.get("QUANT_AIRFLOW_PG_DSN")
+    if not dsn:
+        raise RuntimeError(
+            "未配置 QUANT_AIRFLOW_PG_DSN（Airflow 元数据库连接串），"
+            "例如 postgresql://airflow:PW@localhost:5432/airflow"
+        )
+    return dsn
 
 
 @contextmanager
-def connect() -> Iterator[sqlite3.Connection]:
-    """打开一个到 Airflow 元数据库的短连接（Row 工厂），退出时关闭。
+def connect() -> Iterator[_PgConnection]:
+    """打开一个到 Airflow 元数据库（Postgres）的只读短连接，退出时关闭。
 
     Raises:
-        FileNotFoundError: 数据库文件不存在时抛出，交由上层转成 503/UPSTREAM。
+        FileNotFoundError: 未配置连接串或数据库不可达；交由上层转成 503。
     """
-    path = airflow_db_path()
-    if not path.exists():
-        raise FileNotFoundError(str(path))
-    # 只读 + immutable：drvfs 上唯一稳定可用的打开方式。
-    uri = f"file:{path.as_posix()}?mode=ro&immutable=1"
-    conn = sqlite3.connect(uri, uri=True, timeout=5.0, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
     try:
-        yield conn
+        conn = psycopg2.connect(_dsn())
+    except (psycopg2.OperationalError, RuntimeError) as exc:
+        raise FileNotFoundError(f"Airflow 元数据库不可达：{exc}") from exc
+    conn.set_session(readonly=True, autocommit=True)
+    try:
+        yield _PgConnection(conn)
     finally:
         conn.close()

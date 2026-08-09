@@ -83,6 +83,16 @@ class MarketLatestDateResponse(BaseModel):
     model_config = {'populate_by_name' : True}
 
 
+class MarketOverviewResponse(BaseModel):
+    latest_trade_date: date = Field(alias="latestTradeDate")
+    advancers: int
+    decliners: int
+    total: int
+    breadth: float
+
+    model_config = {"populate_by_name": True}
+
+
 # --- Research ---
 
 class ResearchRunOption(BaseModel):

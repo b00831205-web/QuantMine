@@ -1,11 +1,23 @@
 from __future__ import annotations
 import logging
+
 import pandas as pd
 from sqlalchemy import MetaData, Table, select
 from sqlalchemy.engine import Engine
 
+from quantmine.report_metrics import (
+    build_backtest_metrics_data,
+    build_ic_decay_frame,
+)
 from quantmine.storage.ic import load_ic_variants
-from .charts import ic_heatmap_png, ic_hist_png, ic_multi_series_png, quantile_curve_png
+from .charts import (
+    ic_decay_png,
+    ic_heatmap_png,
+    ic_hist_png,
+    ic_multi_series_png,
+    quantile_curve_png,
+    rolling_sharpe_png,
+)
 
 logger = logging.getLogger("quantmine.webapi")
 
@@ -147,3 +159,125 @@ def build_report_charts(engine, run_id: int, test_id: str | None)-> dict:
     except Exception as error:  # 产物缺失/损坏时不能拖垮 PDF，图表降级为无图
         logger.warning("build_report_charts skipped: %s", error)
     return charts
+
+def build_ic_pos_map(engine: Engine, run_id: int) -> dict[tuple[str,str,int], float]:
+    result : dict[tuple[str,str,int], float] = {}
+    try: 
+        variants = load_ic_variants(engine, run_id)
+        for variant_name, variant in variants.items():
+            scope = getattr(variant, 'test', None)
+            if scope is None:
+                continue
+            frame = scope.get('cs_ic')
+            if frame is None:
+                continue
+            for (factor_name, period) in frame.columns:
+                values = frame[(factor_name, period)].dropna()
+                if values.empty:
+                    continue
+                result[(variant_name, factor_name, int(period))] = round(
+                    float((values > 0).mean()), 4
+
+                )
+    except Exception as error:
+        logger.exception('build_ic_pos_map skipped: %s', error)
+    return result
+
+def _acf_rows(acf_df: pd.DataFrame |None) -> list[dict]:
+    if acf_df is None or acf_df.empty:
+        return []
+    rows = []
+    for _, record in acf_df.reset_index().iterrows():
+        values = list(record)
+        rows.append({
+            'factor': values[0],
+            'period': values[1],
+            'lag': values[2],
+            'acf': values[3] if len(values) >3 else None,
+        })
+    return rows
+
+def _yearly_rows(yearly_df: pd.DataFrame | None) -> list[dict]:
+    if yearly_df is None or yearly_df.empty:
+        return []
+    rows = []
+    for _, record in yearly_df.reset_index().iterrows():
+        values = list(record)
+        rows.append({
+            'year': values[0],
+            'factor': values[1],
+            'period': values[2],
+            'ic_mean': values[3] if len(values) > 3 else None,
+            'ic_std': values[4] if len(values) > 4 else None,
+            'ir': values[5] if len(values) > 5 else None,
+            'ic_pos': values[6] if len(values) > 6 else None,
+            'n': values[7] if len(values) > 7 else None
+        })
+    return rows
+
+def _build_ic_monthly_heatmap(combos: list[dict])->pd.DataFrame | None:
+    if not combos:
+        return None
+    records: list[dict] = []
+    for combo in combos:
+        series = pd.Series(combo['ic'], index = pd.to_datetime(combo['dates']))
+        for period, value in series.groupby(series.index.to_period('M')).mean().items():
+            records.append({'period':str(period), 'combo': combo['label'], 'ic': float(value)})
+
+    frame = pd.DataFrame(records).pivot(index = 'period', columns = 'combo', values  = 'ic')
+    return frame.sort_index()
+
+def build_ic_appendices(engine: Engine, run_id: int) -> dict:
+    """报告附录数据：分年度 IC、ACF、月度热力图（基于 IC 工件）。"""
+    appendices: dict = {
+        "yearly": [],
+        "acf": [],
+        "monthly_heatmap": None,
+    }
+    try:
+        variants = load_ic_variants(engine, run_id)
+        combos = _collect_ic_combos(variants)
+        appendices["monthly_heatmap"] = ic_heatmap_png(_build_ic_monthly_heatmap(combos))
+
+        for variant in variants.values():
+            scope = getattr(variant, "test", None)
+            if scope is None:
+                continue
+            acf = scope.get("acf")
+            yearly = scope.get("yearly")
+            if not appendices["acf"] and acf is not None:
+                appendices["acf"] = _acf_rows(acf)
+            if not appendices["yearly"] and yearly is not None:
+                appendices["yearly"] = _yearly_rows(yearly)
+            if appendices["acf"] and appendices["yearly"]:
+                break
+    except Exception as error:  # 产物缺失时不能拖垮 PDF
+        logger.exception("build_ic_appendices skipped: %s", error)
+    return appendices
+
+def build_ic_decay_png(engine: Engine, run_id: int) -> str | None:
+    """A4 IC 衰减图：计算在 quantmine，这里只画图。"""
+    try:
+        return ic_decay_png(build_ic_decay_frame(engine, run_id))
+    except Exception as error:
+        logger.warning("build_ic_decay_png skipped: %s", error)
+        return None
+
+def build_backtest_appendices(engine: Engine, run_id: int) -> dict:
+    """A5 滚动 Sharpe / Alpha·Beta + A6 因子自相关：计算在 quantmine，这里只渲染。"""
+    result = {
+        "rolling_sharpe": None,
+        "alpha_beta": [],
+        "factor_autocorr": [],
+    }
+    try:
+        data = build_backtest_metrics_data(engine, run_id)
+        result["rolling_sharpe"] = rolling_sharpe_png(
+            data["rolling_sharpe_dates"],
+            data["rolling_sharpe_values"],
+        )
+        result["alpha_beta"] = data["alpha_beta"]
+        result["factor_autocorr"] = data["factor_autocorr"]
+    except Exception as error:
+        logger.warning("build_backtest_appendices skipped: %s", error)
+    return result

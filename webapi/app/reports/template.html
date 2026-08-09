@@ -14,7 +14,8 @@
   h1 { font-size: 20px; font-weight: 800; margin: 4px 0 2px; }
   h2 { font-size: 14px; font-weight: 700; margin: 0 0 6px; padding-bottom: 4px;
        border-bottom: 1.5px solid #000; }
-  .cap { font-size: 10.5px; color: #666; margin: 8px 0 2px; font-weight: 600; }
+  .cap { font-size: 10.5px; color: #666; margin: 8px 0 2px; font-weight: 600;
+         page-break-after: avoid; }
   table { width: 100%; border-collapse: collapse; font-size: 9px;
           font-variant-numeric: tabular-nums; }
   th, td { padding: 2px 3px; text-align: right; border-bottom: 1px solid #ccc; }
@@ -149,6 +150,71 @@
   <ul class="apx">
     {% for item in appendix_items %}<li>{{ item.code }} · {{ item.title }} <small>— {{ item.note }}</small></li>{% endfor %}
   </ul>
+  {% if tables.yearly %}
+  <div class="cap">A1 · 分年度 IC 表 / Yearly IC</div>
+  {% for table in tables.yearly %}
+  <figure><img src="{{ table }}" alt=""></figure>
+  {% if include_ai and ai.a1 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a1 }}</div></div>
+  {% endif %}
+  {% endfor %}
+  {% endif %}
+  {% if tables.acf %}
+  <div class="cap">A2 · IC 自相关 ACF / IC autocorrelation</div>
+  {% for table in tables.acf %}
+  <figure><img src="{{ table }}" alt=""></figure>
+  {% if include_ai and ai.a2 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a2 }}</div></div>
+  {% endif %}
+  {% endfor %}
+  {% endif %}
+  {% if charts.monthly_heatmap %}
+  <div class="cap">A3 · 月度 IC 热力图 / Monthly IC heatmap</div>
+  <figure class="wide"><img src="{{ charts.monthly_heatmap }}"></figure>
+  {% endif %}
+  {% if tables.sanity %}
+  <div class="cap">A7 · 稳健性（位移/打乱） / Robustness checks</div>
+  <figure><img src="{{ tables.sanity }}" alt=""></figure>
+  {% if include_ai and ai.a7 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a7 }}</div></div>
+  {% endif %}
+  {% endif %}
+  {% if charts.ic_decay %}
+  <div class="cap">A4 · IC 衰减 / IC decay</div>
+  <figure><img src="{{ charts.ic_decay }}" alt=""></figure>
+  {% endif %}
+  {% if include_ai and ai.a4 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a4 }}</div></div>
+  {% endif %}
+  {% if charts.rolling_sharpe %}
+  <div class="cap">A5 · 滚动 Sharpe / Rolling Sharpe</div>
+  <figure><img src="{{ charts.rolling_sharpe }}" alt=""></figure>
+  {% endif %}
+  {% if include_ai and ai.a5 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a5 }}</div></div>
+  {% endif %}
+  {% if tables.alpha_beta %}
+  <div class="cap">A5 · 回归 Alpha / Beta</div>
+  <figure><img src="{{ tables.alpha_beta }}" alt=""></figure>
+  {% endif %}
+  {% if tables.turnover %}
+  <div class="cap">A6 · 换手率 / Turnover</div>
+  <figure><img src="{{ tables.turnover }}" alt=""></figure>
+  {% endif %}
+  {% if include_ai and ai.a6 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a6 }}</div></div>
+  {% endif %}
+  {% if tables.factor_autocorr %}
+  <div class="cap">A6 · 因子自相关 / Factor autocorrelation</div>
+  <figure><img src="{{ tables.factor_autocorr }}" alt=""></figure>
+  {% endif %}
+  {% if tables.gross %}
+  <div class="cap">A8 · 毛收益绩效 / Gross-return performance</div>
+  <figure><img src="{{ tables.gross }}" alt=""></figure>
+  {% endif %}
+  {% if include_ai and ai.a8 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a8 }}</div></div>
+  {% endif %}
 </div>
 
 </body>

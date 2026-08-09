@@ -34,8 +34,8 @@ def _guard_db(exc: FileNotFoundError) -> HTTPException:
     return HTTPException(
         status_code=503,
         detail=(
-            f"Airflow 元数据库不存在或不可读：{exc}. "
-            "可设置环境变量 QUANT_AIRFLOW_DB 指向 airflow.db"
+            f"Airflow 元数据库不可达：{exc}. "
+            "请检查环境变量 QUANT_AIRFLOW_PG_DSN（Postgres 连接串）"
         ),
     )
 

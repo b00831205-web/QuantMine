@@ -69,14 +69,26 @@ def ic_heatmap_png(matrix: pd.DataFrame) -> str | None:
     if matrix is None or matrix.empty or matrix.shape[0] == 0 or matrix.shape[1] == 0:
         return None
 
-    fig, ax = plt.subplots(figsize=(5.2, 2.6))
-    vmax = max(abs(float(matrix.values.min())), abs(float(matrix.values.max())), 1e-9)
+    # 月度热力图行数多（30 个月），按行数动态给高度，避免标签挤在一起
+    height = max(2.6, min(7.5, 0.24 * matrix.shape[0] + 1.2))
+    fig, ax = plt.subplots(figsize=(5.2, height))
+    values_flat = matrix.stack().dropna()
+    if values_flat.empty:
+        return None
+    vmax = max(abs(float(values_flat.min())), abs(float(values_flat.max())), 1e-9)
     image = ax.imshow(matrix.values, cmap="RdBu_r", vmin=-vmax, vmax=vmax, aspect="auto")
 
     ax.set_xticks(range(matrix.shape[1]))
-    ax.set_xticklabels(matrix.columns, rotation=30, ha="right", fontsize=_TICK)
-    ax.set_yticks(range(matrix.shape[0]))
-    ax.set_yticklabels(matrix.index, fontsize=_TICK)
+    ax.set_xticks(
+        range(matrix.shape[1]),
+        labels=[str(label) for label in matrix.columns],
+        rotation=30, ha="right", fontsize=_TICK,
+    )
+    ax.set_yticks(
+        range(matrix.shape[0]),
+        labels=[str(label) for label in matrix.index],
+        fontsize=_TICK,
+    )
     ax.tick_params(length=0)
 
     for row in range(matrix.shape[0]):
@@ -178,4 +190,47 @@ def ic_multi_series_png(
     ax.xaxis.set_major_locator(plt.MaxNLocator(6))
     ax.legend(fontsize = _LEG, ncol=3, frameon= False, loc = 'upper center', bbox_to_anchor = (0.5, -0.32))
     ax.spines[['top', 'right']].set_visible(False)
+    return _to_uri(fig)
+
+def ic_decay_png(frame: pd.DataFrame) -> str | None:
+    """A4 IC 衰减：分组柱状图（持有期不连续，柱状比折线更准确）。"""
+    if frame is None or frame.empty:
+        return None
+    fig, ax = plt.subplots(figsize=(5.2, 3.4))
+    n = len(frame.columns)
+    width = 0.8 / n if n else 0.2
+    x = list(range(len(frame.index)))
+    for i, col in enumerate(frame.columns):
+        offsets = [v + (i - n / 2 + 0.5) * width for v in x]
+        ax.bar(offsets, frame[col], width=width, label=str(col))
+    ax.set_xticks(x, [str(v) for v in frame.index])
+    ax.set_xlabel("Holding period (days)", fontsize=8, labelpad=8)
+    ax.set_ylabel("Mean IC", fontsize=8, labelpad=6)
+    ax.axhline(0, color="#999999", linewidth=0.8)
+    ax.legend(
+        fontsize=6,
+        ncol=min(n, 3),
+        bbox_to_anchor=(0.5, -0.30),
+        loc="upper center",
+    )
+    ax.tick_params(labelsize=_TICK)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.subplots_adjust(bottom=0.32)
+    return _to_uri(fig)
+
+def rolling_sharpe_png(dates: Sequence, sharpe: Sequence[float]) -> str | None:
+    """63 交易日滚动年化 Sharpe 曲线，日期斜向显示。"""
+    if not dates or not sharpe:
+        return None
+    fig, ax = plt.subplots(figsize=(5.2, 2.8))
+    ax.plot(dates, sharpe, linewidth=0.9)
+    ax.axhline(0, color="#999999", linewidth=0.8, linestyle="--")
+    ax.set_ylabel("Rolling Sharpe", fontsize=8, labelpad=6)
+    ax.tick_params(labelsize=_TICK)
+    ax.tick_params(axis="x", rotation=45)
+    if len(dates) > 12:
+        step = max(1, len(dates) // 12)
+        ax.set_xticks([dates[i] for i in range(0, len(dates), step)])
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.subplots_adjust(bottom=0.18)
     return _to_uri(fig)

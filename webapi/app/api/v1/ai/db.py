@@ -1,8 +1,10 @@
 from __future__ import annotations
-from sqlalchemy import MetaData, Table, func, select, update
+from sqlalchemy import MetaData, Table, func, select, update, delete
 from sqlalchemy.dialects.postgresql import insert
 
 from sqlalchemy.engine import Engine
+
+DEFAULT_TITLE = '新对话'
 
 DEFAULT_CAPABILITIES = {
     'read_research': True,
@@ -11,6 +13,14 @@ DEFAULT_CAPABILITIES = {
     'query_database': True,
     'use_chat_history': True,
     'rag_corpus': False
+}
+
+DEFAULT_EMBEDDING_CONFIG = {
+    'provider': 'none',
+    'baseUrl': '',
+    'model': '',
+    'apiKeyEnv': '',
+    'dimensions': 1024
 }
 
 def _conversation_row(row) -> dict:
@@ -39,6 +49,9 @@ def _message_row(row)->dict:
     if row['confirm_request']:
         message['confirmRequest'] = row['confirm_request']
 
+    if row["attachments"]:
+        message["attachments"] = row["attachments"]
+
     return message
 
 def list_conversations(engine: Engine, *, limit: int = 50)-> list[dict]:
@@ -63,12 +76,24 @@ def create_conversation(engine: Engine, *, model_id: str|None) -> dict:
     table = Table('ai_conversations', MetaData(), autoload_with=engine)
     statement = (
         insert(table)
-        .values(title = '新对话', model_id = model_id)
+        .values(title = DEFAULT_TITLE, model_id = model_id)
         .returning(*table.c)
     )
     with engine.begin() as connection:
         row =connection.execute(statement).mappings().one()
     return _conversation_row(row)
+
+def update_conversation_title(engine: Engine, conversation_id: int, title: str) -> None:
+    """把会话标题写回库（仅当仍是默认标题时更新，避免覆盖用户/已生成的标题）。"""
+    table = Table('ai_conversations', MetaData(), autoload_with=engine)
+    statement = (
+        update(table)
+        .where(table.c.id == conversation_id)
+        .where(table.c.title == DEFAULT_TITLE)
+        .values(title = title)
+    )
+    with engine.begin() as connection:
+        connection.execute(statement)
 
 def list_messages(engine: Engine, conversation_id: int)->list[dict]:
     table = Table('ai_messages', MetaData(), autoload_with=engine)
@@ -90,6 +115,7 @@ def create_message(
         citations: list|None = None,
         tool_calls: list|None =None,
         confirm_request: dict | None = None,
+        attachments: list | None = None
 ) -> dict:
     messages = Table('ai_messages', MetaData(), autoload_with=engine)
     conversations = Table('ai_conversations', MetaData(), autoload_with=engine)
@@ -101,7 +127,8 @@ def create_message(
                 content = content,
                 citations = citations or [],
                 tool_calls = tool_calls or [],
-                confirm_request = confirm_request)
+                confirm_request = confirm_request,
+                attachments = attachments or [])
     ).returning(*messages.c)
     with engine.begin() as connection:
         row = connection.execute(statement).mappings().one()
@@ -155,7 +182,8 @@ def _default_config()->dict:
         'defaultModel': '',
         'systemPrompt': '你是一名量化研究助手，回答要简洁，基于数据',
         'temperature': 0.7,
-        'capabilities': dict(DEFAULT_CAPABILITIES)
+        'capabilities': dict(DEFAULT_CAPABILITIES),
+        'embeddingConfig': dict(DEFAULT_EMBEDDING_CONFIG),
     }
 
 def _config_row(row)->dict:
@@ -164,7 +192,8 @@ def _config_row(row)->dict:
         'defaultModel': row['default_model'],
         'systemPrompt': row['system_prompt'],
         'temperature': float(row['temperature']),
-        'capabilities': {**DEFAULT_CAPABILITIES, **(row['capabilities'] or {})}
+        'capabilities': {**DEFAULT_CAPABILITIES, **(row['capabilities'] or {})},
+        'embeddingConfig': {**DEFAULT_EMBEDDING_CONFIG, **(row['embedding_config'] or {})},
     }
 
 
@@ -185,7 +214,8 @@ def save_config(engine: Engine, config: dict) -> dict:
         'default_model': config.get('defaultModel'),
         'system_prompt': config.get('systemPrompt',''),
         'temperature': config.get('temperature', 0.7),
-        'capabilities': config.get('capabilities') or dict(DEFAULT_CAPABILITIES)
+        'capabilities': config.get('capabilities') or dict(DEFAULT_CAPABILITIES),
+        'embedding_config': config.get('embeddingConfig') or dict(DEFAULT_EMBEDDING_CONFIG),
     }
     statement = (
         insert(table)
@@ -238,3 +268,21 @@ def effective_capabilities(config: dict, provider_id: str| None = None)->dict:
         if provider and provider.get('capabilities'):
             merged.update(provider['capabilities'])
     return merged
+
+def delete_conversation(engine: Engine, conversation_id: int)-> bool:
+    embeddings = Table('ai_message_embeddings', MetaData(), autoload_with=engine)
+    messages = Table('ai_messages', MetaData(), autoload_with=engine)
+    conversations = Table('ai_conversations', MetaData(), autoload_with=engine)
+
+    with engine.begin() as connection:
+        connection.execute(
+            delete(embeddings).where(embeddings.c.conversation_id == conversation_id)
+        )
+        connection.execute(
+            delete(messages).where(messages.c.conversation_id == conversation_id)
+        )
+        result = connection.execute(
+            delete(conversations).where(conversations.c.id == conversation_id)
+        )
+
+    return result.rowcount > 0

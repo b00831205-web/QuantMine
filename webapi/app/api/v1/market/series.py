@@ -13,9 +13,21 @@ from datetime import date
 
 from fastapi import APIRouter, Query, HTTPException
 
-from ....schemas import SeriesResponse, SeriesEntry, SeriesPoint, MarketLatestDateResponse
+from ....schemas import (
+    MarketLatestDateResponse,
+    MarketOverviewResponse,
+    SeriesEntry,
+    SeriesPoint,
+    SeriesResponse,
+)
 
-from quantmine.storage.market import fetch_market_bars, switch_to_week, switch_to_month, fetch_latest_market_trade_date
+from quantmine.storage.market import (
+    fetch_latest_market_trade_date,
+    fetch_market_bars,
+    fetch_market_breadth,
+    switch_to_month,
+    switch_to_week,
+)
 from ....dependencies import get_request_engine
 
 router = APIRouter()
@@ -101,3 +113,17 @@ async def get_lastest_date(engine: Engine = Depends(get_request_engine)):
         raise HTTPException(status_code= 404, detail = 'latest date not found')
     else:
         return MarketLatestDateResponse(latest_trade_date=result)
+
+
+@router.get("/market/overview", response_model=MarketOverviewResponse)
+async def get_market_overview(engine: Engine = Depends(get_request_engine)):
+    result = fetch_market_breadth(engine)
+    if result is None:
+        raise HTTPException(status_code=404, detail="market breadth not found")
+    return MarketOverviewResponse(
+        latest_trade_date=result["latest_date"],
+        advancers=result["advancers"],
+        decliners=result["decliners"],
+        total=result["total"],
+        breadth=result["breadth"],
+    )

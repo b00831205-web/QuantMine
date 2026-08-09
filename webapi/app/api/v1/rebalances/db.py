@@ -1,6 +1,9 @@
-from sqlalchemy import MetaData, Table, select, func
+import pandas as pd
+from sqlalchemy import MetaData, Table, func, select, text
 from sqlalchemy.engine import Engine
 from datetime import date
+
+from .holdings import resolve_ticker_history_path
 
 def fetch_rebalance_rows(
     engine: Engine,
@@ -203,3 +206,149 @@ def fetch_market_closes(
     with engine.connect() as connection:
         rows = connection.execute(statement).mappings().all()
     return [dict(row) for row in rows]
+
+
+def fetch_turnover_excess_map(
+    engine: Engine,
+    run_ids: set[int],
+) -> dict[tuple, dict]:
+    """一次性取 turnover/excess 指标，key=(run_id, backtest_id, variant, factor, period, rank)。"""
+    if not run_ids:
+        return {}
+    metadata = MetaData()
+    table = Table("backtest_metrics", metadata, autoload_with=engine)
+    statement = (
+        select(
+            table.c.run_id,
+            table.c.backtest_id,
+            table.c.variant_name,
+            table.c.factor_name,
+            table.c.period,
+            table.c.quantile_rank,
+            table.c.metric_name,
+            table.c.metric_value,
+        )
+        .where(
+            table.c.run_id.in_(run_ids),
+            table.c.metric_name.in_(["turnover", "excess"]),
+        )
+    )
+    with engine.connect() as connection:
+        rows = connection.execute(statement).mappings().all()
+    result: dict[tuple, dict] = {}
+    for r in rows:
+        key = (
+            r["run_id"], r["backtest_id"], r["variant_name"],
+            r["factor_name"], r["period"], r["quantile_rank"],
+        )
+        result.setdefault(key, {})[r["metric_name"]] = r["metric_value"]
+    return result
+
+
+def fetch_next_dates_map(engine: Engine) -> dict[tuple, date | None]:
+    """窗口函数一次算每个调仓日的下一个调仓日（key 里日期用 str 对齐）。"""
+    statement = text(
+        """
+        SELECT run_id, backtest_id, variant_name, factor_name, period,
+               quantile_rank, trade_date,
+               LEAD(trade_date) OVER (
+                   PARTITION BY run_id, backtest_id, variant_name,
+                                factor_name, period, quantile_rank
+                   ORDER BY trade_date
+               ) AS next_date
+        FROM backtest_results
+        """
+    )
+    with engine.connect() as connection:
+        rows = connection.execute(statement).mappings().all()
+    result: dict[tuple, date | None] = {}
+    for r in rows:
+        key = (
+            r["run_id"], r["backtest_id"], r["variant_name"],
+            r["factor_name"], r["period"], r["quantile_rank"],
+            str(r["trade_date"]),
+        )
+        result[key] = r["next_date"]
+    return result
+
+
+def fetch_spy_closes(engine: Engine, dates: set[date]) -> dict[date, float | None]:
+    if not dates:
+        return {}
+    metadata = MetaData()
+    table = Table("market_bars", metadata, autoload_with=engine)
+    statement = select(table.c.trade_date, table.c.close).where(
+        table.c.ticker == "SPY",
+        table.c.trade_date.in_(sorted(dates)),
+    )
+    with engine.connect() as connection:
+        rows = connection.execute(statement).mappings().all()
+    return {
+        r["trade_date"]: float(r["close"]) if r["close"] is not None else None
+        for r in rows
+    }
+
+
+def fetch_holdings_count_map(
+    engine: Engine,
+    run_ids: set[int],
+) -> dict[tuple, int]:
+    """从 ticker_history parquet 一次性统计每个调仓日/分组的持仓数。"""
+    if not run_ids:
+        return {}
+    metadata = MetaData()
+    table = Table("backtest_artifacts", metadata, autoload_with=engine)
+    statement = (
+        select(
+            table.c.run_id,
+            table.c.backtest_id,
+            table.c.variant_name,
+            table.c.artifact_key,
+            table.c.path,
+            table.c.metadata,
+        )
+        .where(
+            table.c.run_id.in_(run_ids),
+            table.c.artifact_type == "ticker_history",
+        )
+    )
+    with engine.connect() as connection:
+        rows = connection.execute(statement).mappings().all()
+
+    result: dict[tuple, int] = {}
+    for r in rows:
+        meta = r["metadata"] or {}
+        factor_name = meta.get("factor_name")
+        period = meta.get("period")
+        if not factor_name or period is None:
+            # 兜底：从 artifact_key "factor__period" 解析
+            parts = (r["artifact_key"] or "").rsplit("__", 1)
+            if len(parts) != 2:
+                continue
+            factor_name, period = parts[0], parts[1]
+        try:
+            period = int(period)
+        except (TypeError, ValueError):
+            continue
+        path = resolve_ticker_history_path(
+            run_id=r["run_id"],
+            backtest_id=r["backtest_id"],
+            factor_name=factor_name,
+            period=period,
+        )
+        if not path:
+            continue
+        df = pd.read_parquet(path)
+        counts = df.groupby(["trade_date", "quantile_rank"]).size()
+        for (trade_date, rank), count in counts.items():
+            date_str = (
+                str(trade_date.date())
+                if hasattr(trade_date, "date")
+                else str(trade_date)
+            )
+            key = (
+                r["run_id"], r["backtest_id"], r["variant_name"],
+                factor_name, period, int(rank), date_str,
+            )
+            result[key] = int(count)
+    return result

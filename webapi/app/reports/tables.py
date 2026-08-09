@@ -22,6 +22,17 @@ def _to_uri(svg: str) -> str:
     encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
     return f"data:image/svg+xml;base64,{encoded}"
 
+def _fmt(value, digits: int = 4) -> str:
+    if value is None or (isinstance(value, float) and value != value):  # NaN
+        return "—"
+    return f"{value:.{digits}f}"
+
+
+def _pct2(value, digits: int = 1) -> str:
+    if value is None or (isinstance(value, float) and value != value):
+        return "—"
+    return f"{value * 100:.{digits}f}%"
+
 
 def render_table_svg(
     headers: list[str],
@@ -178,4 +189,138 @@ def summary_table(rows: list[dict], L: dict) -> str:
     widths = [110.0, 300.0, 140.0, 130.0]
     aligns = ["l", "l", "r", "l"]
     data = [[r["dim"], r["metric"], r["value"], r["sample"]] for r in rows]
+    return _to_uri(render_table_svg(headers, data, widths, aligns))
+
+def yearly_ic_table(rows: list[dict], L: dict) -> str:
+    if not rows:
+        return ""
+    headers = [
+        L["col_year"], L["col_factor"], L["col_period"],
+        L["col_ic_mean"], L["col_ic_std"], L["col_ir"], L["col_ic_pos"], L["col_n"],
+    ]
+    widths = [45.0, 80.0, 32.0, 55.0, 55.0, 50.0, 60.0, 40.0]
+    aligns = ["r", "l", "r", "r", "r", "r", "r", "r"]
+    data = [
+        [r["year"], r["factor"], r["period"],
+         _fmt(r["ic_mean"], 4), _fmt(r["ic_std"], 3), _fmt(r["ir"], 3),
+         _pct2(r["ic_pos"]), str(r["n"] or "")]
+        for r in rows
+    ]
+    return _to_uri(render_table_svg(headers, data, widths, aligns))
+
+
+def _chunk_rows(rows: list, size: int = 25) -> list[list]:
+    """把长表按行数切块，避免单张 SVG 超高被 PDF 截断。"""
+    return [rows[i : i + size] for i in range(0, len(rows), size)]
+
+
+def yearly_ic_tables(rows: list[dict], L: dict) -> list[str]:
+    """分年度 IC 表：按 25 行一组拆成多张 SVG。"""
+    headers = [
+        L["col_year"], L["col_factor"], L["col_period"],
+        L["col_ic_mean"], L["col_ic_std"], L["col_ir"], L["col_ic_pos"], L["col_n"],
+    ]
+    widths = [45.0, 80.0, 32.0, 55.0, 55.0, 50.0, 60.0, 40.0]
+    aligns = ["r", "l", "r", "r", "r", "r", "r", "r"]
+    uris = []
+    for chunk in _chunk_rows(rows):
+        data = [
+            [r["year"], r["factor"], r["period"],
+             _fmt(r["ic_mean"], 4), _fmt(r["ic_std"], 3), _fmt(r["ir"], 3),
+             _pct2(r["ic_pos"]), str(r["n"] or "")]
+            for r in chunk
+        ]
+        uris.append(_to_uri(render_table_svg(headers, data, widths, aligns)))
+    return uris
+
+
+def acf_tables(rows: list[dict], L: dict) -> list[str]:
+    """ACF 表：按 25 行一组拆成多张 SVG。"""
+    headers = [L["col_factor"], L["col_period"], L["col_lag"], L["col_acf"]]
+    widths = [140.0, 90.0, 90.0, 120.0]
+    aligns = ["l", "r", "r", "r"]
+    uris = []
+    for chunk in _chunk_rows(rows):
+        data = [[r["factor"], r["period"], r["lag"], _fmt(r["acf"], 4)] for r in chunk]
+        uris.append(_to_uri(render_table_svg(headers, data, widths, aligns)))
+    return uris
+
+
+def acf_table(rows: list[dict], L: dict) -> str:
+    if not rows:
+        return ""
+    headers = [L["col_factor"], L["col_period"], L["col_lag"], L["col_acf"]]
+    widths = [140.0, 90.0, 90.0, 120.0]
+    aligns = ["l", "r", "r", "r"]
+    data = [[r["factor"], r["period"], r["lag"], _fmt(r["acf"], 4)] for r in rows]
+    return _to_uri(render_table_svg(headers, data, widths, aligns))
+
+
+def sanity_table(rows: list[dict], L: dict) -> str:
+    if not rows:
+        return ""
+    headers = [
+        L["col_factor"], L["col_period"], L["col_scenario"],
+        L["col_mean_diff"], L["col_std_diff"], L["col_mean_to_std"],
+    ]
+    widths = [90.0, 55.0, 85.0, 90.0, 90.0, 90.0]
+    aligns = ["l", "r", "l", "r", "r", "r"]
+    data = [
+        [r["factor"], r["period"], r["scenario"],
+         _fmt(r["mean_diff"], 4), _fmt(r["std_diff"], 4), _fmt(r["mean_to_std"], 3)]
+        for r in rows
+    ]
+    return _to_uri(render_table_svg(headers, data, widths, aligns))
+
+def alpha_beta_table(rows: list[dict], L: dict) -> str:
+    if not rows:
+        return ""
+    headers = [L["col_alpha"], L["col_beta"], "n"]
+    widths = [180.0, 140.0, 120.0]
+    aligns = ["r", "r", "r"]
+    data = [[_fmt(r["alpha"], 4), _fmt(r["beta"], 4), str(r["n"])] for r in rows]
+    return _to_uri(render_table_svg(headers, data, widths, aligns))
+
+
+def turnover_table(rows: list[dict], L: dict) -> str:
+    if not rows:
+        return ""
+    headers = [L["col_factor"], L["col_period"], L["col_group"], L["col_turnover"]]
+    widths = [150.0, 80.0, 100.0, 110.0]
+    aligns = ["l", "r", "r", "r"]
+    data = [
+        [r["factor"], r["period"], "LS" if r["rank"] == 0 else f"Q{r['rank']}",
+         _pct2(r["turnover"], 2)]
+        for r in rows
+    ]
+    return _to_uri(render_table_svg(headers, data, widths, aligns))
+
+
+def factor_autocorr_table(rows: list[dict], L: dict) -> str:
+    if not rows:
+        return ""
+    headers = [L["col_factor"], L["col_autocorr"]]
+    widths = [300.0, 140.0]
+    aligns = ["l", "r"]
+    data = [[r["factor"], _fmt(r["autocorr"], 4)] for r in rows]
+    return _to_uri(render_table_svg(headers, data, widths, aligns))
+
+
+def gross_table(rows: list[dict], L: dict) -> str:
+    if not rows:
+        return ""
+    headers = [
+        L["col_factor"], L["col_period"], L["col_group"],
+        L["col_total_return"], L["col_ann"], L["col_vol"],
+        L["col_sharpe"], L["col_mdd"], L["col_win"],
+    ]
+    widths = [80.0, 32.0, 50.0, 55.0, 55.0, 45.0, 45.0, 45.0, 40.0]
+    aligns = ["l", "r", "r", "r", "r", "r", "r", "r", "r"]
+    data = [
+        [r["factor"], r["period"], "LS" if r["rank"] == 0 else f"Q{r['rank']}",
+         _pct2(r["total_return"], 2), _pct2(r["yearly_return"], 2),
+         _pct2(r["volatility"], 2), _fmt(r["sharpe"], 2),
+         _pct2(r["mdd"], 2), _pct2(r["win"], 1)]
+        for r in rows
+    ]
     return _to_uri(render_table_svg(headers, data, widths, aligns))

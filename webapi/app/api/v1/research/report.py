@@ -17,8 +17,14 @@ from ....reports import assemble_context, html_to_pdf, render_html, resolve_lang
 from .results import research_run_exists
 from ..reports.db import insert_report_history
 
-from ....reports.chart_data import build_report_charts
-
+from ....reports.chart_data import (
+    build_backtest_appendices,
+    build_ic_appendices,
+    build_ic_decay_png,
+    build_ic_pos_map,
+    build_report_charts,
+)
+from ....reports.cache import get_cached_pdf, save_cached_pdf
 router = APIRouter()
 
 
@@ -29,6 +35,7 @@ def get_research_report_pdf(
     lang: str | None = Query(None),
     ai: bool = Query(False),
     inline: bool = Query(False),
+    refresh: bool = Query(False),
     accept_language: str | None = Header(None, alias="Accept-Language"),
     engine: Engine = Depends(get_request_engine),
 ) -> Response:
@@ -36,15 +43,33 @@ def get_research_report_pdf(
         raise HTTPException(status_code=404, detail="Research run not found")
 
     language = resolve_lang(lang, accept_language)
-    context = assemble_context(
-        engine, run_id=run_id, test_id=test_id, lang=language, include_ai=ai, charts = build_report_charts(engine, run_id, test_id)
-    )
-    html = render_html(context)
+    cached = None if refresh else get_cached_pdf(run_id, test_id, language, ai)
+    if cached is not None:
+        pdf_bytes = cached
+    else:
+        ic_pos_map = build_ic_pos_map(engine, run_id)
+        appendices = build_ic_appendices(engine, run_id)
+        appendices["ic_decay"] = build_ic_decay_png(engine, run_id)
+        appendices.update(build_backtest_appendices(engine, run_id))
+        context = assemble_context(
+            engine, run_id = run_id, test_id = test_id, lang = language, include_ai = ai, charts=build_report_charts(engine, run_id, test_id), ic_pos_map=ic_pos_map, appendices=appendices
+        )
 
-    try:
-        pdf_bytes = html_to_pdf(html)
-    except RuntimeError as error:  # WeasyPrint not installed in this environment
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        if ai:
+            from ....ai.report_analysis import generate_report_analysis
+            context['ai'] = generate_report_analysis(
+                engine,
+                lang = language,
+                context = context
+            )
+        html = render_html(context)
+
+        try:
+            pdf_bytes = html_to_pdf(html)
+        except RuntimeError as error:  # WeasyPrint not installed in this environment
+            raise HTTPException(status_code=503, detail=str(error)) from error
+
+        save_cached_pdf(pdf_bytes, run_id, test_id, language, ai)
 
     filename = f"report_{test_id or run_id}_{language}.pdf"
     disposition = "inline" if inline else "attachment"

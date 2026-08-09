@@ -4,13 +4,14 @@
 "unable to open database file"；且经由 CLI 走的是 Airflow 正式流程，语义正确、能被
 调度器/执行器正常拾取。
 
+元数据库已迁到 Postgres（见 airflow.cfg 的 sql_alchemy_conn），CLI 默认即走该库，
+无需再重定向到 SQLite。
+
 环境变量：
     QUANT_AIRFLOW_BIN     airflow 可执行文件。默认 ``<项目根>/.venv/bin/airflow``
                           （本项目 scheduler 即从此 venv 运行）。
     QUANT_AIRFLOW_PYTHON  运行任务级写操作脚本的 python。默认同 venv 的 python。
     AIRFLOW_HOME          Airflow 主目录。默认 ``<项目根>/airflow``（airflow.cfg 所在）。
-    QUANT_AIRFLOW_DB（可选）当设置时，变更操作把 Airflow 的 sql_alchemy_conn 指到该库，
-                          与 webapi 只读的库保持一致（demo 场景指向 /tmp 副本）。
 """
 
 from __future__ import annotations
@@ -42,13 +43,7 @@ def _airflow_python() -> str:
 def _airflow_env() -> dict[str, str]:
     env = dict(os.environ)
     env.setdefault("AIRFLOW_HOME", str(_DEFAULT_HOME))
-    # 让变更操作命中 webapi 正在读取的同一个库。
-    db = os.environ.get("QUANT_AIRFLOW_DB")
-    if db:
-        db_path = Path(db)
-        if not db_path.is_absolute():
-            db_path = _PROJECT_ROOT / db_path
-        env["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"] = f"sqlite:///{db_path.as_posix()}"
+    # 元数据库连接由 airflow.cfg（sql_alchemy_conn → Postgres）决定，此处不再覆盖。
     return env
 
 
