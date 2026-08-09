@@ -70,6 +70,7 @@ webapi/app/static/
 .agents/
 .codex/
 .impeccable/
+.worktrees/
 
 # --- scratch: 临时 clone 的参考仓库(自带 .git + node_modules, 324MB) ---
 react-router-monorepo/
