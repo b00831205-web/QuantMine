@@ -10,8 +10,70 @@ Library and place under ``tmp/ff3/``):
     - F-F_Research_Data_Factors_daily.csv
     - F-F_Momentum_Factor_daily.csv
 """
+import logging
+from pathlib import Path
+
 import pandas as pd
 import statsmodels.api as sm
+
+logger = logging.getLogger("quantmine.attribution")
+
+_FACTOR_COLS = ["Mkt-RF", "SMB", "HML", "RF", "Mom"]
+
+
+def fetch_french_factors_daily(
+    start_date,
+    end_date,
+    *,
+    cache_path: str | Path | None = None,
+) -> pd.DataFrame | None:
+    """获取日频 Fama-French 三因子 + 动量，返回小数收益的宽表。
+
+    数据源：Ken French Data Library（经 ``pandas_datareader``，直接拿到干净的
+    DataFrame，不用解析 CSV 的头尾垃圾行）。联网拉取成功后写 parquet 缓存；
+    联网失败时回退到缓存。两者都拿不到则返回 ``None``（调用方据此优雅跳过归因，
+    报告保持“未入库”而不是崩溃）。
+
+    Args:
+        start_date / end_date: 拉取区间（任何 pandas 可解析的日期）。
+        cache_path: parquet 缓存文件路径；``None`` 时不缓存。
+
+    Returns:
+        以日期为索引、列为 ``Mkt-RF/SMB/HML/RF/Mom``（小数）的 DataFrame，或 ``None``。
+
+    Notes:
+        A股阶段：Ken French 为纯美股因子，届时替换本函数为中国版因子源即可，
+        下游 ``carhart_attribution`` 与落库结构保持不变。
+    """
+    cache = Path(cache_path) if cache_path else None
+    try:
+        import pandas_datareader.data as web
+
+        start = pd.to_datetime(start_date)
+        end = pd.to_datetime(end_date)
+        ff = web.DataReader("F-F_Research_Data_Factors_daily", "famafrench", start, end)[0]
+        mom = web.DataReader("F-F_Momentum_Factor_daily", "famafrench", start, end)[0]
+
+        ff.columns = [str(column).strip() for column in ff.columns]
+        mom.columns = [str(column).strip() for column in mom.columns]
+        mom = mom.rename(columns={mom.columns[0]: "Mom"})
+
+        merged = ff.join(mom[["Mom"]], how="inner") / 100  # percent -> decimal
+        merged.index = pd.to_datetime(merged.index)
+        merged = merged[_FACTOR_COLS].dropna(how="all")
+        if merged.empty:
+            raise ValueError("Ken French returned no rows for the requested range")
+
+        if cache is not None:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            merged.to_parquet(cache)
+        return merged
+    except Exception as error:
+        logger.warning("live FF factor download failed: %s", error)
+        if cache is not None and cache.exists():
+            logger.warning("falling back to cached FF factors at %s", cache)
+            return pd.read_parquet(cache)
+        return None
 
 
 def load_french_factors(ff3_path: str, mom_path: str) -> pd.DataFrame:

@@ -36,8 +36,19 @@ def task_command(script: str, *, uses_config: bool = False) -> str:
         The command runs from the repo root so that relative data paths
         (``tmp/``, ``data/``) resolve correctly.
     """
+    # 连库任务需要 QUANTMINE_DATABASE_URL（在项目 .env 里）。Airflow 任务子进程不会
+    # 自动加载 .env，故运行脚本前先 source 一次（set -a 让其中变量导出到子进程）。
+    # 用 { …; } 分组保证即使 .env 缺失也不中断链路。
+    #
+    # 关键：pipeline 要「写」库，必须用写角色。webapi 的 quantmine_web 是只读角色
+    # （AI query_database 的安全边界，靠它写不了数据表），用它写会 permission denied。
+    # 故若 .env 配了 QUANTMINE_PIPELINE_DATABASE_URL（指向 quantmine_pipeline 写角色）
+    # 就覆盖 QUANTMINE_DATABASE_URL；未配则退回原值（保持向后兼容）。
     command = (
-        f'cd "{PROJECT_ROOT}" && "{PYTHON_BIN}" pipelines/{script} '
+        f'cd "{PROJECT_ROOT}" && '
+        '{ set -a; [ -f .env ] && . ./.env; set +a; } && '
+        'export QUANTMINE_DATABASE_URL="${QUANTMINE_PIPELINE_DATABASE_URL:-$QUANTMINE_DATABASE_URL}" && '
+        f'"{PYTHON_BIN}" pipelines/{script} '
         '--date {{ ds }} --batch {{ run_id }}'
     )
     if uses_config:
@@ -80,6 +91,11 @@ with DAG("quant_factor_mining",
         task_id="backtest",
         bash_command=task_command("task_backtest.py", uses_config=True),
     )
+    t6 = BashOperator(
+        task_id="attribution",
+        bash_command=task_command("task_attribution.py", uses_config=True),
+    )
 
 t1 >> t2 >> t3 >> t4
 t4 >> [task_save_market_bars, t5]
+t5 >> t6

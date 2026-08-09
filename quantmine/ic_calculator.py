@@ -423,9 +423,17 @@ def time_series_stationary_test(cs_result:tuple[pd.DataFrame,bool], rolling_peri
 
     for col in CS_IC_matrix.columns:
         for period in periods:
-                # acf_ic
-                acf_ic[(col,period)] = CS_IC_matrix[col].corr(CS_IC_matrix[col].shift(period), method="pearson") #corr is for Series, corrwith is for DataFrame
+                # acf_ic —— key 必须展平成标量层 (factor, forward_period, lag)。
+                # cs_ic 的列是 (factor, period) 元组，若直接用 (col, period) 当 key，
+                # 生成的 MultiIndex 第 0 层值会是"元组"(object 层)，写 parquet 时
+                # pyarrow 报 "Expected bytes, got a 'int' object / column None"。
+                key = (*col, period) if isinstance(col, tuple) else (col, period)
+                acf_ic[key] = CS_IC_matrix[col].corr(CS_IC_matrix[col].shift(period), method="pearson") #corr is for Series, corrwith is for DataFrame
     acf_df = pd.Series(acf_ic).to_frame(name = 'ACF') #dict values are scalars, so convert to a Series before building the frame
+    if acf_df.index.nlevels == 3:
+        acf_df.index.names = ['factor', 'period', 'lag']
+    elif acf_df.index.nlevels == 2:
+        acf_df.index.names = ['factor', 'lag']
     yearly_summary={}
     # yearly IC
     for year, group in CS_IC_matrix.groupby(CS_IC_matrix.index.year):
@@ -636,6 +644,8 @@ def prepare_raw_variant(
         output_path= output_path
     )
 
+    _, acf_test, yearly_test, _ = time_series_stationary_test((ic_result['test'].copy(), False))
+    
     return ICVariant(
         train={
             'factors': split_result['factors']['train'],
@@ -647,7 +657,9 @@ def prepare_raw_variant(
             'factors': split_result['factors']['test'],
             'forward_returns' : split_result['forward_returns']['test'],
             'cs_ic':ic_result['test'],
-            'orthogonalized': False
+            'orthogonalized': False,
+            'acf': acf_test,
+            'yearly': yearly_test
         },
         transforms=[],
     )
