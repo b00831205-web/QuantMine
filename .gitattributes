@@ -1,0 +1,5 @@
+# 保证容器内的 shell 脚本始终是 LF 换行——Windows 的 autocrlf 若把它们转成 CRLF，
+# 会导致容器里 bash 报 `\r` 相关错误。
+*.sh text eol=lf
+docker/**/entrypoint.sh text eol=lf
+docker/**/*.sh text eol=lf

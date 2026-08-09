@@ -1,0 +1,80 @@
+# QUANTMINE 一键部署：postgres(pgvector) + webapi + frontend + airflow。
+#   cp .env.docker.example .env   # 改密码/密钥
+#   docker compose up -d          # 打开 http://localhost:8080 登录
+#
+# 只跑核心（不含 Airflow）：docker compose up -d postgres webapi frontend
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      # 供 init.sh 建业务角色用
+      QUANTMINE_WEB_PASSWORD: ${QUANTMINE_WEB_PASSWORD}
+      QUANTMINE_PIPELINE_PASSWORD: ${QUANTMINE_PIPELINE_PASSWORD}
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+      - ./quantmine/storage/schema.sql:/sql/schema.sql:ro
+      - ./webapi/migrations:/sql/migrations:ro
+    healthcheck:
+      # 只有 init 建完 quantmine 库后才算 healthy → 下游确保表已就绪
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d quantmine"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "5432:5432"   # 便于宿主机 psql / 外部 Airflow 连接；不需要可删
+
+  webapi:
+    build:
+      context: .
+      dockerfile: docker/webapi/Dockerfile
+    environment:
+      QUANTMINE_DATABASE_URL: postgresql+psycopg2://quantmine_web:${QUANTMINE_WEB_PASSWORD}@postgres:5432/quantmine
+      QUANT_AIRFLOW_PG_DSN: postgresql://airflow:${AIRFLOW_DB_PASSWORD}@postgres:5432/airflow
+      QUANT_AUTH_SECRET: ${QUANT_AUTH_SECRET}
+      QUANTMINE_ADMIN_USER: ${QUANTMINE_ADMIN_USER}
+      QUANTMINE_ADMIN_PASSWORD: ${QUANTMINE_ADMIN_PASSWORD}
+      POSTGRES_HOST: postgres
+      QUANT_AUTH_COOKIE_SECURE: "0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - webapi
+
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/airflow/Dockerfile
+    command: standalone
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    volumes:
+      - ./pipelines:/opt/airflow/dags
+      - ./:/opt/project
+      - airflow-logs:/opt/airflow/logs
+    ports:
+      - "8081:8080"   # Airflow 自带 UI（可选；应用有自己的 Workflows 页）
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  airflow-logs:

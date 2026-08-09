@@ -60,3 +60,16 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# --- build artifacts ---
+# 前端构建产物, 由 `npm run build` + 拷贝生成, 不入库
+webapi/app/static/
+
+# --- local agent/tooling config (个人本地设置, 非项目交付物) ---
+.claude/
+.agents/
+.codex/
+.impeccable/
+
+# --- scratch: 临时 clone 的参考仓库(自带 .git + node_modules, 324MB) ---
+react-router-monorepo/

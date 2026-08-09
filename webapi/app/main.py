@@ -4,11 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 from dotenv import load_dotenv
 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT/'.env')
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware .cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .api import api_router
 from .errors import install_exception_handlers, install_trace_id_middleware
@@ -41,6 +44,18 @@ def create_app() -> FastAPI:
 
     install_exception_handlers(app)
     app.include_router(api_router, prefix="/api/v1")
+    static_dir = Path(__file__).parent/'static'
+    if static_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory = static_dir/'assets'), name = 'asset')
+        index_file = static_dir / 'index.html'
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def spa(full_path: str):
+            if full_path.startswith('api/'):
+                raise HTTPException(status_code=404)
+            candidate = static_dir / full_path
+            if candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(index_file)
     return app
 
 

@@ -1,0 +1,26 @@
+# 构建上下文瘦身：排除虚拟环境、缓存、数据、构建产物
+.git
+.venv
+.venv-win
+.uv-cache
+.uv-python
+**/.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+frontend/node_modules
+frontend/dist
+dist
+data
+tmp
+airflow/logs
+airflow/airflow.db
+*.db
+output.txt
+run.log
+report_experiment_sample.xlsx
+.ipynb_checkpoints
+.superpowers
+.agents
+.env
