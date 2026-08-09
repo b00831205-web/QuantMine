@@ -1,3 +1,17 @@
+"""Quantile long-short backtesting.
+
+The pipeline is: rank a factor cross-sectionally on each rebalance date, split
+the ranked names into quantile groups, then measure each group's forward
+return. ``quantile_backtest`` produces per-rebalance returns and the member
+sets behind them; ``expand_to_daily_returns`` turns those periodic snapshots
+into a daily series with turnover-scaled transaction costs; the remaining
+helpers summarize performance, monotonicity, and turnover.
+
+Group returns are weighted by a strategy from ``weighting`` (equal by
+default), so market-cap weighting plugs in without changing this module's
+call sites. The universe can be point-in-time via a ``ConstituentsSource``;
+passing ``None`` uses every factor column and is survivorship-biased.
+"""
 import pandas as pd
 from .datareader import ConstituentsSource, MembershipTableSource
 from .weighting import equal_weight

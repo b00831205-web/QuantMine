@@ -1,3 +1,16 @@
+"""IC research pipeline.
+
+Information Coefficient is the cross-sectional rank correlation between a
+factor and its forward return: how well the factor ordered names on a given
+day. This module computes IC series, derives variants (e.g. orthogonalized),
+and tests whether the resulting ICs are statistically real.
+
+Two things the statistics here take seriously. IC series are autocorrelated, so
+significance uses Newey-West standard errors instead of naive t-stats. And
+testing many factors at once produces winners by chance, so multiple-testing
+correction is available. Train and test scopes stay separate throughout: factor
+selection reads train results only.
+"""
 import pandas as pd
 import os
 from scipy import stats
@@ -462,6 +475,12 @@ def get_constitunents_at_date(historical_df: pd.DataFrame, date: pd.Timestamp)->
 
 
 def split_train_test(data:pd.DataFrame, train_end:str, test_start:str):
+    """Split a frame, or a dict of frames, into train and test scopes.
+
+    Train ends at ``train_end`` inclusive and test starts at ``test_start``,
+    so leaving a gap between them avoids leaking a forward-return window
+    across the boundary.
+    """
     if isinstance(data, dict):
         return {
             'train': {name: df.loc[:train_end] for name, df in data.items()},
@@ -473,6 +492,7 @@ def split_train_test(data:pd.DataFrame, train_end:str, test_start:str):
     }
 
 def prepare_ic_inputs(close: pd.DataFrame, factors: dict[str, pd.DataFrame], train_end: str, test_start :str,periods:list[int]|int):
+    """Compute forward returns and split both them and the factors by scope."""
     forward_returns = forward_return(close, periods = periods)
     return{
         'factors': split_train_test(factors, train_end, test_start),
@@ -480,6 +500,16 @@ def prepare_ic_inputs(close: pd.DataFrame, factors: dict[str, pd.DataFrame], tra
     }
 
 def calculate_ic(prepared_input, output_path: str | Path | None = None):
+    """Compute the cross-sectional IC series for each scope.
+
+    Args:
+        prepared_input: Output of ``prepare_ic_inputs``.
+        output_path: Optional parquet path; the scope name is inserted so
+            train and test never overwrite each other.
+
+    Returns:
+        Per-scope IC results keyed by ``train`` and ``test``.
+    """
     results = {}
     path = Path(output_path) if output_path is not None else None
     for scope in ('train', 'test'):
@@ -503,6 +533,12 @@ def orthogonalize_analysis(
     periods: list[int],
     output_path: str | Path | None = None,
 ):
+    """Derive an orthogonalized variant from the raw one.
+
+    Correlated factors otherwise get credit for the same underlying signal.
+    Regressing each factor on the others leaves the part it alone explains, so
+    the resulting ICs measure incremental rather than shared information.
+    """
     train_factors = raw_variant.train['factors']
     test_factors = raw_variant.test['factors']
     train_cs_ic = raw_variant.train['cs_ic']
@@ -551,6 +587,14 @@ def orthogonalize_analysis(
 )
 
 def run_test(variant: ICVariant ,test_method:str, TEST_METHOD:dict, test_params: dict|None = None):
+    """Run a registered statistical test over a variant.
+
+    Parameters are supplied by name from a pool, so each test declares only
+    what it needs.
+
+    Raises:
+        ValueError: If ``test_method`` is not registered.
+    """
     if test_method not in TEST_METHOD:
         raise ValueError(f'{test_method} not in test_registry')
     param_pool = {
@@ -574,6 +618,11 @@ def get_significant_factor(
     selector_params: dict|None = None,
     **params,
 ) -> list[str]:
+    """Return just the factor names a selector approved, dropping periods.
+
+    A convenience wrapper over ``select_significant_factor_periods`` for
+    callers that only need the distinct factors.
+    """
     merged_params = {
         **(selector_params or {}),
         **params,
@@ -590,6 +639,16 @@ def get_significant_factor(
     })
 
 def select_significant_factor_periods(test_result: TestResult, selector_name: str, selector_params: dict|None = None)->list[tuple[str,int]]:
+    """Select the (factor, period) pairs a selector deems significant.
+
+    Args:
+        test_result: Test output to select from; must be train-scope.
+        selector_name: Registered selector, e.g. ``bh`` or ``p_value``.
+        selector_params: Selector-specific parameters such as ``alpha``.
+
+    Raises:
+        ValueError: If the selector name is not registered.
+    """
     try:
         selector_class = REGISTER_FACTOR_SELECTOR[selector_name]
     except KeyError as error:
@@ -603,6 +662,12 @@ def select_significant_factor_periods(test_result: TestResult, selector_name: st
     )
 
 def test_time_stationary(variant: ICVariant, rolling_period: int = 126):
+    """Check whether a factor's IC is stable over time, not just on average.
+
+    Returns rolling IC, its autocorrelation, and a yearly breakdown: a factor
+    whose IC came from one good year is a different proposition from one that
+    worked throughout.
+    """
     rolling_ic_train , acf_train, yearly_train, orthogonalized = time_series_stationary_test((variant.train['cs_ic'], variant.train['orthogonalized']), rolling_period=rolling_period)
     return {
         'rolling_ic_train' : rolling_ic_train,
@@ -612,6 +677,11 @@ def test_time_stationary(variant: ICVariant, rolling_period: int = 126):
     }
 
 def call_test_method(func, param_pool: dict):
+    """Call a test function, filling its parameters by name from the pool.
+
+    Raises:
+        KeyError: If a parameter has neither a pooled value nor a default.
+    """
     sig = inspect.signature(func)
     kwargs = {}
     for name, param in sig.parameters.items():

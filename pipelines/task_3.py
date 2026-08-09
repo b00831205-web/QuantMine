@@ -1,3 +1,8 @@
+"""DAG step 3: compute all registered factors from the processed data.
+
+Importing ``factor_mining`` is what registers the built-in factors, so the
+registry is populated before ``calculate_all_factors`` walks it.
+"""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  #locate the repo root when executed as a script

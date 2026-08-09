@@ -1,3 +1,8 @@
+"""DAG step: run the IC research workflow and persist its results.
+
+Creates the research run that later steps attach to (they find it by Airflow
+batch id), then saves the IC variants, workflow output, and test results.
+"""
 import argparse
 import re
 import sys

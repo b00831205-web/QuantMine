@@ -1,3 +1,10 @@
+"""Factor definitions.
+
+Each function computes one factor as a wide date-by-ticker frame and registers
+itself under a name via ``@factor_registry``, so configs can request factors by
+name without importing them. Adding a factor means adding a decorated function
+here; no call site needs to change.
+"""
 import pandas as pd
 from .factor_register import factor_registry
 

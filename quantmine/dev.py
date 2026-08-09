@@ -33,6 +33,11 @@ def _load_env() -> dict:
 
 
 def main() -> None:
+    """Start both servers and shut them down together.
+
+    Exits as soon as either side stops, terminating the other, so a crashed
+    backend does not leave an orphan vite process behind.
+    """
     env = _load_env()
 
     # 后端: 用 webapi 自己的 venv, 绑 0.0.0.0 让 Windows 浏览器/vite proxy 能访问 WSL 的 8000

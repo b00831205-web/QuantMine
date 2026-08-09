@@ -1,3 +1,15 @@
+"""Market data download from Yahoo Finance.
+
+Downloads run in batches with a checkpoint per batch, so a long run interrupted
+by rate limiting resumes instead of restarting. Batches that exhaust their
+retries are logged to ``failed_batches.json`` for ``retry_batches`` to pick up
+later, and a blacklist file excludes names that should never be requested.
+
+Empty columns are recorded but never auto-blacklisted: under rate limiting a
+live ticker also comes back empty, and blacklisting it would silently shrink
+the universe on every subsequent run. Genuine delistings are handled by the
+point-in-time membership table instead.
+"""
 import yfinance as yf
 import pandas as pd
 import time
@@ -38,6 +50,21 @@ def load_blacklist(checkpoint_dir:str)-> set :
         return set(json.load(f))
     
 def get_ff3(start_date: str, end_date: str, save_path: str, format: Literal['csv', 'parquet']):
+    """Download Fama-French 3-factor data and save it under ``save_path``.
+
+    Args:
+        start_date: Start date in ``YYYY-MM-DD`` format.
+        end_date: End date in ``YYYY-MM-DD`` format.
+        save_path: Directory relative to the working directory; created if
+            missing.
+        format: Output format, ``csv`` or ``parquet``.
+
+    Returns:
+        The downloaded factor data as returned by pandas-datareader.
+
+    Raises:
+        ValueError: If ``format`` is neither csv nor parquet.
+    """
     if format not in ('csv', 'parquet'):
         raise ValueError(f'{format} format error')
     start_date = pd.to_datetime(start_date)
@@ -98,6 +125,32 @@ def save_blacklist(tickers: list, checkpoint_dir:str):
     print(f"Blacklist updated: {updated}")
 
 def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_index:int , task_checkpoint_dir: str,max_retries:int =3, wait: int =60, auto_adjust: bool = True, file_prefix: str = 'batch') ->pd.DataFrame | None :
+        """Download one batch of tickers, resuming from its checkpoint if present.
+
+        Args:
+            batch: Tickers for this batch.
+            start_date: Start date in ``YYYY-MM-DD`` format.
+            end_date: End date in ``YYYY-MM-DD`` format.
+            batch_index: 1-based batch number, used in the checkpoint filename.
+            task_checkpoint_dir: Directory holding this task's checkpoints.
+            max_retries: Attempts before giving up on the batch.
+            wait: Seconds between attempts.
+            auto_adjust: Whether to request adjusted prices. Market-cap callers
+                pass False, since adjusted prices distort cross-sectional size.
+            file_prefix: Checkpoint filename prefix. Callers writing a second
+                kind of price data must change it, otherwise
+                ``merge_checkpoints`` would glob those files as ordinary bars
+                and silently mix adjusted with unadjusted closes.
+
+        Returns:
+            The downloaded frame, or None once retries are exhausted; in that
+            case the batch is appended to ``failed_batches.json``.
+
+        Notes:
+            Requests are serialized (``threads=False``) because concurrent
+            requests trigger Yahoo rate limiting, which surfaces misleadingly
+            as "possibly delisted".
+        """
         checkpoint_path = os.path.join(task_checkpoint_dir, f"{file_prefix}_{batch_index}.parquet")
         if os.path.exists(checkpoint_path):
             print(f"{batch_index} already exist")

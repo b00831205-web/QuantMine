@@ -1,3 +1,9 @@
+"""DAG step: load the processed market data into Postgres.
+
+Writes ``market_bars`` plus the per-ticker latest snapshot. Shares and market
+cap are optional: when the upstream step produced none, the columns are stored
+empty rather than failing the load.
+"""
 import sys
 from pathlib import Path
 import pandas as pd

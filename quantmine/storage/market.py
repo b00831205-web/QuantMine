@@ -180,6 +180,13 @@ def fetch_market_bars(engine: Engine,
                       symbols: list[str], 
                       start_date, 
                       end_date)-> pd.DataFrame:
+    """Read closes for the given tickers over an inclusive date range.
+
+    Returns:
+        Long rows ``[trade_date, ticker, close]`` sorted by date then ticker,
+        empty when nothing matches. Only ``close`` is selected; consumers that
+        need market cap read the processed parquet instead.
+    """
     metadata = MetaData()
     table = Table('market_bars', metadata, autoload_with= engine)
     statement = (select(table.c.trade_date, table.c.ticker, table.c.close)
@@ -190,6 +197,7 @@ def fetch_market_bars(engine: Engine,
     return pd.DataFrame(result, columns=['trade_date', 'ticker', 'close'])
 
 def fetch_latest_market_trade_date(engine:Engine)->date|None:
+    """Return the most recent trade date in ``market_bars``, or None if empty."""
     metadata = MetaData()
     table = Table('market_bars', metadata, autoload_with=engine)
     statement = select(func.max(table.c.trade_date))
@@ -239,6 +247,12 @@ def fetch_market_breadth(engine: Engine) -> dict | None:
     }
 
 def switch_to_week(df: pd.DataFrame):
+    """Downsample long bars to weekly by keeping each ticker's last close.
+
+    Buckets on weeks ending Friday and takes the last observation present, so
+    a holiday-shortened week resolves to its actual last trading day rather
+    than being dropped.
+    """
     working = df.dropna(subset = ['close']).copy()
     working['trade_date'] = pd.to_datetime(working['trade_date'])
     working = working.sort_values(['ticker', 'trade_date'])
@@ -254,6 +268,7 @@ def switch_to_week(df: pd.DataFrame):
     return weekly
 
 def switch_to_month(df: pd.DataFrame):
+    """Downsample long bars to monthly by keeping each ticker's last close."""
     working = df.dropna(subset = ['close']).copy()
     working['trade_date'] = pd.to_datetime(working['trade_date'])
     working = working.sort_values(['ticker', 'trade_date'])

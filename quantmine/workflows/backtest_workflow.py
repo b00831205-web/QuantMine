@@ -1,3 +1,13 @@
+"""Config-driven backtest orchestration.
+
+Turns a backtest job config into results: pick the significant factor/period
+pairs with the configured selector, run the quantile backtest under the
+configured weighting, then summarize performance and optionally sanity-test it.
+
+Factor selection deliberately reads train-scope test results while the
+backtest itself runs on test-scope data, so selection never sees the sample it
+is evaluated on.
+"""
 from quantmine import back_testing
 from quantmine.ic_calculator import select_significant_factor_periods
 from quantmine.ic_calculator import ICVariant, TestResult, REGISTER_FACTOR_SELECTOR
@@ -7,6 +17,30 @@ import pandas as pd
 
 def run_backtest_job(close: pd.DataFrame, variant: ICVariant, test_result: TestResult, job_config: dict, constituents = None,
                      market_cap: pd.DataFrame | None = None):
+    """Run one configured backtest job end to end.
+
+    Args:
+        close: Wide date-by-ticker close prices covering the test window.
+        variant: IC variant supplying the test-scope factors and forward
+            returns to trade on.
+        test_result: Train-scope statistical test output used for selection.
+        job_config: One entry of ``backtest.jobs``: ``part``,
+            ``cost_per_trade``, ``selector`` and optional ``weighting``.
+        constituents: Point-in-time universe source; ``None`` means every
+            factor column (survivorship-biased).
+        market_cap: Wide market caps, required when weighting is ``mcap``.
+
+    Returns:
+        A dict with ``status``, the per-rebalance ``quantile_returns``, the
+        member ``ticker_history``, the expanded ``daily_returns``, the
+        ``selected_factor_periods``, and the ``weighting`` name actually used.
+        ``status`` is ``no_significant_factor`` (with empty results) when the
+        selector approves nothing.
+
+    Raises:
+        ValueError: If ``test_result`` is not train-scope, or the selector or
+            weighting name is not registered.
+    """
     part = job_config['part']
     cost_per_trade = job_config['cost_per_trade']
     test = variant.test
@@ -68,6 +102,22 @@ def _annualized_return(daily: pd.Series) -> float:
 
 
 def back_test_workflow(back_test_job: dict, backtest_config: dict, close: pd.DataFrame | None = None):
+    """Summarize one job's raw returns into per-factor/period analysis.
+
+    For each factor/period: net and gross performance summaries, monotonicity
+    across quantiles, average turnover per group (``long_short`` charges both
+    legs), and excess return over SPY.
+
+    Args:
+        back_test_job: Output of ``run_backtest_job``.
+        backtest_config: The same job config, read for ``part``.
+        close: Close prices; needed only for the SPY excess column. Without it
+            (or without a SPY column) ``excess`` is NaN rather than an error.
+
+    Returns:
+        A dict keyed by ``(factor, period)``; empty when the job selected no
+        significant factor.
+    """
     if back_test_job['status'] == 'no_significant_factor':
         return {}
     quantile_backtest = back_test_job['quantile_returns']
@@ -116,6 +166,16 @@ def back_test_workflow(back_test_job: dict, backtest_config: dict, close: pd.Dat
     return BacktestJobResult
 
 def apply_sanity_test(constituents, back_test_result:dict, variant: ICVariant, backtest_config:dict, close:pd.DataFrame):
+    """Re-run the backtest under perturbed settings to test robustness.
+
+    A result that only survives one exact parameterization is usually a fluke,
+    so this re-runs the selected factor/period pairs and compares against the
+    original. ``backtest_config['sensitivity']['random_seed']`` keeps the
+    perturbation reproducible.
+
+    Returns:
+        The sanity-test output, or an empty dict when the job did not succeed.
+    """
     if back_test_result['status'] != 'ok':
         return {}
     selected_factor_periods = back_test_result['selected_factor_periods']
@@ -147,6 +207,22 @@ def run_backtest_workflow(
         constituents = None,
         market_cap: pd.DataFrame | None = None,
 ) -> dict:
+    """Run every job in the backtest config.
+
+    Args:
+        close: Wide date-by-ticker close prices.
+        variants: IC variants by name, as referenced by ``job['variant']``.
+        test_results: Statistical test outputs by id, as referenced by
+            ``job['selection_test']``.
+        backtest_config: The ``backtest`` config section, holding ``jobs``.
+        constituents: Point-in-time universe source; ``None`` disables it.
+        market_cap: Wide market caps, required by ``mcap`` weighting.
+
+    Returns:
+        A dict keyed by job id, each holding the raw ``job`` output, its
+        ``analysis``, and ``sanity`` results (``None`` unless the job enables
+        ``sensitivity``).
+    """
     results = {}
     for job in backtest_config['jobs']:
         job_id = job['id']

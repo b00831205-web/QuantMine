@@ -1,3 +1,10 @@
+"""DAG step 2: clean the raw increment and merge it into the processed set.
+
+Drops columns whose missing rate exceeds the threshold, forward-fills the rest,
+then appends to the cumulative processed file, keeping the last value per date
+so a re-run overwrites rather than duplicates. The raw staging file is removed
+once merged. Runs the same routine for close, volume, shares, and market cap.
+"""
 import pandas as pd
 import os
 import argparse

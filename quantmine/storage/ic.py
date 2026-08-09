@@ -253,6 +253,15 @@ def load_ic_variants(
         engine: Engine,
         run_id: int,
 ) -> dict[str,ICVariant]:
+    """Rebuild a run's IC variants from their registered parquet artifacts.
+
+    The database stores only pointers; the factor and forward-return frames
+    live on disk and are resolved through the artifact path resolver, because
+    a stored path may have been written under a different OS.
+
+    Returns:
+        Variants by name, each carrying its train and test scopes.
+    """
     metadata = MetaData()
     table = Table('ic_artifacts', metadata, autoload_with = engine)
 
@@ -306,6 +315,12 @@ def load_test_results(
     engine: Engine,
     run_id: int,
 ) -> dict[str, dict]:
+    """Load a run's statistical test results, keyed by test id.
+
+    Each entry holds the summary table, any multiple-testing correction, the
+    test method, and the sample scope, matching what ``TestResult`` needs for
+    factor selection.
+    """
     metadata = MetaData()
     table = Table(
         "test_result_artifacts",

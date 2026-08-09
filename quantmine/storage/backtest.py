@@ -120,6 +120,12 @@ def build_backtest_metric_rows(
     backtest_id: str,
     test_id: str,
 ) -> pd.DataFrame:
+    """Flatten one job's analysis into long metric rows.
+
+    Melts the performance summary (one row per portfolio and metric) and
+    appends the monotonicity results, so every scalar the analysis produced
+    lands in ``backtest_metrics`` under a ``(portfolio, metric_name)`` key.
+    """
     rows = []
 
     for (factor_name, period), factor_period_analysis in analysis.items():
@@ -224,6 +230,11 @@ def build_backtest_metric_rows(
     return pd.concat(rows, ignore_index=True)
 
 def save_backtest_metrics(engine, metric_rows: pd.DataFrame)->int:
+    """Upsert metric rows, returning how many were written.
+
+    ``metric_metadata`` is filled with empty dicts when absent, so callers that
+    do not carry extra context still satisfy the NOT NULL column.
+    """
     if metric_rows.empty:
             return 0
 
@@ -265,6 +276,15 @@ def write_dataframe_artifact(
         artifact_type: str,
         artifact_key: str,
 ) -> tuple[str, int]:
+    """Write a dataframe to ``<artifact_dir>/<run_id>/<backtest_id>/`` as parquet.
+
+    Large per-run tables (holdings, series) live on disk rather than in the
+    database; only a pointer row is stored. Slashes in the type/key are
+    replaced so they cannot escape the target directory.
+
+    Returns:
+        A tuple of ``(path, row_count)`` for the accompanying record.
+    """
     target_dir = Path(artifact_dir)/str(run_id)/backtest_id
     target_dir.mkdir(parents = True, exist_ok = True)
 
@@ -283,6 +303,14 @@ def save_backtest_artifact_record(engine,
                                   path: str,
                                   row_count: int,
                                   artifact_metadata: dict|None = None)->int:
+    """Register one on-disk artifact in ``backtest_artifacts``.
+
+    Note:
+        The stored ``path`` is whatever the writing process saw, so it may be
+        Windows-absolute while a reader runs under Linux. Readers must resolve
+        artifacts through ``storage.paths.resolve_artifact_path`` instead of
+        trusting this column.
+    """
     metadata = MetaData()
     table = Table('backtest_artifacts', metadata, autoload_with= engine)
     record = {
@@ -322,6 +350,21 @@ def save_backtest_workflow_results(
         backtest_config: dict,
         artifact_dir: str|Path
 ):
+    """Persist every job's results: rows, metrics, sanity output, artifacts.
+
+    Args:
+        engine: Database engine.
+        workflow_results: Output of ``run_backtest_workflow``.
+        run_id: Research run these results belong to.
+        backtest_config: The ``backtest`` section, used to recover each job's
+            variant and selection test by id.
+        artifact_dir: Root directory for parquet artifacts.
+
+    Returns:
+        A dict keyed by backtest id with the per-job written counts. Jobs that
+        did not succeed are reported with their status and zero counts rather
+        than raising, so one bad job does not abort the rest.
+    """
     job_configs = {job_config['id']: job_config for job_config in backtest_config['jobs']}
     saved_counts = {}
     for backtest_id, workflow_output in workflow_results.items():

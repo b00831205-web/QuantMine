@@ -1,3 +1,9 @@
+"""DAG step: run the configured backtests and persist their results.
+
+Reads the processed close and market-cap frames, runs every job in the config
+(market-cap weighting uses the latter), then writes rows, metrics, and parquet
+artifacts under the run created upstream.
+"""
 import argparse
 import re
 import sys

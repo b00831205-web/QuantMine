@@ -36,6 +36,16 @@ def create_run(
         return int(result.inserted_primary_key[0])
 
 def find_run_id_by_airflow_batch(engine:Engine, args_batch):
+    """Look up the research run an Airflow batch created.
+
+    Lets every task in one DAG run attach output to the same run without
+    threading the id between tasks. Returns the newest match if the batch was
+    re-run.
+
+    Raises:
+        LookupError: If no run recorded this batch, which usually means the
+            upstream task that creates the run did not succeed.
+    """
     metadata = MetaData()
     table = Table('research_runs', metadata, autoload_with= engine)
     statement = (select(table.c.run_id).where(table.c.config_snapshot['airflow_batch'].astext == args_batch).order_by(table.c.run_id.desc())).limit(1)
