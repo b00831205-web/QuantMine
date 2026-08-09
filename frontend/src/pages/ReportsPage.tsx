@@ -63,6 +63,7 @@ export const ReportsPage = () => {
   const [historyState, setHistoryState] = useState<AsyncState<ReportHistoryPage>>({status: 'idle'});
   const [historyPage, setHistoryPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0)
+  const [forceRefresh, setForceRefresh] = useState(0)
   const options = optionsState.status === 'success' ? optionsState.data : null;
 
   const runId = readRunId(searchParams);
@@ -89,7 +90,7 @@ export const ReportsPage = () => {
   }
 
   const pdfUrl =
-  runId === null? null : buildReportPdfUrl({runId, lang, ai, ...(testId? {testId}: {})}, true);
+  runId === null? null : buildReportPdfUrl({runId, lang, ai, refresh: forceRefresh > 0, ...(testId? {testId}: {})}, true) + (forceRefresh > 0 ? `&t=${forceRefresh}` : '');
 
   useEffect(()=>{
     setPdfLoaded(false)
@@ -334,6 +335,9 @@ export const ReportsPage = () => {
           <span style = {{color: 'var(--text-muted)', fontSize: 'var(--fs-xs)'}}>
             开启后报告中包含AI解读
           </span>
+          <button type = 'button' title = '强制重新生成报告（绕过缓存）' disabled={runId === null} onClick={() => setForceRefresh((k) => k + 1)} style = {iconBtnStyle}>
+            <RefreshCcw size = {14}/>
+          </button>
           <button type = 'button' title ='下载PDF' disabled={runId === null} onClick={handleDownloadPdf} style = {iconBtnStyle}>
             <Download size = {14}/>
           </button>

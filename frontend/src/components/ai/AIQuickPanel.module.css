@@ -67,11 +67,14 @@
   overflow: auto;
   padding: var(--sp-4);
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: var(--sp-3);
+  align-items: stretch;
+  justify-content: flex-start;
 }
 
 .placeholder {
+  margin: auto;
   color: var(--text-muted);
   font-size: var(--fs-sm);
   text-align: center;

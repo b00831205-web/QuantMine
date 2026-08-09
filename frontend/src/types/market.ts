@@ -66,3 +66,13 @@ export function fetchSeries(
 export interface MarketLatestDateResponse{
   latestTradeDate : string;
 }
+
+/** 市场概览：上涨/下跌家数与宽度 */
+export interface MarketOverview {
+  latestTradeDate: string;
+  advancers: number;
+  decliners: number;
+  total: number;
+  /** 上涨家数占比 0~1 */
+  breadth: number;
+}

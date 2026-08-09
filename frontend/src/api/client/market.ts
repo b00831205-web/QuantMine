@@ -1,6 +1,6 @@
 import { http } from '@/api/http';
 import type { SeriesQuery, SeriesResponse } from '@/types/market';
-import type { MarketLatestDateResponse } from '@/types/market';
+import type { MarketLatestDateResponse, MarketOverview } from '@/types/market';
 
 /**
  * GET /api/v1/market/series
@@ -34,4 +34,9 @@ export function fetchSeries(
 
 export function fetchLatestMarketDate(): Promise<MarketLatestDateResponse>{
   return http<MarketLatestDateResponse>('/api/v1/market/latest-date')
+}
+
+/** GET /api/v1/market/overview —— 上涨家数 / 市场宽度 */
+export function fetchMarketOverview(signal?: AbortSignal): Promise<MarketOverview> {
+  return http<MarketOverview>('/api/v1/market/overview', { signal });
 }

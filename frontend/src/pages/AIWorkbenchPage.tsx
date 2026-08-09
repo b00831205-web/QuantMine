@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { HttpError } from '@/api/http';
+import { Paperclip } from 'lucide-react';
+import { uploadAIAttachment, attachmentFileUrl } from '@/api/client/ai';
 import {
   fetchAIConversations,
   fetchAIMessages,
@@ -7,6 +9,7 @@ import {
   createAIConversation,
   sendAIMessage,
   confirmAIAction,
+  deleteAIConversation
   // sendAIMessage,      // handleSend 里接入（见 TODO）
   // streamAIMessage,    // 流式回复（见 TODO / client/ai.ts）
   // confirmAIAction,    // 确认卡回传（见 TODO）
@@ -189,6 +192,39 @@ const MessageBubble = ({
         }}
       >
         <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{msg.content}</div>
+        {msg.attachments && msg.attachments.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+            {msg.attachments.map((a) =>
+              a.kind === 'image' ? (
+                <img
+                  key={a.attachmentId}
+                  src={attachmentFileUrl(a.attachmentId)}
+                  alt={a.filename}
+                  style={{
+                    maxWidth: 160,
+                    maxHeight: 120,
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                />
+              ) : (
+                <span
+                  key={a.attachmentId}
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '2px 6px',
+                    background: 'var(--bg-surface)',
+                  }}
+                >
+                  📎 {a.filename}
+                </span>
+              ),
+            )}
+          </div>
+        )}
         {msg.citations && msg.citations.length > 0 && <CitationList citations={msg.citations} />}
         {msg.toolCalls && msg.toolCalls.length > 0 && <ToolCallList toolCalls={msg.toolCalls} />}
         {msg.confirmRequest && (
@@ -211,6 +247,17 @@ export const AIWorkbenchPage = () => {
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const sendControllerRef = useRef<AbortController | null>(null);
+  const [pendingAttachments, setPendingAttachments] = useState<
+    Array<{
+      key: string;
+      attachmentId?: string;
+      filename: string;
+      kind: string;
+      status: 'uploading' | 'ready' | 'failed';
+    }>
+  >([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [conversationRefreshKey, setConversationRefreshKey] = useState(0);
   const conversationsState = useAsync<AIConversation[]>(
     (s) => fetchAIConversations(s),
@@ -259,11 +306,89 @@ export const AIWorkbenchPage = () => {
     }
   };
 
+  const handleDeleteConversation = async (conversationId: string): Promise<void> =>{
+    if (!window.confirm('删除该对话后及所有信息无法恢复，确定删除？')) return;
+    try {
+      await deleteAIConversation(conversationId);
+      if (activeId === conversationId){
+        setActiveId(null);
+        setMessages([]);
+      }
+      setConversationRefreshKey((k)=> k+1);
+    } catch{
+      //删除失败，保持现状，不打断用户
+    }
+  };
   
+
+  const ensureConversation = async (): Promise<string | null> => {
+    if (activeId !== null) return activeId;
+    try {
+      const conv = await createAIConversation();
+      setActiveId(conv.conversationId);
+      setConversationRefreshKey((k) => k + 1);
+      return conv.conversationId;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleFilesSelected = async (files: File[]) => {
+    if (files.length === 0) return;
+    const cid = await ensureConversation();
+    if (cid === null) return;
+
+    const placeholders = files.map((file) => ({
+      key: `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      filename: file.name,
+      kind: file.type.startsWith('image/') ? 'image' : 'file',
+      status: 'uploading' as const,
+    }));
+    setPendingAttachments((prev) => [...prev, ...placeholders]);
+    setUploading(true);
+
+    for (const [index, file] of files.entries()) {
+      const placeholder = placeholders[index];
+      if (!placeholder) continue;
+      try {
+        const res = await uploadAIAttachment(cid, file);
+        setPendingAttachments((prev) =>
+          prev.map((a) =>
+            a.key === placeholder.key
+              ? { ...a, attachmentId: res.attachmentId, kind: res.kind, status: 'ready' }
+              : a,
+          ),
+        );
+      } catch {
+        setPendingAttachments((prev) =>
+          prev.map((a) =>
+            a.key === placeholder.key ? { ...a, status: 'failed' } : a,
+          ),
+        );
+      }
+    }
+
+    setUploading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handlePaste = (e: React.ClipboardEvent): void => {
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const images = items
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    if (images.length === 0) return;
+    e.preventDefault();
+    void handleFilesSelected(images);
+  };
 
   const handleSend = async () => {
     const text = draft.trim();
     if (!text || sending) return;
+
+    // 首条消息发送后，标题由后端后台异步生成；记录下来以便稍后刷新会话列表
+    const isFirstMessage = messages.length === 0;
 
     // 乐观追加用户消息（本地立即可见）
     const userMsg: AIMessage = {
@@ -290,12 +415,28 @@ export const AIWorkbenchPage = () => {
     
     await sendAIMessage(
       conversationId,
-      {content: text, modelId: selectedModel},
+      {
+        content: text,
+        modelId: selectedModel,
+        ...(pendingAttachments.some((a) => a.status === 'ready')
+          ? {
+              attachments: pendingAttachments
+                .filter((a) => a.status === 'ready')
+                .map((a) => ({ attachmentId: a.attachmentId })),
+            }
+          : {}),
+      },
       controller.signal,
     );
+    setPendingAttachments([]);
     // 后端可能自动跑了多步白名单工具，刷新整段对话（隐藏原始工具结果）
     const all = await fetchAIMessages(conversationId, controller.signal);
     setMessages(all.filter((m) => m.role !== 'tool'));
+    // 首条消息：刷新会话列表（顺带让新建会话入列）；标题在后台生成，稍后再刷一次以显示
+    if (isFirstMessage) {
+      setConversationRefreshKey((k) => k + 1);
+      setTimeout(() => setConversationRefreshKey((k) => k + 1), 1500);
+    }
   } catch {setMessages((prev)=>prev.filter((m)=> m.messageId !== userMsg.messageId));
 
   }finally {
@@ -396,43 +537,68 @@ export const AIWorkbenchPage = () => {
               </div>
             )}
             {conversationsState.status === 'success' &&
-              conversationsState.data.map((c) => {
+                            conversationsState.data.map((c) => {
                 const active = activeId === c.conversationId;
                 return (
-                  <button
+                  <div
                     key={c.conversationId}
-                    type="button"
-                    onClick={() => setActiveId(c.conversationId)}
                     style={{
-                      width: '100%',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 'var(--sp-2)',
-                      textAlign: 'left',
-                      padding: 'var(--sp-2) var(--sp-3)',
                       marginBottom: 4,
                       borderRadius: 'var(--radius-sm)',
                       border: '1px solid',
                       borderColor: active ? 'var(--accent)' : 'transparent',
                       background: active ? 'var(--bg-surface-2)' : 'transparent',
-                      color: active ? 'var(--accent)' : 'var(--text-primary)',
-                      cursor: 'pointer',
                     }}
                   >
-                    <span style={{ color: active ? 'var(--accent)' : 'var(--text-muted)' }}>
-                      {active ? '●' : '○'}
-                    </span>
-                    <span
+                    <button
+                      type="button"
+                      onClick={() => setActiveId(c.conversationId)}
                       style={{
                         flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                        minWidth: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 'var(--sp-2)',
+                        textAlign: 'left',
+                        padding: 'var(--sp-2) var(--sp-3)',
+                        background: 'transparent',
+                        border: 'none',
+                        color: active ? 'var(--accent)' : 'var(--text-primary)',
+                        cursor: 'pointer',
                       }}
                     >
-                      {c.title}
-                    </span>
-                  </button>
+                      <span style={{ color: active ? 'var(--accent)' : 'var(--text-muted)' }}>
+                        {active ? '●' : '○'}
+                      </span>
+                      <span
+                        style={{
+                          flex: 1,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {c.title}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      title="删除对话"
+                      onClick={() => handleDeleteConversation(c.conversationId)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        padding: 'var(--sp-1) var(--sp-2)',
+                        fontSize: 14,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
                 );
               })}
           </div>
@@ -537,6 +703,70 @@ export const AIWorkbenchPage = () => {
           </div>
 
           {/* 输入栏 */}
+          {activeId !== null && (
+            <>
+          {pendingAttachments.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                padding: 'var(--sp-2) var(--sp-3)',
+                borderTop: '1px solid var(--border-subtle)',
+              }}
+            >
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                附件（{pendingAttachments.length}）
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {pendingAttachments.map((a) => (
+                  <span
+                    key={a.key}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 11,
+                      color: 'var(--text-secondary)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '2px 8px',
+                      background: 'var(--bg-surface)',
+                    }}
+                  >
+                    {a.kind === 'image' ? '🖼' : '📎'} {a.filename}
+                    {a.status === 'uploading' && (
+                      <span style={{ color: 'var(--warning)' }}>上传中…</span>
+                    )}
+                    {a.status === 'ready' && (
+                      <span style={{ color: 'var(--positive)' }}>✓</span>
+                    )}
+                    {a.status === 'failed' && (
+                      <span style={{ color: 'var(--negative)' }}>✗</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPendingAttachments((prev) =>
+                          prev.filter((x) => x.key !== a.key),
+                        )
+                      }
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        fontSize: 12,
+                      }}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div
             style={{
               display: 'flex',
@@ -545,6 +775,30 @@ export const AIWorkbenchPage = () => {
               borderTop: '1px solid var(--border-subtle)',
             }}
           >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              style={{ display: 'none' }}
+              onChange={(e) => handleFilesSelected(Array.from(e.target.files ?? []))}
+            />
+            <button
+              type="button"
+              title="上传附件"
+              disabled={sending || uploading}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding: 'var(--sp-2)',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-subtle)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                opacity: uploading ? 0.5 : 1,
+              }}
+            >
+              <Paperclip size={14} />
+            </button>
             <input
               style={{
                 flex: 1,
@@ -562,6 +816,7 @@ export const AIWorkbenchPage = () => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSend();
               }}
+              onPaste={handlePaste}
             />
             <button
               type="button"
@@ -580,6 +835,8 @@ export const AIWorkbenchPage = () => {
               发送
             </button>
           </div>
+            </>
+          )}
         </section>
       </div>
     </div>

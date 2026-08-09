@@ -81,10 +81,45 @@ export async function streamAIMessage(
   throw new Error('TODO(BACKEND): AI 流式接口未实现，接后端 SSE 后填充');
 }
 
+export function deleteAIConversation(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<{deleted: boolean; conversationId: string}>{
+  return http(`/api/v1/ai/conversations/${conversationId}`,{
+    method: 'DELETE',
+    signal,
+  });
+}
+
 export function fetchAIConfig(signal?: AbortSignal): Promise<AIConfig> {
   return http<AIConfig>('/api/v1/ai/config', { signal });
 }
 
 export function saveAIConfig(config: AIConfig, signal?: AbortSignal): Promise<AIConfig> {
   return http<AIConfig>('/api/v1/ai/config', { method: 'PUT', body: config, signal });
+}
+
+/** POST /api/v1/ai/attachments —— 上传附件（multipart） */
+export async function uploadAIAttachment(
+  conversationId: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<{ attachmentId: string; filename: string; kind: string }> {
+  const form = new FormData();
+  form.append('conversationId', conversationId);
+  form.append('file', file);
+  const response = await fetch('/api/v1/ai/attachments', {
+    method: 'POST',
+    body: form,
+    signal: signal ?? null,
+  });
+  if (!response.ok) {
+    throw new Error(`upload failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+/** GET /api/v1/ai/attachments/{id}/file —— 取附件文件（图片预览用） */
+export function attachmentFileUrl(attachmentId: string): string {
+  return `/api/v1/ai/attachments/${attachmentId}/file`;
 }

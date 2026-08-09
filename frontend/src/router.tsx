@@ -1,5 +1,7 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
+import { AuthGuard } from './components/auth/AuthGuard';
+import { LoginPage } from './pages/LoginPage';
 import { MarketOverviewPage } from './pages/MarketOverviewPage';
 import { RebalancePage } from './pages/RebalancePage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
@@ -13,9 +15,14 @@ import { RebalanceDetailPage } from './pages/RebalanceDetailPage';
 import { WorkflowDetailPage } from './pages/WorkflowDetailPage';
 
 export const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
   {
     path: '/',
-    element: <AppShell />,
+    element: (
+      <AuthGuard>
+        <AppShell />
+      </AuthGuard>
+    ),
     children: [
       { index: true, element: <Navigate to="/market" replace /> },
       { path: 'market', element: <MarketOverviewPage /> },

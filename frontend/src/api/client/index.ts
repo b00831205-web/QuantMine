@@ -6,3 +6,4 @@ export * from './report';
 export * from './workflow';
 export * from './data';
 export * from './ai';
+export * from './auth';

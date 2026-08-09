@@ -44,6 +44,8 @@ export async function http<T>(path: string, options: HttpRequestOptions = {}): P
   const init: RequestInit = {
     method: options.method ?? 'GET',
     signal: options.signal ?? null,
+    // 携带 HttpOnly 会话 Cookie（登录鉴权）；同源代理下默认也会带，显式声明更稳妥
+    credentials: 'include',
     ...(options.body !== undefined
       ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options.body) }
       : {}),

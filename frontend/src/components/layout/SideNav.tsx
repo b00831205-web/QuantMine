@@ -41,7 +41,12 @@ export const SideNav = () => {
         ))}
         <div className={styles.divider} />
         {ai.map((item) => (
-          <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}>
+          <NavLink
+            key={item.to}
+            to={item.to}
+            {...(item.end ? { end: true } : {})}
+            className={({ isActive }) => (isActive ? styles.linkActive : styles.link)}
+          >
             {t(item.labelKey)}
           </NavLink>
         ))}

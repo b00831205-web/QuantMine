@@ -7,6 +7,7 @@ export function buildReportPdfUrl(query: ReportQuery, inline = false): string{
         lang: query.lang,
         ai: String(query.ai),
         ...(query.testId? {testId: query.testId}: {}),
+        ...(query.refresh? {refresh: '1'}: {}),
         ...(inline? {inline: '1'}:{}),
     });
     return `/api/v1/research/report.pdf?${params}`;

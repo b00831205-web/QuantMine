@@ -7,7 +7,7 @@ import { HttpError } from '@/api/http';
 import type { AsyncState } from '@/types/api';
 import i18n from '@/i18n';
 import {fetchAIConfig, saveAIConfig} from '@/api/client';
-import type { AIConfig, AICapabilities, AIProviderConfig } from '@/types/ai';
+import type { AIConfig, AICapabilities, AIProviderConfig, AIEmbeddingConfig } from '@/types/ai';
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -60,12 +60,23 @@ export const AIConfigPage = () => {
   /* 加载配置，并同步到编辑草稿 */
   useEffect(() => {
     const controller = new AbortController();
+
     setConfigState({ status: 'loading' });
     fetchAIConfig(controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) {
-          setConfigState({ status: 'success', data });
-          setDraft(data);
+          const normalized: AIConfig = {
+            ...data,
+            embeddingConfig: data.embeddingConfig ?? {
+              provider: 'none',
+              baseUrl: '',
+              model: '',
+              apiKeyEnv: '',
+              dimensions: 1024,
+            },
+          };
+          setConfigState({status: 'success', data: normalized});
+          setDraft(normalized);
         }
       })
       .catch((error) => {
@@ -103,6 +114,11 @@ export const AIConfigPage = () => {
     setDraft((prev) =>
     prev? {...prev, capabilities: {...prev.capabilities, [key]: value}} : prev,)
   }
+
+  const patchEmbedding = (patch: Partial<AIEmbeddingConfig>): void => {
+    setDraft((prev) => prev ? {...prev, embeddingConfig: {...prev.embeddingConfig, ...patch}}: prev)
+  }
+
 
   /** 新增一个空白自定义供应商并立即进入编辑。 */
   const addCustomProvider = (): void => {
@@ -407,7 +423,6 @@ export const AIConfigPage = () => {
           <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>加载中…</div>
         )}
       </Card>
-
       <Card title="Agent 基本设置">
         {draft && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
@@ -468,10 +483,77 @@ export const AIConfigPage = () => {
         )}
       </Card>
 
-      <Card title="RAG 知识库 / Skill / 外部 API / 审计日志">
-        <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
-          后续阶段接入，当前为占位。
-        </div>
+      <Card title = 'Embedding / RAG 向量模型'>
+      {draft? (
+        <div style = {{display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)'}}>
+          <div style = {{maxWidth: 320}}>
+            <label style ={fieldLabel}>类型</label>
+            <select
+            value = {draft.embeddingConfig.provider}
+            onChange = {(e)=> patchEmbedding({
+              provider: e.target.value as AIEmbeddingConfig['provider'],
+            })
+          }
+          style = {{...inputStyle, width: '100%'}}>
+            <option value = 'none'>关闭（不使用RAG）</option>
+            <option value = 'openai_compatible'>OpenAI兼容API（硅基流动等）</option>
+            <option value = 'ollama'>本地 Ollama</option>
+          </select>
+          </div>
+          {draft.embeddingConfig.provider !== 'none' && (
+            <>
+            <div>
+              <label style = {fieldLabel}> Base URL </label>
+              <input
+              type = 'text'
+              style = {inputStyle}
+              placeholder='https://api.siliconflow.cn/v1'
+              value = {draft.embeddingConfig.baseUrl}
+              onChange={(e)=>patchEmbedding({baseUrl: e.target.value})}/>
+
+            </div>
+            <div>
+              <label style = {fieldLabel}>模型名</label>
+                <input
+                type = 'text'
+                style = {inputStyle}
+                placeholder='BAAI/bge-m3'
+                value={draft.embeddingConfig.model}
+                onChange={(e)=> patchEmbedding({model: e.target.value})}/>
+            </div>
+            {draft.embeddingConfig.provider ==='openai_compatible' && (
+              <div>
+                <label style = {fieldLabel}>API Key环境变量名（默认SILICONFLOW_API_KEY</label>
+                <input
+                type = 'text'
+                style = {inputStyle}
+                placeholder='SILICONFLOW_API_KEY'
+                value = {draft.embeddingConfig.apiKeyEnv?? ''}
+                onChange={(e)=>patchEmbedding({apiKeyEnv:e.target.value})}/>
+                </div>
+
+            )}
+            <div style = {{maxWidth :220}}>
+              <label style = {fieldLabel}>向量为度</label>
+              <input
+              type='number'
+              min={64}
+              step={1}
+              style={inputStyle}
+              value={draft.embeddingConfig.dimensions}
+              onChange={(e)=>patchEmbedding({dimensions: Number(e.target.value)})}/>
+
+            </div>
+          </>
+      )}
+      <div style = {{color: 'var(--text-muted)', fontSize: 'var(--fs-xs)'}}>
+        开发测试默认：硅基流动BAAI/bge-m3（1024维），Key 放环境变量SILICONFLOW_API_KEY，
+        本地模型填Ollama：https://localhost:11434/v1 + bge-m3，不需要Key，
+        只有开启上方「跨对话语料检索」权限后才会真正生效。
+      </div>
+      </div>):(
+        <div style = {{color: 'var(--text-muted)', fontSize: 'var(--fs-sm)'}}>加载中</div>
+      )}
       </Card>
 
       <div>

@@ -8,6 +8,8 @@ export interface ReportQuery {
   testId?: string;
   lang: ReportLang;
   ai: boolean;
+  /** 强制绕过缓存重新生成 */
+  refresh?: boolean;
 }
 
 /** 报告历史记录（轻量版：同步生成，生成即完成） */

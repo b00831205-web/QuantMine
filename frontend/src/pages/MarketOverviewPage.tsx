@@ -5,9 +5,11 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { Card } from '@/components/common/Card';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
 import { SeriesChart } from '@/components/chart/SeriesChart';
-import { fetchSeries , fetchLatestMarketDate} from '@/api/client/market';
+import { fetchSeries, fetchLatestMarketDate, fetchMarketOverview } from '@/api/client/market';
+import { fetchWorkflows } from '@/api/client';
 import type { AsyncState, ApiError } from '@/types/api';
-import type { SeriesQuery, SeriesResponse } from '@/types/market';
+import type { SeriesQuery, SeriesResponse, MarketOverview } from '@/types/market';
+import { stateLabel, stateColor } from '@/utils/workflowStatus';
 import styles from './MarketOverviewPage.module.css';
 import { HttpError } from '@/api/http';
 import { useMemo} from 'react';
@@ -42,6 +44,8 @@ export const MarketOverviewPage = () => {
   // —— 数据状态（effect 留给你实现）——
   const [seriesState, setSeriesState] = useState<AsyncState<SeriesResponse>>({ status: 'idle' });
   const [latestTradeDate, setLatestTradeDate] = useState<string | null>(null);
+  const [overview, setOverview] = useState<MarketOverview | null>(null);
+  const [taskStatus, setTaskStatus] = useState<{ label: string; color: string } | null>(null);
   // —— TODO(USER_LEARNING): 数据拉取 effect —— //
   //   目标：当 symbols 或 range 变化时，发起 fetchSeries 并写入 seriesState；
   //   异步状态依次经历 loading → success | error；
@@ -95,8 +99,48 @@ export const MarketOverviewPage = () => {
 
   return () => controller.abort();
 }, [latestTradeDate, symbols, range, query]);
-  
-  useEffect(() => {fetchLatestMarketDate().then((data)=>{setLatestTradeDate(data.latestTradeDate);});},[])
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchLatestMarketDate().then((data) => {
+      setLatestTradeDate(data.latestTradeDate);
+    });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchMarketOverview(controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) setOverview(data);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setOverview(null);
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchWorkflows(controller.signal)
+      .then((dags) => {
+        if (controller.signal.aborted) return;
+        const runs = dags
+          .flatMap((dag) => dag.recentRuns ?? [])
+          .filter((run) => run.startDate !== null)
+          .sort((a, b) => (b.startDate! > a.startDate! ? 1 : -1));
+        const latest = runs[0];
+        setTaskStatus(
+          latest
+            ? { label: stateLabel(latest.state), color: stateColor(latest.state) }
+            : null,
+        );
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setTaskStatus(null);
+      });
+    return () => controller.abort();
+  }, []);
 
 
   const handleAddTicker = (): void => {
@@ -196,9 +240,22 @@ export const MarketOverviewPage = () => {
       <section className={styles.kpis}>
         <Kpi label={t('market.kpi.latestDate')} value={latestTradeDate ?? '-'} />
         <Kpi label={t('market.kpi.dailyReturn')} value={spyDailyReturnLabel} tone="muted" />
-        <Kpi label={t('market.kpi.advancers')} value="—" tone="muted" />
-        <Kpi label={t('market.kpi.breadth')} value="—" tone="muted" />
-        <Kpi label={t('market.kpi.taskStatus')} value="IDLE" tone="muted" />
+        <Kpi
+          label={t('market.kpi.advancers')}
+          value={overview ? `${overview.advancers} / ${overview.total}` : '-'}
+          tone="muted"
+        />
+        <Kpi
+          label={t('market.kpi.breadth')}
+          value={overview ? `${(overview.breadth * 100).toFixed(1)}%` : '-'}
+          tone="muted"
+        />
+        <Kpi
+          label={t('market.kpi.taskStatus')}
+          value={taskStatus ? taskStatus.label : '尚未运行'}
+          valueColor={taskStatus?.color}
+          tone="muted"
+        />
       </section>
     </div>
   );
@@ -209,16 +266,23 @@ const Kpi = ({
   value,
   hint,
   tone,
+  valueColor,
 }: {
   label: string;
   value: string;
   hint?: string;
   tone?: 'muted';
+  valueColor?: string | undefined;
 }) => {
   return (
     <div className={styles.kpi}>
       <div className={styles.kpiLabel}>{label}</div>
-      <div className={tone === 'muted' ? styles.kpiValueMuted : styles.kpiValue}>{value}</div>
+      <div
+        className={tone === 'muted' ? styles.kpiValueMuted : styles.kpiValue}
+        style={valueColor ? { color: valueColor } : undefined}
+      >
+        {value}
+      </div>
       {hint ? <div className={styles.kpiHint}>{hint}</div> : null}
     </div>
   );
