@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from datetime import date
 
 import pandas as pd
-from sqlalchemy import MetaData, Table, func ,select, desc
+from sqlalchemy import MetaData, Table, func, select, desc, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine
 
@@ -13,6 +13,8 @@ def build_market_bars(
     close: pd.DataFrame,
     volume: pd.DataFrame,
     source_run_id: int,
+    shares: pd.DataFrame,
+    market_cap: pd.DataFrame
 ) -> pd.DataFrame:
     """Convert wide close/volume frames into database-ready long rows."""
     close_long = (
@@ -35,6 +37,35 @@ def build_market_bars(
         how="outer",
         validate="one_to_one",
     )
+    if shares is not None:
+        aligned_shares = shares.reindex(
+            index=close.index, columns = close.columns
+        )
+        shares_long = (
+            aligned_shares.rename_axis('trade_date')
+            .rename_axis('ticker', axis = 'columns')
+            .stack(future_stack=True)
+            .rename('shares_outstanding')
+            .reset_index()
+        )
+        market_bars = market_bars.merge(shares_long, on=['trade_date', 'ticker'], how = 'left')
+    if market_cap is not None:
+        aligned_cap = market_cap.reindex(
+            index = close.index, columns = close.columns
+        )
+        cap_long = (
+            aligned_cap.rename_axis('trade_date')
+            .rename_axis('ticker', axis = 'columns')
+            .stack(future_stack = True)
+            .rename('market_cap')
+            .reset_index())
+        market_bars = market_bars.merge(
+            cap_long, on = ['trade_date', 'ticker'], how='left'
+        )
+    # 未传 shares/market_cap 时也保证列存在, 否则下游 snapshot/upsert 会 KeyError
+    for col in ("shares_outstanding", "market_cap"):
+        if col not in market_bars.columns:
+            market_bars[col] = pd.NA
     market_bars = market_bars.dropna(
         subset=["close", "volume"],
         how="all",
@@ -50,7 +81,8 @@ def build_latest_snapshot(market_bars: pd.DataFrame) -> pd.DataFrame:
     latest_date = market_bars["trade_date"].max()
     return market_bars.loc[
         market_bars["trade_date"] == latest_date,
-        ["trade_date", "ticker", "close", "volume", "source_run_id"],
+        ["trade_date", "ticker", "close", "volume",
+         "shares_outstanding", "market_cap", "source_run_id"],
     ].copy()
 
 
@@ -87,7 +119,9 @@ def upsert_market_bars(
                 set_={
                     "close": statement.excluded.close,
                     "volume": statement.excluded.volume,
+                    'shares_outstanding': statement.excluded.shares_outstanding,
                     "source_run_id": statement.excluded.source_run_id,
+                    'market_cap': statement.excluded.market_cap,
                     "updated_at": func.now(),
                 },
             )
@@ -118,6 +152,8 @@ def upsert_latest_snapshot(
             "trade_date": statement.excluded.trade_date,
             "close": statement.excluded.close,
             "volume": statement.excluded.volume,
+            "shares_outstanding": statement.excluded.shares_outstanding,
+            "market_cap": statement.excluded.market_cap,
             "source_run_id": statement.excluded.source_run_id,
             "updated_at": func.now(),
         },
@@ -147,6 +183,47 @@ def fetch_latest_market_trade_date(engine:Engine)->date|None:
     with engine.connect() as conn:
         result = conn.execute(statement).scalar_one_or_none()
     return result
+
+
+def fetch_market_breadth(engine: Engine) -> dict | None:
+    """最新交易日上涨/下跌家数与市场宽度（上涨家数占比）。
+
+    对每只 ticker 取最近两个交易日的收盘价比较；只有最新一天没有
+    前一交易日的 ticker 不参与统计。
+    """
+    statement = text(
+        """
+        WITH ranked AS (
+            SELECT ticker, trade_date, close,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY ticker ORDER BY trade_date DESC
+                   ) AS rn
+            FROM market_bars
+        ),
+        cur AS (SELECT ticker, close FROM ranked WHERE rn = 1),
+        prev AS (SELECT ticker, close FROM ranked WHERE rn = 2)
+        SELECT
+            (SELECT MAX(trade_date) FROM ranked WHERE rn = 1) AS latest_date,
+            COUNT(*) FILTER (WHERE cur.close > prev.close) AS advancers,
+            COUNT(*) FILTER (WHERE cur.close < prev.close) AS decliners,
+            COUNT(*) AS total
+        FROM cur JOIN prev USING (ticker)
+        """
+    )
+    with engine.connect() as connection:
+        row = connection.execute(statement).mappings().first()
+    if row is None or not row["total"]:
+        return None
+    total = int(row["total"])
+    advancers = int(row["advancers"] or 0)
+    decliners = int(row["decliners"] or 0)
+    return {
+        "latest_date": row["latest_date"],
+        "advancers": advancers,
+        "decliners": decliners,
+        "total": total,
+        "breadth": round(advancers / total, 4) if total else 0.0,
+    }
 
 def switch_to_week(df: pd.DataFrame):
     working = df.dropna(subset = ['close']).copy()

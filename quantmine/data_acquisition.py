@@ -97,50 +97,8 @@ def save_blacklist(tickers: list, checkpoint_dir:str):
         json.dump(updated,f, indent=2)
     print(f"Blacklist updated: {updated}")
 
-def data_acquisition(
-    tickers: list,
-    start_date: str,
-    end_date: str,
-    batch_size: int,
-    max_retries: int = 3,
-    wait: int = 60,
-    checkpoint_dir: str = "tmp/checkpoint",
-    batch_wait: float = 1.0,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Download historical price and volume data in batches with checkpoints.
-
-    Args:
-        tickers: List of tickers to download.
-        start_date: Start date in ``YYYY-MM-DD`` format.
-        end_date: End date in ``YYYY-MM-DD`` format.
-        batch_size: Number of tickers per download batch.
-        max_retries: Maximum retries for each batch download.
-        wait: Seconds to wait between retry attempts.
-        checkpoint_dir: Directory used to store batch checkpoints and logs.
-
-    Returns:
-        A tuple of ``(close_dataframe, volume_dataframe)``.
-
-    Notes:
-        Each batch is cached to disk so repeated runs can resume from existing
-        checkpoint files.
-    """
-    if batch_size <= 0:
-        raise ValueError("batch_size must be positive")
-    if max_retries <= 0:
-        raise ValueError("max_retries must be positive")
-
-    # A stable order is essential: checkpoint names are batch-number based.
-    # Without this normalization, a resumed run could load another ticker's
-    # checkpoint when the caller originally supplied a set.
-    tickers = sorted(set(tickers))
-    task_signature = hashlib.md5(f'{sorted(tickers)}_{start_date}_{end_date}'.encode()).hexdigest()[:8]
-    task_checkpoint_dir = os.path.join(checkpoint_dir,task_signature)
-    os.makedirs(task_checkpoint_dir,exist_ok=True)
-    
-
-    def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_index:int  ,max_retries:int =3, wait: int =60) ->pd.DataFrame | None :
-        checkpoint_path = os.path.join(task_checkpoint_dir, f"batch_{batch_index}.parquet")
+def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_index:int , task_checkpoint_dir: str,max_retries:int =3, wait: int =60, auto_adjust: bool = True, file_prefix: str = 'batch') ->pd.DataFrame | None :
+        checkpoint_path = os.path.join(task_checkpoint_dir, f"{file_prefix}_{batch_index}.parquet")
         if os.path.exists(checkpoint_path):
             print(f"{batch_index} already exist")
             return pd.read_parquet(checkpoint_path)
@@ -150,7 +108,7 @@ def data_acquisition(
                 #threads=False: 串行请求, 避免并发触发Yahoo限流(429被误报成"possibly delisted")
                 #timeout=30: 单请求超时, 卡住快速失败而非无限挂起
                 data = yf.download(batch, start=start_date, end=end_date,
-                                auto_adjust=True, progress=False,
+                                auto_adjust=auto_adjust, progress=False,
                                 threads=False, timeout=30)
                 if data.empty:
                     raise ValueError("Empty data returned")
@@ -184,15 +142,60 @@ def data_acquisition(
                 )
                 failed_file.write("\n")
         print(f"Batch {batch_index} failed, logging to {failed_log}")
-        return None    
-    
+        return None 
+
+def data_acquisition(
+    tickers: list,
+    start_date: str,
+    end_date: str,
+    batch_size: int,
+    max_retries: int = 3,
+    wait: int = 60,
+    checkpoint_dir: str = "tmp/checkpoint",
+    batch_wait: float = 1.0,
+    shares_start_date: str | None = None,
+    auto_adjust: bool = True,
+    file_prefix: str = 'batch',
+    with_market_cap: bool = True,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Download historical price and volume data in batches with checkpoints.
+
+    Args:
+        tickers: List of tickers to download.
+        start_date: Start date in ``YYYY-MM-DD`` format.
+        end_date: End date in ``YYYY-MM-DD`` format.
+        batch_size: Number of tickers per download batch.
+        max_retries: Maximum retries for each batch download.
+        wait: Seconds to wait between retry attempts.
+        checkpoint_dir: Directory used to store batch checkpoints and logs.
+
+    Returns:
+        A tuple of ``(close_dataframe, volume_dataframe)``.
+
+    Notes:
+        Each batch is cached to disk so repeated runs can resume from existing
+        checkpoint files.
+    """
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    if max_retries <= 0:
+        raise ValueError("max_retries must be positive")
+
+    # A stable order is essential: checkpoint names are batch-number based.
+    # Without this normalization, a resumed run could load another ticker's
+    # checkpoint when the caller originally supplied a set.
+    tickers = sorted(set(tickers))
+    task_signature = hashlib.md5(f'{sorted(tickers)}_{start_date}_{end_date}'.encode()).hexdigest()[:8]
+    task_checkpoint_dir = os.path.join(checkpoint_dir,task_signature)
+    os.makedirs(task_checkpoint_dir,exist_ok=True)
+      
     all_close = []
     all_volume = []
     for i in range(0, len(tickers), batch_size):
         batch = tickers[i: i+batch_size]
         batch_index= i//batch_size+1
         print(f"downloading batch{batch_index} ... \ntickers {i} - {min(len(tickers), (i+batch_size))}")
-        data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index)
+        data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir)
         if data is not None:
             if isinstance(data.columns, pd.MultiIndex):
                 all_close.append(data['Close'])
@@ -207,7 +210,23 @@ def data_acquisition(
         )
     close = pd.concat(all_close, axis=1)
     volume = pd.concat(all_volume, axis=1)
-    return close, volume
+    # 价格-only 消费者(如 datareader)传 with_market_cap=False, 跳过逐票 get_shares_full 网络开销
+    if not with_market_cap:
+        return close, volume, pd.DataFrame(), pd.DataFrame()
+    shares, market_cap = acquire_market_cap(
+        tickers=tickers,
+        start_date=start_date,
+        end_date=end_date,
+        batch_size=batch_size,
+        max_retries=max_retries,
+        wait=wait,
+        checkpoint_dir=checkpoint_dir,
+        batch_wait=batch_wait,
+        shares_start_date=shares_start_date,
+    )
+    return close, volume, shares, market_cap
+
+
 
 def retry_batches(start_date: str, end_date: str, max_retries: int, checkpoint_dir: str = "tmp/checkpoint", wait: int =60)->pd.DataFrame | None:
     """Retry batches that previously failed to download.
@@ -329,7 +348,7 @@ def retry_batches(start_date: str, end_date: str, max_retries: int, checkpoint_d
         return None, None
     
 
-def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint") -> tuple:
+def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint", file_prefix: str = 'batch') -> tuple:
     """Merge all batch checkpoint files into full close and volume tables.
 
     Args:
@@ -342,8 +361,8 @@ def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint") -> tuple:
     Notes:
         Only parquet files with a MultiIndex column layout are merged.
     """
-    files = sorted(glob.glob(os.path.join(checkpoint_dir, "**", "batch_*.parquet"), recursive=True),
-                   key=lambda x: int(x.split("batch_")[1].split(".")[0]))
+    files = sorted(glob.glob(os.path.join(checkpoint_dir, "**", f"{file_prefix}_*.parquet"), recursive=True),
+                   key=lambda x: int(os.path.basename(x).split(f'{file_prefix}_')[1].split('x')[0]),)
     
     all_close, all_volume = [], []
     for f in files:
@@ -358,3 +377,66 @@ def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint") -> tuple:
     close = pd.concat(all_close, axis=1)
     volume = pd.concat(all_volume, axis=1)
     return close, volume
+
+def acquire_market_cap(
+        tickers: list, start_date: str, end_date: str, batch_size,
+        max_retries: int=3, wait: int=60, checkpoint_dir: str = 'tmp/checkpoint',
+        batch_wait = 1.0, shares_start_date: str| None = None
+)-> pd.DataFrame:
+    tickers = sorted(set(tickers) - load_blacklist(checkpoint_dir))
+    task_sig = hashlib.md5(
+        f'{tickers}_{start_date}_{end_date}'.encode()).hexdigest()[:8]
+    task_dir = os.path.join(checkpoint_dir, task_sig, 'mcap')
+    os.makedirs(task_dir, exist_ok=True)
+
+    px_batches = []
+    for i in range(0, len(tickers), batch_size):
+        data = download_batch_with_retry(
+            batch =tickers[i: i+batch_size],
+            start_date= start_date,
+            end_date= end_date,
+            batch_index= i//batch_size+1,
+            task_checkpoint_dir=task_dir,
+            max_retries = max_retries,
+            wait = wait,
+            auto_adjust=False,
+            file_prefix='mcap_px'
+        )
+        if data is not None and isinstance(data.columns, pd.MultiIndex):
+            px_batches.append(data['Close'])
+        time.sleep(batch_wait)
+    price = pd.concat(px_batches, axis=1)
+    price.index = price.index.tz_localize(None)
+
+    shares = {}
+    for t in price.columns:
+        # 单票 checkpoint: 股本端点易被 Yahoo 限流, 缓存避免重跑裸打 + 加剧限流
+        cp = os.path.join(task_dir, f'shares_{t}.parquet')
+        if os.path.exists(cp):
+            shares[t] = pd.read_parquet(cp)['shares']
+            continue
+        # 和价格一致的重试: 一次性裸调遇到抖动会让整列归零
+        s = None
+        for attempt in range(max_retries):
+            try:
+                # 不传 end: yfinance 该端点带 end 常直接失败; 末端多抓无害, 后面 reindex 会裁到价格窗口
+                s = yf.Ticker(t).get_shares_full(start=shares_start_date or start_date)
+                if s is not None and not s.empty:
+                    break
+            except Exception as e:
+                print(f'{t} shares attempt {attempt+1} failed: {e}')
+            if attempt < max_retries - 1:
+                time.sleep(wait)
+        # 抓不到就留 NaN, 不用当前股本铺满历史(会系统性污染历史市值加权)
+        if s is None or s.empty:
+            print(f'{t} shares unavailable, leave NaN')
+            continue
+        s = s[~s.index.duplicated(keep='last')]
+        if s.index.tz is not None:
+            s.index = s.index.tz_localize(None)
+        aligned = s.reindex(price.index, method='ffill')
+        aligned.to_frame('shares').to_parquet(cp)
+        shares[t] = aligned
+    shares = pd.DataFrame(shares).reindex(columns = price.columns)
+    market_cap = price* shares
+    return shares, market_cap

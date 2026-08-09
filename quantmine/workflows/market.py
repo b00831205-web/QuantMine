@@ -16,9 +16,11 @@ def save_daily_market_data(
     close: pd.DataFrame,
     volume: pd.DataFrame,
     source_run_id: int,
+    shares: pd.DataFrame | None = None,
+    market_cap: pd.DataFrame | None = None
 ) -> dict[str, int]:
     """Build, persist, and summarize one cleaned market-data load."""
-    bars = build_market_bars(close, volume, source_run_id)
+    bars = build_market_bars(close, volume, source_run_id, shares = shares, market_cap = market_cap)
     latest = build_latest_snapshot(bars)
     return {
         "bars_written": upsert_market_bars(engine, bars),

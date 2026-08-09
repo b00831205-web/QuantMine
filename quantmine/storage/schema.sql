@@ -21,6 +21,8 @@ CREATE TABLE market_bars (
     ticker VARCHAR NOT NULL,
     close NUMERIC(20, 8),
     volume BIGINT,
+    shares_outstanding NUMERIC,
+    market_cap NUMERIC,
     source_run_id INT REFERENCES research_runs(run_id),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     PRIMARY KEY (trade_date, ticker)
@@ -34,6 +36,8 @@ CREATE TABLE market_latest (
     trade_date DATE NOT NULL,
     close NUMERIC(20, 8),
     volume BIGINT,
+    shares_outstanding NUMERIC,
+    market_cap NUMERIC,
     source_run_id INT REFERENCES research_runs(run_id),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -95,6 +99,7 @@ CREATE TABLE backtest_results (
     quantile_rank INT NOT NULL
         CHECK (quantile_rank = 0 OR quantile_rank >=1 ),
     return_value FLOAT,
+    weighting VARCHAR NOT NULL DEFAULT 'equal',
     UNIQUE (
         run_id,
         variant_name,
@@ -163,6 +168,41 @@ CREATE TABLE backtest_artifacts (
         backtest_id,
         artifact_type,
         artifact_key
+    )
+);
+
+CREATE TABLE attribution_results (
+    id SERIAL PRIMARY KEY,
+    run_id INT NOT NULL REFERENCES research_runs(run_id),
+
+    variant_name VARCHAR NOT NULL,
+    test_id VARCHAR NOT NULL,
+    factor_name VARCHAR NOT NULL,
+    period INT NOT NULL,
+
+    term VARCHAR NOT NULL,          -- Alpha, Mkt-RF, SMB, HML, Mom
+
+    coef FLOAT,
+    std_err FLOAT,
+    t_stat FLOAT,                   -- HAC (Newey-West) t
+    p_value FLOAT,
+    ci_lo FLOAT,
+    ci_hi FLOAT,
+
+    -- model-level stats, denormalized onto every term row for trivial reads
+    r2 FLOAT,
+    adj_r2 FLOAT,
+    n INT,
+    alpha_annual FLOAT,
+    maxlags INT,
+
+    UNIQUE (
+        run_id,
+        variant_name,
+        test_id,
+        factor_name,
+        period,
+        term
     )
 );
 

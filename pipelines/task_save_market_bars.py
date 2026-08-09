@@ -25,10 +25,16 @@ def main():
         PROJECT_ROOT/'data'/'processed'/'processed_volume.parquet'
     )
 
+    # shares/market_cap 可能缺失(某次全抓不到时 task_2 不产出); build_market_bars 会按 None 优雅补 NA
+    shares_path = PROJECT_ROOT / 'data' / 'processed' / 'processed_shares.parquet'
+    cap_path = PROJECT_ROOT / 'data' / 'processed' / 'processed_market_cap.parquet'
+    shares = pd.read_parquet(shares_path) if shares_path.exists() else None
+    market_cap = pd.read_parquet(cap_path) if cap_path.exists() else None
+
     engine = get_engine()
     run_id = find_run_id_by_airflow_batch(engine, args.batch)
 
-    result = save_daily_market_data(engine, close, volume, run_id)
+    result = save_daily_market_data(engine, close, volume, run_id, shares = shares, market_cap = market_cap)
     print(
         f"market bars updated complete: run_id={run_id}, date={args.date}, "
         f"bars={result['bars_written']}, "

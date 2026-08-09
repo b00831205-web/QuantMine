@@ -36,6 +36,7 @@ def test_data_acquisition_uses_stable_ticker_batches(monkeypatch, tmp_path):
         max_retries=1,
         wait=0,
         checkpoint_dir=str(tmp_path),
+        with_market_cap=False,  # 只测价格批次逻辑, 不触发 get_shares_full/mcap 下载
     )
 
     assert calls == [["AAPL", "GOOG"], ["MSFT"]]

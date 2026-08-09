@@ -48,3 +48,5 @@ if __name__ == "__main__":
     # process close and volume separately
     process("close.parquet", "processed_close.parquet")
     process("volume.parquet", "processed_volume.parquet")
+    process('shares.parquet', 'processed_shares.parquet')
+    process('market_cap.parquet', 'processed_market_cap.parquet')

@@ -1,7 +1,21 @@
 import pandas as pd
 from .datareader import ConstituentsSource, MembershipTableSource
+from .weighting import equal_weight
 import numpy as np
 from scipy.stats import spearmanr
+
+
+def _weighted_group_return(returns_row: pd.Series, weights: pd.Series) -> float:
+    """Weighted mean of one group's returns, renormalizing over members that
+    actually have data. Equal weights reduce this to ``returns_row.mean()``
+    (which likewise skips NaN), so the equal-weight path is numerically
+    unchanged. Returns NaN if no member has both a return and a weight.
+    """
+    aligned = pd.DataFrame({'r': returns_row, 'w': weights}).dropna()
+    total = aligned['w'].sum()
+    if aligned.empty or not (total > 0):
+        return float('nan')
+    return float((aligned['r'] * aligned['w'] / total).sum())
 
 
 def truncate_quantile(cross_section_series: list|pd.Series, part:int =5):
@@ -36,7 +50,9 @@ def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,
                       significant_factor_list:list, 
                       forward_returns: dict[int,pd.DataFrame], 
                       part:int =5,
-                      selected_factor_periods: list[tuple[str,int]] | None = None):
+                      selected_factor_periods: list[tuple[str,int]] | None = None,
+                      weight_fn = None,
+                      market_cap: pd.DataFrame | None = None):
     """Run a quantile long-short backtest for each selected factor.
 
     Args:
@@ -61,6 +77,9 @@ def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,
 
     if isinstance(constituents, pd.DataFrame):
         constituents = MembershipTableSource(constituents)
+
+    if weight_fn is None:               # 默认等权; 等权也是注册表里的一个方法
+        weight_fn = equal_weight
 
     all_result={}
     all_ticker_history = {}
@@ -114,7 +133,8 @@ def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,
                 _tickers = {'date':curr_date}
                 for i in range(part):
                     group_return = forward_return_df.loc[curr_date, group_list[i]]
-                    _return[f'Q{i+1}'] = group_return.mean()
+                    weights = weight_fn(group_list[i], curr_date, market_cap)
+                    _return[f'Q{i+1}'] = _weighted_group_return(group_return, weights)
                     _tickers[f'Q{i+1}'] = set(group_list[i])
                 ticker_history.append(_tickers)
                 result.append(_return)
@@ -126,7 +146,8 @@ def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,
             all_result[(significant_factor,period)] = result_df
     return all_result, all_ticker_history
 
-def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost_per_trade: float = 0.001, parts: int = 5):
+def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost_per_trade: float = 0.001, parts: int = 5,
+                            weight_fn = None, market_cap: pd.DataFrame | None = None):
     """Expand periodic rebalance snapshots into a net-of-cost daily return series.
 
     Between two rebalance dates the portfolio holds the quantile members
@@ -151,6 +172,8 @@ def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost
         rebalance-day anchor, each window's first daily return is lost and the
         cost deduction lands on a NaN (i.e. costs are silently never charged).
     """
+    if weight_fn is None:               # 默认等权; 与 quantile_backtest 一致
+        weight_fn = equal_weight
     quantile_columns = [f"Q{i}" for i in range(1, parts + 1)]
     output_columns = [*quantile_columns, "long_short"]
     if len(tickers_history) < 2:
@@ -174,7 +197,16 @@ def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost
         for q in quantile_columns:
             tickers_in_group = list(curr[q])
             group_price = close_data.loc[window_dates, tickers_in_group]
-            portfolio_daily_return = group_price.pct_change().mean(axis=1).iloc[1:]
+            # 权重按调仓日固定(买入持有到下次调仓); 每日在有数据的票上重新归一,
+            # 这样等权时 == 原 .mean(axis=1)(同样跳过 NaN), 数值不变。
+            weights = weight_fn(tickers_in_group, curr_date, market_cap)
+            daily_ret = group_price.pct_change().iloc[1:]
+            w = weights.reindex(daily_ret.columns)
+            w_row = daily_ret.notna().mul(w, axis=1)
+            w_sum = w_row.sum(axis=1)
+            w_norm = w_row.div(w_sum.where(w_sum > 0), axis=0)
+            portfolio_daily_return = (daily_ret.fillna(0) * w_norm).sum(axis=1)
+            portfolio_daily_return = portfolio_daily_return.where(w_sum > 0)
 
             if i>0:
                 prev_set = set(tickers_history[i-1][q])
@@ -209,6 +241,8 @@ def expand_all_to_daily_returns(
     close_data: pd.DataFrame,
     parts: int,
     cost_per_trade: float = 0.001,
+    weight_fn = None,
+    market_cap: pd.DataFrame | None = None,
 ) -> dict:
     """Expand every ticker history produced by ``quantile_backtest`` at once.
 
@@ -224,7 +258,10 @@ def expand_all_to_daily_returns(
     """
     all_daily_returns = {}
     for key, ticker_history in all_ticker_history.items():
-        all_daily_returns[key] = expand_to_daily_returns(ticker_history, close_data, cost_per_trade, parts)
+        all_daily_returns[key] = expand_to_daily_returns(
+            ticker_history, close_data, cost_per_trade, parts,
+            weight_fn=weight_fn, market_cap=market_cap,
+        )
     return all_daily_returns
 
 def calculate_turnover(ticker_history: list, group: str)->pd.Series:

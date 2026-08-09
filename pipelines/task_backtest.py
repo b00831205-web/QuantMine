@@ -43,6 +43,10 @@ def main():
     close = pd.read_parquet(
         PROJECT_ROOT / "data" / "processed" / "processed_close.parquet"
     )
+    # 市值宽表(date×ticker), 与 close 同形; 供 weighting: {name: mcap} 使用。
+    # 缺失时传 None, 等权路径不需要它。
+    cap_path = PROJECT_ROOT / "data" / "processed" / "processed_market_cap.parquet"
+    market_cap = pd.read_parquet(cap_path) if cap_path.exists() else None
     backtest_config = load_backtest_config(PROJECT_ROOT / args.config)
 
     variants = load_ic_variants(engine, run_id)
@@ -54,6 +58,7 @@ def main():
         test_results=test_results,
         backtest_config=backtest_config,
         constituents=None,
+        market_cap=market_cap,
     )
 
     safe_batch = re.sub(r"[^A-Za-z0-9_.-]+", "_", args.batch)

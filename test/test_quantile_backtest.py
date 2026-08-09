@@ -21,6 +21,7 @@ import pytest
 
 from quantmine.back_testing import quantile_backtest
 from quantmine.datareader import StaticUniverse
+from quantmine.weighting import mcap_weight
 
 N_DAYS = 12
 TICKERS = [f"T{i}" for i in range(10)]
@@ -169,6 +170,35 @@ def test_nan_factor_values_and_missing_return_columns_are_excluded(dates):
         *(history[("toy", 1)][0][f"Q{i}"] for i in range(1, 6))
     )
     assert members == {"A", "B", "C", "D", "E"}
+
+
+def test_mcap_weighting_uses_cap_proportional_weights(
+    synthetic_factors, synthetic_forward_returns, dates,
+):
+    """mcap 加权: 组收益按调仓日市值加权, 明显区别于等权。
+
+    Q1={T0,T1} 收益 {0.00, 0.01}; 给市值 T0=1, T1=3
+      → 加权 = (0.00*1 + 0.01*3)/4 = 0.0075  (等权是 0.005)
+    Q5={T8,T9} 收益 {0.08, 0.09}; 给市值 T8=1, T9=4
+      → 加权 = (0.08*1 + 0.09*4)/5 = 0.088   (等权是 0.085)
+    """
+    caps = {t: 1.0 for t in TICKERS}
+    caps["T0"], caps["T1"] = 1.0, 3.0
+    caps["T8"], caps["T9"] = 1.0, 4.0
+    market_cap = pd.DataFrame(
+        {t: [caps[t]] * N_DAYS for t in TICKERS}, index=dates,
+    )
+
+    result, _ = quantile_backtest(
+        None, synthetic_factors, ["toy"], synthetic_forward_returns,
+        weight_fn=mcap_weight, market_cap=market_cap,
+    )
+    df = result[("toy", 1)]
+    assert df["Q1"].iloc[0] == pytest.approx(0.0075)
+    assert df["Q5"].iloc[0] == pytest.approx(0.088)
+    assert df["long_short"].iloc[0] == pytest.approx(0.088 - 0.0075)
+    # 与等权明显不同, 证明确实走了市值加权
+    assert df["Q1"].iloc[0] != pytest.approx(0.005)
 
 
 def test_cross_section_smaller_than_group_count_is_skipped(dates):

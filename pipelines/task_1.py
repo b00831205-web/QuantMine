@@ -88,6 +88,8 @@ def main() -> None:
     processed_dir.mkdir(parents=True, exist_ok=True)
     staging_close_path = processed_dir / "close.parquet"
     staging_volume_path = processed_dir / "volume.parquet"
+    staging_shares_path = processed_dir / 'shares.parquet'
+    staging_cap_path = processed_dir / 'market_cap.parquet'
 
     requested_date = pd.Timestamp(args.date).normalize()
     start_date = determine_download_start(
@@ -122,17 +124,21 @@ def main() -> None:
 
     # yfinance treats ``end`` as exclusive, so request one day beyond ds.
     exclusive_end = requested_date + pd.Timedelta(days=1)
-    close, volume = data_acquisition(
+    close, volume, shares, market_cap = data_acquisition(
         tickers=tickers,
         start_date=start_date.strftime("%Y-%m-%d"),
         end_date=exclusive_end.strftime("%Y-%m-%d"),
+        shares_start_date=ANALYSIS_START.strftime("%Y-%m-%d"),
         batch_size=20,  # 小批次 + 串行下载, 降低触发Yahoo限流的概率
+        
     )
+    shares.to_parquet(staging_shares_path)
+    market_cap.to_parquet(staging_cap_path)
     close.to_parquet(staging_close_path)
     volume.to_parquet(staging_volume_path)
     print(
-        f"Downloaded staging data to {staging_close_path} and "
-        f"{staging_volume_path}"
+        f"Downloaded staging data to '{staging_close_path} ', '{staging_volume_path}'"
+        f"'{staging_volume_path}' and '{staging_cap_path}'"
     )
 
 

@@ -1,0 +1,7 @@
+ALTER TABLE market_bars ADD COLUMN IF NOT EXISTS shares_outstanding NUMERIC;
+ALTER TABLE market_bars ADD COLUMN IF NOT EXISTS market_cap NUMERIC;
+
+ALTER TABLE market_latest ADD COLUMN IF NOT EXISTS shares_outstanding NUMERIC;
+ALTER TABLE market_latest ADD COLUMN IF NOT EXISTS market_cap NUMERIC;
+
+ALTER TABLE backtest_results ADD COLUMN IF NOT EXISTS weighting VARCHAR NOT NULL DEFAULT 'equal';

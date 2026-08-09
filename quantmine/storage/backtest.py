@@ -14,6 +14,7 @@ def build_backtest_rows(
     variant_name: str,
     backtest_id: str,
     test_id: str,
+    weighting: str = 'equal',
 ) -> pd.DataFrame:
     """Convert wide quantile-return frames into database-ready long rows."""
     frames: list[pd.DataFrame] = []
@@ -38,6 +39,7 @@ def build_backtest_rows(
         frame["test_id"] = test_id
         frame["factor_name"] = factor_name
         frame["period"] = period
+        frame["weighting"] = weighting
         frames.append(frame.drop(columns=["quantile"]))
 
     if not frames:
@@ -104,6 +106,7 @@ def save_backtest_results(
         set_={
             "test_id": statement.excluded.test_id,
             "return_value": statement.excluded.return_value,
+            "weighting": statement.excluded.weighting,
         },
     )
     with engine.begin() as connection:
@@ -178,6 +181,36 @@ def build_backtest_metric_rows(
                 "quantile_rank",
                 "metric_name",
                 "metric_value",]
+            ])
+        gross_summary = factor_period_analysis.get("gross_summary")
+        if gross_summary is not None and not gross_summary.empty:
+            gross_row = (
+                gross_summary
+                .rename_axis("portfolio")
+                .reset_index()
+                .melt(
+                    id_vars="portfolio",
+                    value_vars=gross_summary.columns,
+                    var_name="metric_name",
+                    value_name="metric_value",
+                )
+            )
+            gross_row["metric_name"] = "gross_" + gross_row["metric_name"]
+            gross_row["quantile_rank"] = gross_row["portfolio"].map(
+                lambda name: 0 if name == "long_short" else int(name.removeprefix("Q"))
+            )
+            gross_row["run_id"] = run_id
+            gross_row["variant_name"] = variant_name
+            gross_row["backtest_id"] = backtest_id
+            gross_row["test_id"] = test_id
+            gross_row["factor_name"] = factor_name
+            gross_row["period"] = period
+            rows.append(gross_row[
+                [
+                    "run_id", "variant_name", "backtest_id", "test_id",
+                    "factor_name", "period", "quantile_rank",
+                    "metric_name", "metric_value",
+                ]
             ])
     if not rows:
         return pd.DataFrame(
@@ -311,7 +344,8 @@ def save_backtest_workflow_results(
             run_id = run_id,
             variant_name = variant_name,
             backtest_id=backtest_id,
-            test_id=test_id
+            test_id=test_id,
+            weighting=job_result.get('weighting', 'equal'),
         )
         saved_result_rows = save_backtest_results(engine, result_rows)
 
@@ -323,6 +357,18 @@ def save_backtest_workflow_results(
             test_id = test_id,
         )
         saved_metric_rows = save_backtest_metrics(engine, metric_rows)
+
+        sanity = workflow_output.get('sanity') or {}
+        sanity_summary = sanity.get('summary')
+        if sanity_summary is not None and not sanity_summary.empty:
+            sanity_rows = build_sanity_metric_rows(
+                sanity_summary,
+                run_id=run_id,
+                variant_name=variant_name,
+                backtest_id=backtest_id,
+                test_id=test_id
+            )
+            save_backtest_metrics(engine, sanity_rows)
 
         saved_artifact_rows = 0
         for (factor_name, period), factor_period_analysis in workflow_output['analysis'].items():
@@ -387,3 +433,50 @@ def save_backtest_workflow_results(
             'artifact_rows': saved_artifact_rows,
         }
     return saved_counts
+
+def build_sanity_metric_rows(
+    summary: pd.DataFrame,
+    *,
+    run_id: int,
+    variant_name: str,
+    backtest_id: str,
+    test_id: str,
+) -> pd.DataFrame:
+    """把 sanity summary 展开成 backtest_metrics 行（quantile_rank=0）。"""
+    if summary.empty:
+        return pd.DataFrame(
+            columns=[
+                "run_id", "variant_name", "backtest_id", "test_id",
+                "factor_name", "period", "quantile_rank",
+                "metric_name", "metric_value",
+            ]
+        )
+    frame = summary.copy()
+    long = frame.melt(
+        id_vars=["scenario", "factor_name", "period"],
+        value_vars=[
+            "long_short_mean_difference",
+            "long_short_std_difference",
+            "long_short_mean_to_std",
+        ],
+        var_name="metric",
+        value_name="metric_value",
+    )
+    long["metric_name"] = (
+        "sanity_"
+        + long["scenario"]
+        + "_"
+        + long["metric"].str.replace("long_short_", "", regex=False)
+    )
+    long["quantile_rank"] = 0
+    long["run_id"] = run_id
+    long["variant_name"] = variant_name
+    long["backtest_id"] = backtest_id
+    long["test_id"] = test_id
+    return long[
+        [
+            "run_id", "variant_name", "backtest_id", "test_id",
+            "factor_name", "period", "quantile_rank",
+            "metric_name", "metric_value",
+        ]
+    ]
