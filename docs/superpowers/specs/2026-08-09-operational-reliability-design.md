@@ -19,6 +19,8 @@ This change covers four related operational reliability defects:
    pipeline database connection.
 4. SQL migrations run only during first-time PostgreSQL initialization, so an
    existing volume can start with missing tables or columns.
+   *(Resolved 2026-08-10 by commit `c7ba864`, but not as designed below — see
+   the note in "Database Migration Lifecycle".)*
 
 Existing frontend accessibility-test failures, repository-wide lint cleanup,
 and changes to factor, IC, backtest, or attribution calculations are excluded.
@@ -29,6 +31,10 @@ Use targeted fixes within the current architecture. Keep the existing
 two-process local developer experience, Docker Compose topology, SQL migration
 files, and Airflow BashOperator workflow. Do not consolidate development into
 Docker and do not introduce Alembic.
+
+*(Amended 2026-08-10: "keep the SQL migration files" no longer holds. They were
+merged into `quantmine/storage/schema.sql` and deleted — see "Database Migration
+Lifecycle". Alembic is still not introduced.)*
 
 This approach has the smallest compatibility surface while preserving the
 project's documented commands.
@@ -83,6 +89,29 @@ The historical-membership CSV remains user-provided input and is not fabricated
 by this change.
 
 ## Database Migration Lifecycle
+
+> **SUPERSEDED 2026-08-10 by commit `c7ba864`.** This section is kept for the
+> record; it is not what was built. Defect 4 was instead fixed by deleting
+> `webapi/migrations/` and making `quantmine/storage/schema.sql` the single DDL
+> source: every `CREATE EXTENSION/TABLE/INDEX` carries `IF NOT EXISTS`, so both
+> initializers (`docker/postgres/init.sh`, `scripts/setup.py`) replay it
+> unconditionally — fresh volumes get every table, existing volumes get whatever
+> tables they are missing. No `schema_migrations` table, no `migrate` service.
+>
+> Rationale: the migration files and `schema.sql` had drifted into defining the
+> same tables twice, and `setup.py` skipped `schema.sql` entirely once
+> `research_runs` existed, so neither file was a complete description of the
+> schema. One replayable file removes the drift at its source.
+>
+> Known limit of the replacement: `CREATE TABLE IF NOT EXISTS` skips the whole
+> statement when the table exists and never compares columns, so `schema.sql`
+> cannot deliver a **new column on an existing table** — that needs a manual
+> `ALTER TABLE`. When that becomes a recurring chore, revisit the tracking-table
+> design below; it is still the right answer for ordered, non-idempotent change.
+>
+> Verified on 2026-08-10: applying the merged `schema.sql` to a virgin database
+> and then replaying it produces 19 tables / 170 columns / 17 foreign keys /
+> 33 indexes, identical to the live migrated database.
 
 Add a one-shot Compose `migrate` service based on the PostgreSQL client image.
 It starts after the PostgreSQL health check and before the Web API.
@@ -160,8 +189,10 @@ Existing external-network tests remain excluded from the deterministic gate.
   undefined extra.
 - Rendered Compose configuration points Airflow tasks at `/opt/project` and
   includes the pipeline database URL.
-- Web API startup waits for successful migrations.
-- Existing PostgreSQL volumes receive pending migrations exactly once.
+- ~~Web API startup waits for successful migrations.~~ *(dropped — no `migrate`
+  service exists; `schema.sql` is applied by the PostgreSQL initializer.)*
+- Existing PostgreSQL volumes receive every table declared in `schema.sql`.
+  *(Met 2026-08-10 via replayable `schema.sql` rather than a tracking table.)*
 - Administrator seeding hides only the expected already-exists case.
 - Deterministic core tests and the frontend production build remain successful.
 

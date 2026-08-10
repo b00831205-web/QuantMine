@@ -5,6 +5,19 @@
 -- 统一授权（含 ALTER DEFAULT PRIVILEGES，覆盖未来新表）。
 --
 -- 需以超级用户执行（CREATE EXTENSION）。
+--
+-- ⚠️ 只能"加表"，不能"改表"。CREATE TABLE IF NOT EXISTS 在表已存在时跳过整条语句，
+-- 不比对列——所以往已有表里加列、改类型、改 CHECK/UNIQUE/默认值，改这个文件对已有库
+-- 完全无效，而且静默无效（不报错）。
+--
+-- 给已有表加列的正确做法：
+--   1. 先备份：WSL 里 pg_dump "$url" -Fc -f /mnt/e/pgbackup/quantmine_$(date +%F).dump
+--   2. 以表 owner 身份手动执行 ALTER TABLE ... ADD COLUMN IF NOT EXISTS（应用角色
+--      quantmine_web 只有 DML 权限，会报 must be owner of table）
+--   3. 同步改本文件，保证新库建出来一致
+-- 不要为此重建数据库：market_bars 有约 165 万行、AI 对话历史无法再生。
+-- 等这件事开始反复发生，就引入 schema_migrations 记账表（见 docs/superpowers/specs/
+-- 2026-08-09-operational-reliability-design.md 里被标记 SUPERSEDED 的那一节）。
 
 CREATE EXTENSION IF NOT EXISTS vector;
 

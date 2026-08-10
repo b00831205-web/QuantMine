@@ -319,7 +319,23 @@ git commit -m "fix: repair container dependency and airflow contracts"
 
 ---
 
-### Task 3: Tracked migration gate for existing PostgreSQL volumes
+### ~~Task 3: Tracked migration gate for existing PostgreSQL volumes~~ — OBSOLETE
+
+> **Do not implement.** Superseded 2026-08-10 by commit `c7ba864`, which fixed
+> the same defect (existing volumes missing tables) by making
+> `quantmine/storage/schema.sql` the single, replayable DDL source and deleting
+> `webapi/migrations/`. There is no `migrations/` directory left to enumerate,
+> so every step below refers to files that no longer exist.
+>
+> `docker/postgres/migrate.sh` was never created; `docker-compose.yml` has no
+> `migrate` service and no longer mounts `./webapi/migrations`. The invariants
+> are locked by `test/test_schema_contract.py` instead.
+>
+> Reopen this task only if `schema.sql` starts needing **column** changes on
+> existing tables — `CREATE TABLE IF NOT EXISTS` cannot express those. The
+> design here (a `schema_migrations` bookkeeping table) is still the right
+> approach for that case. See the superseded-section note in
+> `docs/superpowers/specs/2026-08-09-operational-reliability-design.md`.
 
 **Files:**
 - Create: `docker/postgres/migrate.sh`
