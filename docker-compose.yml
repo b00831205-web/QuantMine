@@ -19,7 +19,6 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
       - ./quantmine/storage/schema.sql:/sql/schema.sql:ro
-      - ./webapi/migrations:/sql/migrations:ro
     healthcheck:
       # 只有 init 建完 quantmine 库后才算 healthy → 下游确保表已就绪
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d quantmine"]
