@@ -1,4 +1,4 @@
-"""AI 附件：上传存储 + 按类型提取文本（图片只存不解析，走视觉模型）。"""
+"""AI attachments: upload storage + per-type text extraction (images are stored but not parsed; they go to the vision model)."""
 from __future__ import annotations
 
 import uuid
@@ -9,13 +9,13 @@ from sqlalchemy import MetaData, Table, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine
 
-# data/attachments 在项目根（与 artifacts 平级）
+# data/attachments lives at the project root (alongside artifacts)
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ATTACHMENT_DIR = PROJECT_ROOT / "data" / "attachments"
 
 TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".log", ".yaml", ".yml"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
-MAX_TEXT_BYTES = 1_000_000  # 文本解析上限 1MB
+MAX_TEXT_BYTES = 1_000_000  # text extraction limit 1MB
 
 
 def _kind_for(filename: str) -> str:
@@ -30,7 +30,7 @@ def _kind_for(filename: str) -> str:
 
 
 def extract_text(filename: str, data: bytes) -> str | None:
-    """按类型提取文本；图片/不支持的类型返回 None。"""
+    """Extract text by type; images/unsupported types return None."""
     ext = Path(filename).suffix.lower()
     try:
         if ext in TEXT_EXTENSIONS:
@@ -114,7 +114,7 @@ def get_attachment(engine: Engine, attachment_id: int) -> dict | None:
     }
 
 def load_attachment_records(engine: Engine, attachments: list[dict]) -> list[dict]:
-    """把消息里的精简附件 [{attachmentId, filename, kind}] 展开成完整记录。"""
+    """Expand compact message attachments [{attachmentId, filename, kind}] into full records."""
     records = []
     for item in attachments or []:
         raw = str(item.get("attachmentId") or "").removeprefix("att-")

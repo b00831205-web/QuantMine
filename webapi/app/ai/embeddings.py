@@ -18,7 +18,7 @@ def embed_texts(texts: list[str], embedding_config: dict)->list[list[float]]:
     if config.get('provider') == 'openai_compatible':
         api_key = os.environ.get(config.get('apiKeyEnv') or 'SILICONFLOW_API_KEY')
         if not api_key:
-            raise RuntimeError('未配置 Embedding API Key（环境变量 SILICONFLOW_API_KEY）')
+            raise RuntimeError('Embedding API Key not configured (env SILICONFLOW_API_KEY)')
         headers['Authorization'] = f'Bearer {api_key}'
     response = httpx.post(
         f'{base_url}/embeddings',
@@ -28,7 +28,7 @@ def embed_texts(texts: list[str], embedding_config: dict)->list[list[float]]:
     )
     if response.status_code >= 400:
         raise RuntimeError(
-            f'Embedding 接口返回 {response.status_code}: {response.text[:500]}'
+            f'Embedding API returned {response.status_code}: {response.text[:500]}'
         )
 
     items = sorted(response.json().get('data') or [], key=lambda x: x.get('index',0))
@@ -37,6 +37,6 @@ def embed_texts(texts: list[str], embedding_config: dict)->list[list[float]]:
     for vector in vectors:
         if len(vector)!=dimensions:
             raise RuntimeError(
-                f'Embedding 维度{len(vector)} 于配置 {dimensions}不一致'
+                f'Embedding dimension {len(vector)} does not match configured {dimensions}'
             )
     return vectors

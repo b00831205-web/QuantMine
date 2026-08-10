@@ -210,12 +210,12 @@ def yearly_ic_table(rows: list[dict], L: dict) -> str:
 
 
 def _chunk_rows(rows: list, size: int = 25) -> list[list]:
-    """把长表按行数切块，避免单张 SVG 超高被 PDF 截断。"""
+    """Chunk long tables by row count to avoid a single SVG taller than the PDF page."""
     return [rows[i : i + size] for i in range(0, len(rows), size)]
 
 
 def yearly_ic_tables(rows: list[dict], L: dict) -> list[str]:
-    """分年度 IC 表：按 25 行一组拆成多张 SVG。"""
+    """Yearly IC table: split into multiple SVGs of up to 25 rows each."""
     headers = [
         L["col_year"], L["col_factor"], L["col_period"],
         L["col_ic_mean"], L["col_ic_std"], L["col_ir"], L["col_ic_pos"], L["col_n"],
@@ -235,7 +235,7 @@ def yearly_ic_tables(rows: list[dict], L: dict) -> list[str]:
 
 
 def acf_tables(rows: list[dict], L: dict) -> list[str]:
-    """ACF 表：按 25 行一组拆成多张 SVG。"""
+    """ACF table: split into multiple SVGs of up to 25 rows each."""
     headers = [L["col_factor"], L["col_period"], L["col_lag"], L["col_acf"]]
     widths = [140.0, 90.0, 90.0, 120.0]
     aligns = ["l", "r", "r", "r"]

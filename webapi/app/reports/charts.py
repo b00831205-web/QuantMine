@@ -65,7 +65,7 @@ def ic_hist_png(ic: Sequence[float]) -> str | None:
 
 
 def ic_heatmap_png(matrix: pd.DataFrame) -> str | None:
-    """分年（或分月）均值 IC 热力图：行=时间，列=组合，颜色=均值 IC。"""
+    """Yearly (or monthly) mean IC heatmap: rows=time, columns=combos, color=mean IC."""
     if matrix is None or matrix.empty or matrix.shape[0] == 0 or matrix.shape[1] == 0:
         return None
 
@@ -193,7 +193,7 @@ def ic_multi_series_png(
     return _to_uri(fig)
 
 def ic_decay_png(frame: pd.DataFrame) -> str | None:
-    """A4 IC 衰减：分组柱状图（持有期不连续，柱状比折线更准确）。"""
+    """A4 IC decay: grouped bar chart (holding periods are discrete, bars are more accurate than lines)."""
     if frame is None or frame.empty:
         return None
     fig, ax = plt.subplots(figsize=(5.2, 3.4))
@@ -219,7 +219,7 @@ def ic_decay_png(frame: pd.DataFrame) -> str | None:
     return _to_uri(fig)
 
 def rolling_sharpe_png(dates: Sequence, sharpe: Sequence[float]) -> str | None:
-    """63 交易日滚动年化 Sharpe 曲线，日期斜向显示。"""
+    """63-trading-day rolling annualized Sharpe curve, dates shown diagonally."""
     if not dates or not sharpe:
         return None
     fig, ax = plt.subplots(figsize=(5.2, 2.8))

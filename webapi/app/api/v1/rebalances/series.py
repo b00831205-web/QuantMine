@@ -1,8 +1,8 @@
-"""Rebalance 业务逻辑：id 解析、净值序列构建（无路由、无数据库访问）。"""
+"""Rebalance business logic: id parsing, net-value series building (no routes, no database access)."""
 
 
 def parse_rebalance_id(rebalance_id: str) -> dict:
-    """把复合 id 拆回查询条件：
+    """Split a composite id back into query conditions:
     {backtest_id}__{variant}__{factor}__{period}d__{trade_date}__{Qn|LS}
     """
     parts = rebalance_id.split("__")
@@ -25,7 +25,7 @@ def parse_rebalance_id(rebalance_id: str) -> dict:
 
 
 def build_return_series(rows: list[dict]) -> list[dict]:
-    """把按日期升序的 return_value 复利成净值点（100 起）。
+    """Compound ascending return_value into net-value points (starting at 100).
     返回 [{date, value}]，与前端 SeriesPoint 形状一致。
     """
     level = 100.0

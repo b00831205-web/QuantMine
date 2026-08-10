@@ -49,7 +49,7 @@ def _collect_ic_combos(variants: dict, *, limit: int = 8) -> list[dict]:
 
 
 def _build_ic_heatmap(combos: list[dict]) -> pd.DataFrame | None:
-    """行=年份（只有一年时降级为月份），列=组合，值=均值 IC。"""
+    """Rows=year (falls back to month when there is only one year), columns=combos, values=mean IC."""
     if not combos:
         return None
 
@@ -79,7 +79,7 @@ def _fetch_quantile_curve(
     period: int,
     test_id: str | None,
 ) -> tuple[list, dict[str, list[float]]] | None:
-    """取一个组合的回测每日收益，累计成各分位净值曲线。"""
+    """Fetch one combo's daily backtest returns and compound them into quantile net-value curves."""
     metadata = MetaData()
     table = Table("backtest_results", metadata, autoload_with=engine)
     conditions = [
@@ -228,7 +228,7 @@ def _build_ic_monthly_heatmap(combos: list[dict])->pd.DataFrame | None:
     return frame.sort_index()
 
 def build_ic_appendices(engine: Engine, run_id: int) -> dict:
-    """报告附录数据：分年度 IC、ACF、月度热力图（基于 IC 工件）。"""
+    """Report appendix data: yearly IC, ACF, monthly heatmap (based on IC artifacts)."""
     appendices: dict = {
         "yearly": [],
         "acf": [],
@@ -256,7 +256,7 @@ def build_ic_appendices(engine: Engine, run_id: int) -> dict:
     return appendices
 
 def build_ic_decay_png(engine: Engine, run_id: int) -> str | None:
-    """A4 IC 衰减图：计算在 quantmine，这里只画图。"""
+    """A4 IC decay chart: computation lives in quantmine, only rendering happens here."""
     try:
         return ic_decay_png(build_ic_decay_frame(engine, run_id))
     except Exception as error:
@@ -264,7 +264,7 @@ def build_ic_decay_png(engine: Engine, run_id: int) -> str | None:
         return None
 
 def build_backtest_appendices(engine: Engine, run_id: int) -> dict:
-    """A5 滚动 Sharpe / Alpha·Beta + A6 因子自相关：计算在 quantmine，这里只渲染。"""
+    """A5 rolling Sharpe / Alpha·Beta + A6 factor autocorrelation: computation lives in quantmine, only rendering happens here."""
     result = {
         "rolling_sharpe": None,
         "alpha_beta": [],

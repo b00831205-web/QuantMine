@@ -24,15 +24,21 @@ export const TopBar = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [username, setUsername] = useState<string>('');
-  const [latestTradeDate, setLatestTradeDate] = useState<string | null> (null);
+  const [latestTradeDate, setLatestTradeDate] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<{ label: string; color: string } | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [config, setConfig] = useState<AIConfig | null>(null);
   const [savingModel, setSavingModel] = useState(false);
-  useEffect(()=>{
-    fetchLatestMarketDate().then((data) => {setLatestTradeDate(data.latestTradeDate);}).catch(()=>{setLatestTradeDate(null);})
-  },[])
+  useEffect(() => {
+    fetchLatestMarketDate()
+      .then((data) => {
+        setLatestTradeDate(data.latestTradeDate);
+      })
+      .catch(() => {
+        setLatestTradeDate(null);
+      });
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -64,24 +70,19 @@ export const TopBar = () => {
           .sort((a, b) => (b.startDate! > a.startDate! ? 1 : -1));
         const latest = runs[0];
         setTaskStatus(
-          latest
-            ? { label: stateLabel(latest.state), color: stateColor(latest.state) }
-            : null,
+          latest ? { label: stateLabel(latest.state), color: stateColor(latest.state) } : null,
         );
       })
       .catch(() => {
         if (!controller.signal.aborted) setTaskStatus(null);
       });
     return () => controller.abort();
-  }, [])
+  }, []);
 
   // 模型列表 + 全局默认模型：路由变化时刷新，配置页改完切回来能同步
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([
-      fetchAIModels(controller.signal),
-      fetchAIConfig(controller.signal),
-    ])
+    Promise.all([fetchAIModels(controller.signal), fetchAIConfig(controller.signal)])
       .then(([modelList, cfg]) => {
         if (controller.signal.aborted) return;
         setModels(modelList);
@@ -122,7 +123,7 @@ export const TopBar = () => {
           className={styles.badge}
           style={taskStatus ? { color: taskStatus.color, background: 'transparent' } : undefined}
         >
-          {taskStatus ? taskStatus.label : '无状态'}
+          {taskStatus ? taskStatus.label : t('workflow.state.none')}
         </span>
       </div>
       <div className={styles.right}>
@@ -145,7 +146,7 @@ export const TopBar = () => {
         </select>
         <span className={styles.user}>{username || 'guest'}</span>
         <button className={styles.logout} type="button" onClick={handleLogout}>
-          退出
+          {t('topbar.logout')}
         </button>
       </div>
     </header>

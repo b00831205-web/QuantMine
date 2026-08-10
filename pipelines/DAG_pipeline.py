@@ -19,7 +19,17 @@ from airflow.sdk import DAG
 
 PROJECT_ROOT = os.environ.get("QUANT_PROJECT_ROOT",
                               os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-PYTHON_BIN = os.environ.get("QUANT_PYTHON_BIN", "python")
+# 解释器在 **运行时** 由 shell 解析, 不在解析期读 os.environ。
+#
+# 原来是 os.environ.get("QUANT_PYTHON_BIN", "python")，那是在 dag-processor 解析
+# DAG 时求值的；而 dag-processor 只从 systemd unit 拿到 AIRFLOW_HOME，不读 .env。
+# 于是 .env 里配的 QUANT_PYTHON_BIN 永远进不来，命令里被写死成 "python" —— 而 WSL
+# 里根本没有 python（只有 python3），每个 task 都以 exit 127 / command not found 失败。
+# 命令串里的 `. ./.env` 是 bash 运行时才执行的，救不了一个解析期就定死的值。
+#
+# 写成 shell 展开后，.env 先被 source，再决定用哪个解释器；缺省值指向仓库自带的
+# venv（此时 cwd 已 cd 到 PROJECT_ROOT），所以不配任何环境变量也能跑。
+PYTHON_BIN_EXPR = '"${QUANT_PYTHON_BIN:-.venv/bin/python}"'
 CONFIG_PATH = os.environ.get("QUANT_CONFIG_PATH", "config.example.yaml")
 
 
@@ -48,7 +58,7 @@ def task_command(script: str, *, uses_config: bool = False) -> str:
         f'cd "{PROJECT_ROOT}" && '
         '{ set -a; [ -f .env ] && . ./.env; set +a; } && '
         'export QUANTMINE_DATABASE_URL="${QUANTMINE_PIPELINE_DATABASE_URL:-$QUANTMINE_DATABASE_URL}" && '
-        f'"{PYTHON_BIN}" pipelines/{script} '
+        f'{PYTHON_BIN_EXPR} pipelines/{script} '
         '--date {{ ds }} --batch {{ run_id }}'
     )
     if uses_config:
@@ -67,9 +77,18 @@ with DAG("quant_factor_mining",
         catchup=False,
         tags=['quant_factor_mining'],
         ) as dag:
+    t0 = BashOperator(
+        task_id="universe_refresh",
+        bash_command=task_command("task_0_universe.py"),
+    )
     t1 = BashOperator(
         task_id="data_downloading",
         bash_command=task_command("task_1.py"),
+        # all_done, 不是默认的 all_success: 成分股刷新失败(维基抓不到、代理不通、
+        # 版面改了)不该拖垮当日行情下载。task_1 会退回 index_membership 里已有的
+        # 区间表, 最坏情况是用昨天的成分股多跑一天, 远好过整条链路停摆。
+        # t0 自己失败时仍会红, 该告警照样告警。
+        trigger_rule="all_done",
     )
     t2 = BashOperator(
         task_id="data_cleaning",
@@ -96,6 +115,6 @@ with DAG("quant_factor_mining",
         bash_command=task_command("task_attribution.py", uses_config=True),
     )
 
-t1 >> t2 >> t3 >> t4
+t0 >> t1 >> t2 >> t3 >> t4
 t4 >> [task_save_market_bars, t5]
 t5 >> t6

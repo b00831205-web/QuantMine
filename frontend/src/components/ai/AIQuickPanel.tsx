@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   confirmAIAction,
   createAIConversation,
@@ -25,6 +26,7 @@ const ConfirmCard = ({
   request: AIConfirmRequest;
   onDecide: (approved: boolean) => void;
 }) => {
+  const { t } = useTranslation();
   const resolved = request.status !== 'pending';
   return (
     <div
@@ -42,7 +44,9 @@ const ConfirmCard = ({
       </div>
       {resolved ? (
         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-          {request.status === 'confirmed' ? '✅ 已确认执行' : '❌ 已拒绝'}
+          {request.status === 'confirmed'
+            ? `✅ ${t('aiPanel.confirmed')}`
+            : `❌ ${t('aiPanel.rejected')}`}
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 8 }}>
@@ -59,7 +63,7 @@ const ConfirmCard = ({
               cursor: 'pointer',
             }}
           >
-            确认
+            {t('aiPanel.approve')}
           </button>
           <button
             type="button"
@@ -74,7 +78,7 @@ const ConfirmCard = ({
               cursor: 'pointer',
             }}
           >
-            拒绝
+            {t('aiPanel.reject')}
           </button>
         </div>
       )}
@@ -137,6 +141,7 @@ const MessageBubble = ({
 };
 
 export const AIQuickPanel = ({ open, onOpen, onClose }: Props) => {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
   const showOnPage = pathname.startsWith('/ai') ? null : pathname;
   const [conversationId, setConversationId] = useState<string | null>(() =>
@@ -276,7 +281,7 @@ export const AIQuickPanel = ({ open, onOpen, onClose }: Props) => {
 
   if (!open) {
     return (
-      <button className={styles.fab} onClick={onOpen} aria-label="打开 AI 助手">
+      <button className={styles.fab} onClick={onOpen} aria-label={t('aiPanel.open')}>
         AI
       </button>
     );
@@ -285,20 +290,20 @@ export const AIQuickPanel = ({ open, onOpen, onClose }: Props) => {
   return (
     <aside className={styles.panel}>
       <header className={styles.header}>
-        <span className={styles.title}>AI 助手</span>
-        <button className={styles.iconBtn} onClick={onClose} aria-label="收起">
+        <span className={styles.title}>{t('aiPanel.title')}</span>
+        <button className={styles.iconBtn} onClick={onClose} aria-label={t('aiPanel.collapse')}>
           ×
         </button>
       </header>
       <div className={styles.context}>
-        <span className={styles.contextLabel}>已附加</span>
+        <span className={styles.contextLabel}>{t('aiPanel.attached')}</span>
         <span className={styles.contextValue}>{showOnPage}</span>
       </div>
       <div className={styles.messages}>
         {loading ? (
-          <div className={styles.placeholder}>加载会话中...</div>
+          <div className={styles.placeholder}>{t('aiPanel.loading')}</div>
         ) : messages.length === 0 ? (
-          <div className={styles.placeholder}>向 AI 提问开始（所有页面共享同一会话）</div>
+          <div className={styles.placeholder}>{t('aiPanel.emptyHint')}</div>
         ) : (
           messages.map((m) => (
             <MessageBubble key={m.messageId} msg={m} onDecideConfirm={handleDecideConfirm} />
@@ -316,7 +321,7 @@ export const AIQuickPanel = ({ open, onOpen, onClose }: Props) => {
                 fontSize: 'var(--fs-sm)',
               }}
             >
-              AI 正在思考...
+              {t('aiPanel.thinking')}
             </div>
           </div>
         )}
@@ -325,7 +330,7 @@ export const AIQuickPanel = ({ open, onOpen, onClose }: Props) => {
       <footer className={styles.composer}>
         <input
           className={styles.input}
-          placeholder={sending ? 'AI 思考中，请稍候...' : '向 AI 提问…'}
+          placeholder={sending ? t('aiPanel.placeholderThinking') : t('aiPanel.placeholder')}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -338,7 +343,7 @@ export const AIQuickPanel = ({ open, onOpen, onClose }: Props) => {
           onClick={handleSend}
           disabled={draft.trim() === '' || sending || loading}
         >
-          发送
+          {t('aiPanel.send')}
         </button>
       </footer>
     </aside>

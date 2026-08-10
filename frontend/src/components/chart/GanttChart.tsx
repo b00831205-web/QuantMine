@@ -4,6 +4,7 @@ import { BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, DataZoomComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { TaskInstance } from '@/types/workflow';
+import { useTranslation } from 'react-i18next';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, DataZoomComponent, CanvasRenderer]);
 
@@ -30,6 +31,7 @@ export const GanttChart = ({
   /** 只显示前 N 个任务（模拟运行推进，横轴随任务增加） */
   visibleCount?: number;
 }) => {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
 
@@ -88,7 +90,7 @@ export const GanttChart = ({
       },
       yAxis: {
         type: 'value',
-        name: '运行后分钟',
+        name: t('workflow.gantt.minutes'),
       },
       dataZoom: [
         { id: 'x-slider', type: 'slider', xAxisIndex: 0, bottom: 6, height: 10, show: false },
@@ -117,7 +119,7 @@ export const GanttChart = ({
         },
       ],
     });
-  }, [tasks, visibleCount]);
+  }, [tasks, visibleCount, t]);
 
   return (
     <div

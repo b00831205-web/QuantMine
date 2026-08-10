@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Card } from '@/components/common/Card';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
@@ -29,16 +30,11 @@ import { TaskBarChart } from '@/components/chart/TaskBarChart';
 import { stateColor, stateLabel, CORE_LEGEND } from '@/utils/workflowStatus';
 import { fmtDateTime, fmtDuration } from '@/utils/format';
 import { Toggle } from '@/components/common/Toggle';
+import { Play } from 'lucide-react';
 import i18n from '@/i18n';
 
 type TabKey = 'overview' | 'graph' | 'grid' | 'runs' | 'code';
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: 'overview', label: '概览' },
-  { key: 'graph', label: '图视图' },
-  { key: 'grid', label: '网格' },
-  { key: 'runs', label: '运行记录' },
-  { key: 'code', label: '代码' },
-];
+const TABS: TabKey[] = ['overview', 'graph', 'grid', 'runs', 'code'];
 
 const networkError = (): AsyncState<never> => ({
   status: 'error',
@@ -51,10 +47,7 @@ const networkError = (): AsyncState<never> => ({
 });
 
 /** 通用：把一个 Promise 拉进 AsyncState（带 abort）。 */
-function useAsync<T>(
-  loader: (signal: AbortSignal) => Promise<T>,
-  deps: unknown[],
-): AsyncState<T> {
+function useAsync<T>(loader: (signal: AbortSignal) => Promise<T>, deps: unknown[]): AsyncState<T> {
   const [state, setState] = useState<AsyncState<T>>({ status: 'idle' });
   useEffect(() => {
     const controller = new AbortController();
@@ -84,9 +77,7 @@ const StateMark = ({ state }: { state: string | null }) => {
     );
   }
   return (
-    <span
-      style={{ width: 8, height: 8, borderRadius: '50%', background: stateColor(state) }}
-    />
+    <span style={{ width: 8, height: 8, borderRadius: '50%', background: stateColor(state) }} />
   );
 };
 
@@ -108,27 +99,30 @@ const StateChip = ({ state }: { state: string | null }) => (
   </span>
 );
 
-const Legend = () => (
-  <div
-    style={{
-      display: 'flex',
-      gap: 'var(--sp-4)',
-      flexWrap: 'wrap',
-      marginTop: 'var(--sp-3)',
-      fontSize: 'var(--fs-sm)',
-      color: 'var(--text-muted)',
-    }}
-  >
-    {CORE_LEGEND.map((l) => (
-      <span key={l.state} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <span
-          style={{ width: 12, height: 12, borderRadius: 3, background: stateColor(l.state) }}
-        />
-        {l.label}
-      </span>
-    ))}
-  </div>
-);
+const Legend = () => {
+  const { t } = useTranslation();
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 'var(--sp-4)',
+        flexWrap: 'wrap',
+        marginTop: 'var(--sp-3)',
+        fontSize: 'var(--fs-sm)',
+        color: 'var(--text-muted)',
+      }}
+    >
+      {CORE_LEGEND.map((l) => (
+        <span key={l.state} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{ width: 12, height: 12, borderRadius: 3, background: stateColor(l.state) }}
+          />
+          {t(`workflow.state.${l.state}`, { defaultValue: l.label })}
+        </span>
+      ))}
+    </div>
+  );
+};
 
 const metaRow = (label: string, value: React.ReactNode) => (
   <div style={{ display: 'flex', gap: 'var(--sp-3)', padding: '4px 0' }}>
@@ -140,6 +134,7 @@ const metaRow = (label: string, value: React.ReactNode) => (
 );
 
 export const WorkflowDetailPage = () => {
+  const { t } = useTranslation();
   const { dagId = '' } = useParams<{ dagId: string }>();
   const navigate = useNavigate();
 
@@ -175,7 +170,11 @@ export const WorkflowDetailPage = () => {
     if (detailState.status === 'success') setIsPaused(detailState.data.isPaused);
   }, [detailState]);
   useEffect(() => {
-    if (gridState.status === 'success' && selectedRunId === null && gridState.data.runs.length > 0) {
+    if (
+      gridState.status === 'success' &&
+      selectedRunId === null &&
+      gridState.data.runs.length > 0
+    ) {
       setSelectedRunId(gridState.data.runs[0]!.runId);
     }
   }, [gridState, selectedRunId]);
@@ -202,7 +201,7 @@ export const WorkflowDetailPage = () => {
       const res = await pauseDag(dagId, !isPaused);
       setIsPaused(res.isPaused);
     } catch (error) {
-      setActionMsg(error instanceof HttpError ? error.apiError.title : '暂停操作失败');
+      setActionMsg(error instanceof HttpError ? error.apiError.title : t('workflow.pauseFailed'));
     } finally {
       setBusy(false);
     }
@@ -213,10 +212,10 @@ export const WorkflowDetailPage = () => {
     setActionMsg(null);
     try {
       await triggerWorkflow(dagId);
-      setActionMsg('已触发，稍后刷新查看运行');
+      setActionMsg(t('workflowDetail.triggered'));
       setConfirmTrigger(false);
     } catch (error) {
-      setActionMsg(error instanceof HttpError ? error.apiError.title : '触发失败');
+      setActionMsg(error instanceof HttpError ? error.apiError.title : t('workflow.triggerFailed'));
       setConfirmTrigger(false);
     } finally {
       setBusy(false);
@@ -229,9 +228,9 @@ export const WorkflowDetailPage = () => {
   };
 
   const TASK_ACTION_LABEL: Record<'mark-success' | 'mark-failed' | 'clear', string> = {
-    'mark-success': '标记成功',
-    'mark-failed': '标记失败',
-    clear: '清除重跑',
+    'mark-success': t('workflowDetail.task.markSuccess'),
+    'mark-failed': t('workflowDetail.task.markFailed'),
+    clear: t('workflowDetail.task.clear'),
   };
 
   const runTaskAction = async (
@@ -243,13 +242,16 @@ export const WorkflowDetailPage = () => {
     setActionMsg(null);
     try {
       await updateTaskState(dagId, selectedRunId, taskId, action);
-      setActionMsg(`${taskId} · ${TASK_ACTION_LABEL[action]} 成功`);
+      setActionMsg(t('workflowDetail.task.success', { taskId, action: TASK_ACTION_LABEL[action] }));
       setGridRefresh((k) => k + 1); // 刷新网格 → 图与任务面板重新着色
     } catch (error) {
       setActionMsg(
         error instanceof HttpError
-          ? `${TASK_ACTION_LABEL[action]}失败：${error.apiError.detail ?? error.apiError.title}`
-          : `${TASK_ACTION_LABEL[action]}失败`,
+          ? t('workflowDetail.task.failedWith', {
+              action: TASK_ACTION_LABEL[action],
+              detail: error.apiError.detail ?? error.apiError.title,
+            })
+          : t('workflowDetail.task.failed', { action: TASK_ACTION_LABEL[action] }),
       );
     } finally {
       setTaskBusy(null);
@@ -262,8 +264,8 @@ export const WorkflowDetailPage = () => {
         title={detailState.status === 'success' ? detailState.data.displayName : dagId}
         subtitle={
           detailState.status === 'success'
-            ? detailState.data.description ?? 'DAG 详情'
-            : 'DAG 详情'
+            ? (detailState.data.description ?? t('workflowDetail.dagDetail'))
+            : t('workflowDetail.dagDetail')
         }
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
@@ -271,15 +273,15 @@ export const WorkflowDetailPage = () => {
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Toggle on={isPaused} disabled={busy} onChange={handleTogglePause} />
                 <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
-                  {isPaused ? '已暂停' : '运行中'}
+                  {isPaused ? t('workflow.paused') : t('workflow.running')}
                 </span>
               </span>
             )}
             <button type="button" disabled={busy} onClick={() => setConfirmTrigger(true)}>
-              ▶ 触发
+              <Play size={11} strokeWidth={2} aria-hidden="true" /> {t('workflow.trigger')}
             </button>
             <button type="button" onClick={() => navigate('/workflows')}>
-              ← 返回列表
+              {t('workflowDetail.backToList')}
             </button>
           </div>
         }
@@ -300,41 +302,46 @@ export const WorkflowDetailPage = () => {
       )}
 
       {/* 标签页 */}
-      <div style={{ display: 'flex', gap: 'var(--sp-1)', borderBottom: '1px solid var(--border-subtle)' }}>
-        {TABS.map((t) => (
+      <div
+        style={{
+          display: 'flex',
+          gap: 'var(--sp-1)',
+          borderBottom: '1px solid var(--border-subtle)',
+        }}
+      >
+        {TABS.map((key) => (
           <button
-            key={t.key}
+            key={key}
             type="button"
-            onClick={() => setActiveTab(t.key)}
+            onClick={() => setActiveTab(key)}
             style={{
               padding: 'var(--sp-2) var(--sp-4)',
               background: 'transparent',
               border: 'none',
-              borderBottom:
-                activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
-              color: activeTab === t.key ? 'var(--text-primary)' : 'var(--text-muted)',
+              borderBottom: activeTab === key ? '2px solid var(--accent)' : '2px solid transparent',
+              color: activeTab === key ? 'var(--text-primary)' : 'var(--text-muted)',
               cursor: 'pointer',
-              fontWeight: activeTab === t.key ? 600 : 400,
+              fontWeight: activeTab === key ? 600 : 400,
             }}
           >
-            {t.label}
+            {t(`workflowDetail.tab.${key}`)}
           </button>
         ))}
       </div>
 
       {/* 概览 */}
       {activeTab === 'overview' && (
-        <Card title="概览">
+        <Card title={t('workflowDetail.tab.overview')}>
           <AsyncBoundary state={detailState} isEmpty={() => false} emptyTitle="">
             {(d) => (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-5)' }}>
                 <div>
-                  {metaRow('描述', d.description ?? '—')}
-                  {metaRow('调度', d.scheduleSummary ?? '—')}
-                  {metaRow('调度说明', d.timetableDescription || '—')}
-                  {metaRow('Owner', d.owners.join(', ') || '—')}
+                  {metaRow(t('workflowDetail.meta.description'), d.description ?? '—')}
+                  {metaRow(t('workflowDetail.meta.schedule'), d.scheduleSummary ?? '—')}
+                  {metaRow(t('workflowDetail.meta.timetable'), d.timetableDescription || '—')}
+                  {metaRow(t('workflowDetail.meta.owner'), d.owners.join(', ') || '—')}
                   {metaRow(
-                    '标签',
+                    t('workflowDetail.meta.tags'),
                     d.tags.length ? (
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         {d.tags.map((t) => (
@@ -356,23 +363,26 @@ export const WorkflowDetailPage = () => {
                       '—'
                     ),
                   )}
-                  {metaRow('文件', <span style={{ wordBreak: 'break-all' }}>{d.fileloc ?? '—'}</span>)}
+                  {metaRow(
+                    t('workflowDetail.meta.file'),
+                    <span style={{ wordBreak: 'break-all' }}>{d.fileloc ?? '—'}</span>,
+                  )}
                 </div>
                 <div>
                   {metaRow(
-                    '上次运行',
+                    t('workflowDetail.meta.lastRun'),
                     d.lastRun ? (
                       <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                         <StateChip state={d.lastRun.state} />
                         {fmtDateTime(d.lastRun.startDate)} · {fmtDuration(d.lastRun.durationMs)}
                       </span>
                     ) : (
-                      '尚未运行'
+                      t('workflow.notRun')
                     ),
                   )}
-                  {metaRow('下次运行', fmtDateTime(d.nextRun))}
+                  {metaRow(t('workflowDetail.meta.nextRun'), fmtDateTime(d.nextRun))}
                   {metaRow(
-                    '近期统计',
+                    t('workflowDetail.meta.recentStats'),
                     <span style={{ display: 'inline-flex', gap: 8 }}>
                       <StateChip state="success" />
                       {runStats.success}
@@ -383,7 +393,7 @@ export const WorkflowDetailPage = () => {
                     </span>,
                   )}
                   {metaRow(
-                    '最近运行',
+                    t('workflowDetail.meta.recentRuns'),
                     <div style={{ display: 'flex', gap: 3 }}>
                       {(grid?.runs ?? [])
                         .slice(0, 10)
@@ -414,7 +424,7 @@ export const WorkflowDetailPage = () => {
       {/* 图视图 */}
       {activeTab === 'graph' && (
         <Card
-          title="图视图"
+          title={t('workflowDetail.tab.graph')}
           extra={
             grid && grid.runs.length > 0 ? (
               <select
@@ -440,13 +450,13 @@ export const WorkflowDetailPage = () => {
           <AsyncBoundary
             state={graphState}
             isEmpty={(g) => g.nodes.length === 0}
-            emptyTitle="该 DAG 暂无拓扑"
-            emptyHint="确认 serialized_dag 有数据"
+            emptyTitle={t('workflowDetail.graphEmpty')}
+            emptyHint={t('workflowDetail.graphEmptyHint')}
           >
             {(g) => {
               const runLabel = selectedRun
                 ? `${stateLabel(selectedRun.state)} · ${fmtDateTime(selectedRun.startDate ?? selectedRun.logicalDate)}`
-                : '未选运行';
+                : t('workflowDetail.noRunSelected');
               return (
                 <>
                   {/* 上：图（大） */}
@@ -470,12 +480,14 @@ export const WorkflowDetailPage = () => {
                   >
                     {/* 左：任务耗时柱状图 */}
                     <div>
-                      <div style={sectionTitle}>任务耗时 · {runLabel}</div>
+                      <div style={sectionTitle}>
+                        {t('workflowDetail.taskDuration', { runLabel })}
+                      </div>
                       <AsyncBoundary
                         state={runTasksState}
                         isEmpty={(rows) => rows.length === 0}
-                        emptyTitle="未选运行"
-                        emptyHint="在右上角选择一次运行"
+                        emptyTitle={t('workflowDetail.noRunSelected')}
+                        emptyHint={t('workflowDetail.selectRunHint')}
                       >
                         {(rows) => <TaskBarChart tasks={rows} />}
                       </AsyncBoundary>
@@ -483,7 +495,9 @@ export const WorkflowDetailPage = () => {
 
                     {/* 右：任务操作 */}
                     <div>
-                      <div style={sectionTitle}>任务操作 · {runLabel}</div>
+                      <div style={sectionTitle}>
+                        {t('workflowDetail.taskActions', { runLabel })}
+                      </div>
                       <div>
                         {g.nodes.map((n) => {
                           const st = selectedRun?.taskStates[n.id] ?? null;
@@ -541,12 +555,12 @@ export const WorkflowDetailPage = () => {
 
       {/* 网格 */}
       {activeTab === 'grid' && (
-        <Card title="网格视图（运行 × 任务）">
+        <Card title={t('workflowDetail.gridTitle')}>
           <AsyncBoundary
             state={gridState}
             isEmpty={(g) => g.runs.length === 0}
-            emptyTitle="暂无运行"
-            emptyHint="触发一次运行后查看网格"
+            emptyTitle={t('workflowDetail.noRuns')}
+            emptyHint={t('workflowDetail.triggerToSeeGrid')}
           >
             {(g) => {
               const cols = [...g.runs].reverse(); // 最新在右
@@ -566,7 +580,7 @@ export const WorkflowDetailPage = () => {
                             background: 'var(--bg-surface)',
                           }}
                         >
-                          任务 \ 运行
+                          {t('workflowDetail.taskVsRun')}
                         </th>
                         {cols.map((r) => (
                           <th
@@ -652,12 +666,12 @@ export const WorkflowDetailPage = () => {
 
       {/* 运行记录 */}
       {activeTab === 'runs' && (
-        <Card title="运行记录">
+        <Card title={t('workflowDetail.tab.runs')}>
           <AsyncBoundary
             state={runsState}
             isEmpty={(p) => p.items.length === 0}
-            emptyTitle="暂无运行记录"
-            emptyHint="触发一次运行后查看"
+            emptyTitle={t('workflowDetail.noRunRecords')}
+            emptyHint={t('workflowDetail.triggerThenView')}
           >
             {(p) => {
               const totalPages = Math.max(1, Math.ceil(p.total / RUNS_PAGE_SIZE));
@@ -666,9 +680,17 @@ export const WorkflowDetailPage = () => {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
-                        {['运行 ID', '类型', '状态', '逻辑日期', '开始', '结束', '时长'].map((h) => (
+                        {[
+                          'workflowDetail.runCol.id',
+                          'workflowDetail.runCol.type',
+                          'workflowDetail.runCol.state',
+                          'workflowDetail.runCol.logical',
+                          'workflowDetail.runCol.start',
+                          'workflowDetail.runCol.end',
+                          'workflowDetail.runCol.duration',
+                        ].map((key) => (
                           <th
-                            key={h}
+                            key={key}
                             style={{
                               textAlign: 'left',
                               padding: 'var(--sp-2) var(--sp-3)',
@@ -679,7 +701,7 @@ export const WorkflowDetailPage = () => {
                               whiteSpace: 'nowrap',
                             }}
                           >
-                            {h}
+                            {t(key)}
                           </th>
                         ))}
                       </tr>
@@ -727,21 +749,21 @@ export const WorkflowDetailPage = () => {
                     }}
                   >
                     <span style={{ color: 'var(--text-muted)' }}>
-                      共 {p.total} 条 · 第 {p.page} / {totalPages} 页
+                      {t('common.pagination', { total: p.total, page: p.page, pages: totalPages })}
                     </span>
                     <button
                       type="button"
                       disabled={runsPage <= 1}
                       onClick={() => setRunsPage((n) => Math.max(1, n - 1))}
                     >
-                      上一页
+                      {t('common.prevPage')}
                     </button>
                     <button
                       type="button"
                       disabled={runsPage >= totalPages}
                       onClick={() => setRunsPage((n) => n + 1)}
                     >
-                      下一页
+                      {t('common.nextPage')}
                     </button>
                   </div>
                 </div>
@@ -753,7 +775,7 @@ export const WorkflowDetailPage = () => {
 
       {/* 代码 */}
       {activeTab === 'code' && (
-        <Card title="DAG 源码">
+        <Card title={t('workflowDetail.codeTitle')}>
           <AsyncBoundary state={codeState} isEmpty={() => false} emptyTitle="">
             {(c) => (
               <div>
@@ -812,18 +834,24 @@ export const WorkflowDetailPage = () => {
               width: 360,
             }}
           >
-            <div style={{ fontWeight: 600, marginBottom: 'var(--sp-2)' }}>确认触发该 DAG？</div>
+            <div style={{ fontWeight: 600, marginBottom: 'var(--sp-2)' }}>
+              {t('workflow.confirmTitle')}
+            </div>
             <div
-              style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-4)' }}
+              style={{
+                color: 'var(--text-muted)',
+                fontSize: 'var(--fs-sm)',
+                marginBottom: 'var(--sp-4)',
+              }}
             >
-              {dagId} · 将创建一次手动运行
+              {t('workflow.confirmDesc', { dagId })}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
               <button type="button" disabled={busy} onClick={() => setConfirmTrigger(false)}>
-                取消
+                {t('workflow.cancel')}
               </button>
               <button type="button" disabled={busy} onClick={handleTrigger}>
-                {busy ? '提交中…' : '确认触发'}
+                {busy ? t('workflow.submitting') : t('workflow.confirmTrigger')}
               </button>
             </div>
           </div>

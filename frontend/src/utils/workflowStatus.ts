@@ -5,6 +5,8 @@
  * 保证全站配色一致。颜色一律用设计 token（CSS 变量），跟随主题。
  */
 
+import i18n from '@/i18n';
+
 /** dag_run.state / task_instance.state 的原始取值（含 null=尚无状态）。 */
 export type AirflowState =
   | 'success'
@@ -64,8 +66,8 @@ export function stateColor(state: AirflowState | string | undefined): string {
 }
 
 export function stateLabel(state: AirflowState | string | undefined): string {
-  if (!state) return '无状态';
-  return STATE_LABEL[state] ?? state;
+  if (!state) return i18n.t('workflow.state.none', { defaultValue: '无状态' });
+  return i18n.t(`workflow.state.${state}`, { defaultValue: STATE_LABEL[state] ?? state });
 }
 
 /** 列表页/图例展示的核心状态（对应需求：通过 / 失败 / 进行中 / 跳过）。 */

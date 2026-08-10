@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { ErrorView } from './ErrorView';
 import type { ApiError } from '@/types/api';
+import i18n from '@/i18n';
 
 interface Props {
   children: ReactNode;
@@ -18,7 +19,7 @@ export class ErrorBoundary extends Component<Props, State> {
       error: {
         status: 500,
         code: 'INTERNAL_ERROR',
-        title: '页面渲染异常',
+        title: i18n.t('errorBoundary.title'),
         detail: error.message,
       },
     };

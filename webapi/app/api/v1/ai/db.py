@@ -84,7 +84,7 @@ def create_conversation(engine: Engine, *, model_id: str|None) -> dict:
     return _conversation_row(row)
 
 def update_conversation_title(engine: Engine, conversation_id: int, title: str) -> None:
-    """把会话标题写回库（仅当仍是默认标题时更新，避免覆盖用户/已生成的标题）。"""
+    """Write the title back only while it is still the default, to avoid overwriting a user/generated title."""
     table = Table('ai_conversations', MetaData(), autoload_with=engine)
     statement = (
         update(table)
@@ -184,6 +184,7 @@ def _default_config()->dict:
         'temperature': 0.7,
         'capabilities': dict(DEFAULT_CAPABILITIES),
         'embeddingConfig': dict(DEFAULT_EMBEDDING_CONFIG),
+        'skills': []
     }
 
 def _config_row(row)->dict:
@@ -194,6 +195,7 @@ def _config_row(row)->dict:
         'temperature': float(row['temperature']),
         'capabilities': {**DEFAULT_CAPABILITIES, **(row['capabilities'] or {})},
         'embeddingConfig': {**DEFAULT_EMBEDDING_CONFIG, **(row['embedding_config'] or {})},
+        'skills': row['skills'] or [],
     }
 
 
@@ -216,6 +218,7 @@ def save_config(engine: Engine, config: dict) -> dict:
         'temperature': config.get('temperature', 0.7),
         'capabilities': config.get('capabilities') or dict(DEFAULT_CAPABILITIES),
         'embedding_config': config.get('embeddingConfig') or dict(DEFAULT_EMBEDDING_CONFIG),
+        'skills': config.get('skills') or []
     }
     statement = (
         insert(table)

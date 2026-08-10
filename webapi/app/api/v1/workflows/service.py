@@ -1,4 +1,4 @@
-"""workflows 域的读/写逻辑（直接操作 Airflow SQLite 元数据库）。"""
+"""Read/write logic for the workflows domain (direct access to the Airflow SQLite metadata DB)."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ _RECENT_RUNS_LIMIT = 10
 
 
 def _parse_dt(value: object) -> datetime | None:
-    """把 SQLite 里存的时间戳字符串解析成 datetime；失败返回 None。
+    """Parse a timestamp string stored by SQLite into datetime; return None on failure.
 
     Airflow 存的形如 ``2026-08-04 18:16:11.995168`` 或带 ``+00:00`` 偏移。
     """
@@ -91,7 +91,7 @@ def _tags(conn: sqlite3.Connection, dag_id: str) -> list[str]:
 
 
 def list_dags() -> list[DagListItem]:
-    """返回所有“活跃”DAG（``is_stale = 0``，即 DAG 文件仍存在）。
+    """Return all "active" DAGs (``is_stale = 0``, i.e. the DAG file still exists).
 
     Airflow 会把文件已删除的 DAG 标记为 stale 并从列表页隐藏；示例 DAG 在本环境
     均为 stale，故该过滤天然只保留项目自有 DAG。
@@ -170,7 +170,7 @@ def get_dag_detail(dag_id: str) -> DagDetail | None:
 
 
 def _unwrap(node: object) -> dict:
-    """Airflow 序列化 JSON 里对象包成 {'__var':..., '__type':...}，取内层。"""
+    """Airflow serialized JSON wraps objects as {'__var':..., '__type':...}; unwrap the inner value."""
     if isinstance(node, dict) and "__var" in node:
         inner = node["__var"]
         return inner if isinstance(inner, dict) else {}
@@ -191,7 +191,7 @@ def _serialized_tasks(conn: sqlite3.Connection, dag_id: str) -> list[dict]:
 
 
 def _topo_order(task_ids: list[str], edges: list[tuple[str, str]]) -> list[str]:
-    """Kahn 拓扑排序（上游在前）；有环/异常时回退到原顺序。"""
+    """Kahn topological sort (upstream first); fall back to the original order on cycles/errors."""
     indeg = {t: 0 for t in task_ids}
     adj: dict[str, list[str]] = {t: [] for t in task_ids}
     for src, dst in edges:
@@ -211,7 +211,7 @@ def _topo_order(task_ids: list[str], edges: list[tuple[str, str]]) -> list[str]:
 
 
 def _graph_parts(conn: sqlite3.Connection, dag_id: str) -> tuple[list[str], list[tuple[str, str]], dict[str, str]]:
-    """返回 (task_ids, edges, labels)。"""
+    """Return (task_ids, edges, labels)."""
     tasks = _serialized_tasks(conn, dag_id)
     task_ids: list[str] = []
     labels: dict[str, str] = {}
@@ -238,7 +238,7 @@ def get_graph(dag_id: str) -> GraphResponse:
 
 
 def get_grid(dag_id: str, limit: int = 25) -> GridResponse:
-    """最近 N 次运行 × 各任务状态（网格视图 + 图视图着色数据源）。"""
+    """Recent N runs x per-task state (grid view + graph coloring data source)."""
     with connect() as conn:
         task_ids, edges, _ = _graph_parts(conn, dag_id)
         ordered = _topo_order(task_ids, edges)
@@ -286,7 +286,7 @@ def get_grid(dag_id: str, limit: int = 25) -> GridResponse:
 
 
 def get_run_tasks(dag_id: str, run_id: str) -> list[TaskInstanceInfo]:
-    """某次运行的任务实例（按拓扑顺序，含未生成实例的任务占位）——甘特图数据源。"""
+    """Task instances of one run (topological order, with placeholders for tasks without instances) — Gantt chart data source."""
     with connect() as conn:
         task_ids, edges, _ = _graph_parts(conn, dag_id)
         order = _topo_order(task_ids, edges)

@@ -1,3 +1,3 @@
-"""v1 业务子包：仅按域拆分模块并暴露 router；不在此处聚合。"""
+"""v1 business subpackage: split modules by domain and expose routers; no aggregation here."""
 
 from __future__ import annotations

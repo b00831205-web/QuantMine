@@ -1,4 +1,4 @@
-"""行情查询端点：多 ticker 时间序列、最新交易日与市场宽度。"""
+"""Market endpoints: multi-ticker time series, latest trade date and market breadth."""
 
 from __future__ import annotations
 from fastapi import Depends
@@ -44,13 +44,13 @@ async def get_market_series(
     normalize: bool = Query(True, description="是否归一化到基期 100"),
     engine: Engine = Depends(get_request_engine)
 ) -> SeriesResponse:
-    """查询多 ticker 时间序列，按区间与频率返回。
+    """Query multi-ticker time series by range and frequency.
 
     ticker 去重并统一大写后查询；frequency 为 W/M 时按周/月重采样。
     normalize 为真时各序列归一化到基期 100，便于同图比较走势。
 
     Raises:
-        HTTPException: start_date 晚于 end_date 或 ticker 超过 20 个时 422；
+        HTTPException: 422 when start_date is after end_date or more than 20 tickers;
             区间内无数据时 404。
     """
     if start_date > end_date:

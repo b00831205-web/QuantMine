@@ -33,6 +33,10 @@
   background: var(--bg-surface-2);
 }
 
+.table tbody tr {
+  cursor: pointer;
+}
+
 .table tbody tr.selected {
   background: var(--bg-surface-2);
   box-shadow: inset 2px 0 0 var(--accent);

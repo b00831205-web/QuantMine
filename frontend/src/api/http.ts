@@ -1,4 +1,5 @@
 import type { ApiError } from '@/types/api';
+import i18n from '@/i18n';
 
 /**
  * 统一 HTTP 客户端：fetch + 超时 + AbortController + 错误归一化。
@@ -23,21 +24,20 @@ export class HttpError extends Error {
   }
 }
 
-
 export async function http<T>(path: string, options: HttpRequestOptions = {}): Promise<T> {
   const { query } = options;
   const url = new URL(path, window.location.origin);
-  if (query){
-    for (const [key, rawValue] of Object.entries(query)){
-      if (rawValue === undefined || rawValue === null){
+  if (query) {
+    for (const [key, rawValue] of Object.entries(query)) {
+      if (rawValue === undefined || rawValue === null) {
         continue;
       }
-      if (Array.isArray(rawValue)){
-        for (const value of rawValue){
-          url.searchParams.append(key, String(value))
+      if (Array.isArray(rawValue)) {
+        for (const value of rawValue) {
+          url.searchParams.append(key, String(value));
         }
-      } else{
-          url.searchParams.append(key, String(rawValue))
+      } else {
+        url.searchParams.append(key, String(rawValue));
       }
     }
   }
@@ -51,13 +51,12 @@ export async function http<T>(path: string, options: HttpRequestOptions = {}): P
       : {}),
   };
   const response = await fetch(url, init);
-  if (!response.ok){
+  if (!response.ok) {
     const apiError = (await response.json()) as ApiError;
-    throw new HttpError(apiError)
+    throw new HttpError(apiError);
   }
-  return (await response.json()) as T 
+  return (await response.json()) as T;
 }
-
 
 /**
  * 状态码 → 用户可读中文消息映射。
@@ -69,5 +68,5 @@ export async function http<T>(path: string, options: HttpRequestOptions = {}): P
  */
 export function toUserMessage(err: ApiError): string {
   // TODO(USER_LEARNING): 见上方契约
-  return err.title ?? '请求失败';
+  return err.title ?? i18n.t('common.requestFailed');
 }

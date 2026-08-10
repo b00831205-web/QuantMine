@@ -1,16 +1,16 @@
-"""统一错误响应、trace-id 中间件。
+"""Unified error responses and trace-id middleware.
 
-设计：
-- TraceIdMiddleware 在请求入口生成（或沿用上游 `x-trace-id`）并写入
-  `request.state.trace_id`，再调用 `call_next`。
-- 成功路径：在 `Response` header 上追加 `x-trace-id`。
-- 错误路径：异常处理器直接从 `request.state.trace_id` 读取，确保与
-  响应 header 完全一致。
+Design:
+- TraceIdMiddleware generates (or reuses upstream `x-trace-id`) at request entry and writes
+  it to `request.state.trace_id`, then calls `call_next`.
+- Success path: append `x-trace-id` to the `Response` header.
+- Error path: exception handlers read directly from `request.state.trace_id` so it always
+  matches the response header.
 
-`install_*` 函数在 `create_app` 中按正确顺序调用：
-    1. install_trace_id_middleware  (最先，确保 request.state 有 trace_id)
-    2. add CORS                     (随后，CORS preflight 也带 trace-id)
-    3. install_exception_handlers   (最后，统一错误格式)
+`install_*` functions are invoked in order by `create_app`:
+    1. install_trace_id_middleware  (first; ensures request.state has trace_id)
+    2. add CORS                     (then; CORS preflight also carries trace-id)
+    3. install_exception_handlers   (last; unified error format)
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ TRACE_ID_HEADER = "x-trace-id"
 
 
 def _resolve_trace_id(request: Request) -> str:
-    """从 request.state 读；如缺失（理论上不应发生），兜底生成。"""
+    """Read from request.state; fall back to a generated value if missing (should not happen)."""
     existing = getattr(request.state, "trace_id", None)
     if isinstance(existing, str) and existing:
         return existing
@@ -67,7 +67,7 @@ def _error_response(
 
 
 class TraceIdMiddleware(BaseHTTPMiddleware):
-    """为每个请求生成/沿用 trace-id，并写入成功响应的 header。"""
+    """Generate/reuse a trace-id per request and write it into successful response headers."""
 
     def __init__(self, app: ASGIApp, header_name: str = TRACE_ID_HEADER) -> None:
         super().__init__(app)
@@ -77,13 +77,13 @@ class TraceIdMiddleware(BaseHTTPMiddleware):
         incoming = request.headers.get(self.header_name)
         request.state.trace_id = incoming or uuid.uuid4().hex
         response: Response = await call_next(request)
-        # 错误响应已由 _error_response 自带 header；这里再覆盖一次也无副作用
+        # Error responses already carry the header via _error_response; overwriting again is harmless
         response.headers[self.header_name] = request.state.trace_id
         return response
 
 
 def install_trace_id_middleware(app: FastAPI) -> None:
-    """注册全局 trace-id 中间件；必须在 CORS / exception handler 之前。"""
+    """Register the global trace-id middleware; must run before CORS / exception handlers."""
     app.add_middleware(TraceIdMiddleware)
 
 
@@ -97,8 +97,8 @@ def install_exception_handlers(app: FastAPI) -> None:
         return _error_response(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             code="VALIDATION_FAILED",
-            title="参数校验失败",
-            detail="请求参数未通过 schema 校验",
+            title="Validation failed",
+            detail="Request did not pass schema validation",
             trace_id=trace_id,
             field_errors=field_errors,
         )
@@ -117,17 +117,17 @@ def install_exception_handlers(app: FastAPI) -> None:
             502: 'UPSTREAM_FAILURE'
         }
         title_map: dict[int, str] = {
-            400: "请求参数错误",
-            401: "未登录",
-            403: "没有权限",
-            404: "资源不存在",
-            409: "状态冲突",
-            422: '参数校验失败',
-            429: "请求过于频繁",
-            502: '上游服务错误'
+            400: "Bad request",
+            401: "Not authenticated",
+            403: "Forbidden",
+            404: "Not found",
+            409: "Conflict",
+            422: "Validation failed",
+            429: "Too many requests",
+            502: "Upstream service error"
         }
         code = code_map.get(exc.status_code, "INTERNAL_ERROR")
-        title = title_map.get(exc.status_code, "服务器内部错误")
+        title = title_map.get(exc.status_code, "Internal server error")
         return _error_response(
             status_code=exc.status_code,
             code=code,
@@ -143,8 +143,8 @@ def install_exception_handlers(app: FastAPI) -> None:
         return _error_response(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             code="INTERNAL_ERROR",
-            title="服务器内部错误",
-            detail="请稍后重试；如持续发生请联系管理员",
+            title="Internal server error",
+            detail="Please retry later; contact the administrator if it persists",
             trace_id=trace_id,
         )
 
@@ -158,10 +158,10 @@ def api_error_response(
     trace_id: str,
     field_errors: list[FieldError] | None = None,
 ) -> JSONResponse:
-    """供业务代码手动构造统一错误响应的便捷方法。
+    """Convenience helper for business code to build a unified error response manually.
 
-    端点通常 raise HTTPException 即可（异常处理器会归一化格式）；只有需要
-    自定义 code 或附带 field_errors 时才直接用这个函数。
+    Endpoints normally raise HTTPException (the handler normalizes the format); use this
+    only when a custom code or field_errors is needed.
     """
     return _error_response(
         status_code=status_code,

@@ -1,4 +1,4 @@
-"""Rebalance endpoints：列表 / 收益曲线（详情待续）。"""
+"""Rebalance endpoints: list / return curves (detail pending)."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.engine import Engine
@@ -25,7 +25,7 @@ router = APIRouter()
 
 
 def rank_suffix(rank: int) -> str:
-    """0 → LS（多空），其余 → Q1..Q5"""
+    """0 -> LS (long-short), otherwise -> Q1..Q5"""
     return "LS" if rank == 0 else f"Q{rank}"
 
 

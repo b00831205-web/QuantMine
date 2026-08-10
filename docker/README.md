@@ -10,7 +10,21 @@ cp .env.docker.example .env      # 改掉里面的密码和密钥（至少改一
 docker compose up -d
 ```
 
-打开 <http://localhost:8080>，用 `.env` 里的 `QUANTMINE_ADMIN_USER` / `QUANTMINE_ADMIN_PASSWORD` 登录。
+打开 <http://localhost:8080> 登录。账号是 `.env` 里的 `QUANTMINE_ADMIN_USER`（默认
+`admin`）；`QUANTMINE_ADMIN_PASSWORD` 留空时密码随机生成，只在容器日志里打印一次：
+
+```bash
+docker compose logs webapi | grep -A6 登录凭据
+```
+
+容器里也会写一份 `/app/.initial-credentials.json`，但它随容器销毁，所以日志才是
+可靠渠道。
+
+忘了密码就重置——库里存的是不可逆哈希，查不出原密码：
+
+```bash
+docker compose exec webapi python /app/scripts/reset_password.py admin
+```
 
 生成随机密钥：
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '@/api/client/auth';
@@ -10,6 +11,7 @@ import styles from './LoginPage.module.css';
  * 成功后后端下发会话 Cookie，前端跳回首页；AuthGuard 会放行。
  */
 export const LoginPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -26,8 +28,8 @@ export const LoginPage = () => {
     } catch (err) {
       setError(
         err instanceof HttpError
-          ? err.apiError.detail ?? err.apiError.title ?? '登录失败'
-          : '登录失败，请稍后重试',
+          ? err.apiError.detail ?? err.apiError.title ?? t('login.failed')
+          : t('login.failed'),
       );
     } finally {
       setSubmitting(false);
@@ -38,10 +40,10 @@ export const LoginPage = () => {
     <div className={styles.page}>
       <form className={styles.card} onSubmit={handleSubmit}>
         <div className={styles.brand}>QUANTMINE</div>
-        <div className={styles.subtitle}>登录以继续</div>
+        <div className={styles.subtitle}>{t('login.subtitle')}</div>
 
         <label className={styles.field}>
-          <span>用户名</span>
+          <span>{t('login.username')}</span>
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -51,7 +53,7 @@ export const LoginPage = () => {
         </label>
 
         <label className={styles.field}>
-          <span>密码</span>
+          <span>{t('login.password')}</span>
           <input
             type="password"
             value={password}
@@ -67,7 +69,7 @@ export const LoginPage = () => {
           type="submit"
           disabled={submitting || !username || !password}
         >
-          {submitting ? '登录中…' : '登录'}
+          {submitting ? t('login.loggingIn') : t('login.login')}
         </button>
       </form>
     </div>

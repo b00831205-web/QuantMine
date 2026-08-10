@@ -1,5 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AliveScope, KeepAlive } from 'react-activation';
 import { SideNav } from './SideNav';
 import { TopBar } from './TopBar';
 import { AIQuickPanel } from '../ai/AIQuickPanel';
@@ -17,25 +18,39 @@ export const AppShell = () => {
   const { pathname } = useLocation();
   const onAiPage = pathname.startsWith('/ai');
   const [aiOpen, setAiOpen] = useState(false);
+  const contentRef = useRef<HTMLElement | null>(null);
+
+  // 切换路由时回到内容区顶部（页面本身由 KeepAlive 缓存，不重新挂载）
+  useEffect(() => {
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+  }, [pathname]);
 
   return (
-    <div
-      className={styles.shell}
-      style={{
-        gridTemplateColumns:
-          onAiPage || !aiOpen
-            ? 'var(--sidenav-w) 1fr'
-            : 'var(--sidenav-w) 1fr var(--ai-quickpanel-w)',
-      }}
-    >
-      <SideNav />
-      <div className={styles.main}>
-        <TopBar />
-        <main className={styles.content}>
-          <Outlet />
-        </main>
+    <AliveScope>
+      <div
+        className={styles.shell}
+        style={{
+          gridTemplateColumns:
+            onAiPage || !aiOpen
+              ? 'var(--sidenav-w) 1fr'
+              : 'var(--sidenav-w) 1fr var(--ai-quickpanel-w)',
+        }}
+      >
+        <SideNav />
+        <div className={styles.main}>
+          <TopBar />
+          <main className={styles.content} ref={contentRef}>
+            <KeepAlive id={pathname} name={pathname}>
+              <Outlet />
+            </KeepAlive>
+          </main>
+        </div>
+        <AIQuickPanel
+          open={aiOpen}
+          onOpen={() => setAiOpen(true)}
+          onClose={() => setAiOpen(false)}
+        />
       </div>
-      <AIQuickPanel open={aiOpen} onOpen={() => setAiOpen(true)} onClose={() => setAiOpen(false)} />
-    </div>
+    </AliveScope>
   );
 };

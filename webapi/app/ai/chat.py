@@ -22,7 +22,7 @@ _QUERY_DATABASE_TOOL = {
     },
 }
 
-# 常见视觉模型关键词：模型名包含这些时才会把图片发给 LLM
+# Vision model hints: images are only sent to the LLM when the model name contains one of these
 VISION_HINTS = ("vl", "vision", "4o", "glm-4v", "qwen2.5-vl", "gpt-4o")
 
 
@@ -36,7 +36,7 @@ def build_system_prompt(
     rag_context: list[dict] | None = None,
     attached_context: dict |None = None,
 ) -> str:
-    """系统提示词：基础角色 + 数据库目录（动态）+ RAG 历史语料片段。"""
+    """System prompt: base role + database catalog (dynamic) + RAG history snippets."""
     lines = [
         base_prompt,
         "",
@@ -75,10 +75,10 @@ def summarize_title(
         api_key: str | None = None,
         max_len: int = 20,
 ) -> str:
-    """用一次极小的 LLM 调用，把首条用户消息总结成一个短标题。
+    """Summarize the first user message into a short title with one tiny LLM call.
 
-    不带工具、低温度、限制长度。任何失败（未配置 Key/模型、接口报错、
-    返回为空）都回退到截取首条消息，保证一定能拿到非空标题。
+    No tools, low temperature, length limited. Any failure (missing key/model, API error,
+    empty reply) falls back to truncating the first message, so a non-empty title is guaranteed.
     """
     fallback = _truncate_title(first_message, max_len)
     if not model_id or not api_key:
@@ -120,17 +120,17 @@ def summarize_title(
 
 
 def _truncate_title(text: str, max_len: int) -> str:
-    """把任意文本压成单行短标题：去换行、取首 max_len 字、超长加省略号。"""
+    """Flatten text into a one-line short title: strip newlines, take the first max_len chars, add ellipsis when truncated."""
     single_line = ' '.join(text.split())
     if not single_line:
         return '新对话'
     return single_line if len(single_line) <= max_len else single_line[:max_len] + '…'
 
 def _message_content(message: dict, supports_images: bool) -> str | list:
-    """把消息的文本 + 附件组装成 OpenAI 兼容 content。
+    """Assemble message text + attachments into OpenAI-compatible content.
 
-    图片附件转 data URI（走视觉模型）；文本/文档附件把提取的文本附在后面。
-    模型不支持图片时跳过 image part，改为文本提示，避免 400。
+    Images become data URIs (vision model); text/document attachments append extracted text.
+    When the model does not support images, skip the image part and use a text note to avoid a 400.
     """
     content = message.get('content', '')
     attachments = message.get('attachments') or []
@@ -176,11 +176,12 @@ def complete_chat(
         base_url: str|None =None,
         api_key: str|None = None,
         allow_query_database : bool =False,
+        extra_tools: list | None = None,
 )->dict:
     if not model_id:
-        raise RuntimeError('未配置模型')
+        raise RuntimeError('Model not configured')
     if not api_key:
-        raise RuntimeError('未配置 API Key（环境变量 OPENAI_API_KEY 或 provider.apiKeyEnv）')
+        raise RuntimeError('API Key not configured (env OPENAI_API_KEY or provider.apiKeyEnv)')
     messages = [{'role': 'system', 'content': system_prompt}]   
     for message in history:
         role = message.get('role')
@@ -210,8 +211,11 @@ def complete_chat(
         'temperature': temperature,
         'stream': False,
     }
-    if allow_query_database:
-        payload['tools'] = [_QUERY_DATABASE_TOOL]
+    if allow_query_database or extra_tools:
+        payload['tools'] = []
+        if allow_query_database:
+            payload['tools'].append(_QUERY_DATABASE_TOOL)
+        payload['tools'].extend(extra_tools or [])
 
     response = httpx.post(
         url,
@@ -221,7 +225,7 @@ def complete_chat(
     )
     if response.status_code >= 400:
         raise RuntimeError(
-            f"模型接口返回 {response.status_code}: {response.text[:500]}"
+            f"Model API returned {response.status_code}: {response.text[:500]}"
         )
     data = response.json()
 

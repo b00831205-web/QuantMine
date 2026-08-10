@@ -48,7 +48,7 @@ def index_message(
         with engine.begin() as connection:
             connection.execute(statement)
     except Exception as exc:
-        print(f'[rag] index_message 失败: {type(exc).__name__}: {exc}', file = sys.stderr)
+        print(f'[rag] index_message failed: {type(exc).__name__}: {exc}', file = sys.stderr)
 
 def search_messages(
         engine: Engine,
@@ -91,5 +91,5 @@ LIMIT :top_k
             'similarity': round(float(row['similarity']),4)
         } for row in rows]
     except Exception as exc:
-        print(f'[rag] search_message失败：{type(exc).__name__}: {exc}', file=sys.stderr)
+        print(f'[rag] search_messages failed: {type(exc).__name__}: {exc}', file=sys.stderr)
         return []

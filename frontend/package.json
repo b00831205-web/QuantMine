@@ -14,12 +14,18 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/view": "^6.43.8",
+    "@lezer/highlight": "^1.2.3",
+    "@uiw/react-codemirror": "^4.25.11",
     "dagre": "^0.8.5",
     "echarts": "^5.5.1",
     "i18next": "^26.3.6",
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^1.28.0",
     "react": "^18.3.1",
+    "react-activation": "^0.13.4",
     "react-dom": "^18.3.1",
     "react-i18next": "^17.0.11",
     "react-router-dom": "^6.26.2",

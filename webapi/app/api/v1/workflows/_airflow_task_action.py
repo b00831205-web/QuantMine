@@ -1,4 +1,4 @@
-"""Airflow 任务级写操作助手（standalone 脚本）。
+"""Airflow task-level write-operation helper (standalone script).
 
 **必须用 Airflow 所在的 venv 运行**（本项目 = 项目根 `.venv`），不是 webapi 的 venv：
 只有 Airflow 环境能正确通过 SQLAlchemy 写入元数据库（webapi venv 直连 sqlite 在

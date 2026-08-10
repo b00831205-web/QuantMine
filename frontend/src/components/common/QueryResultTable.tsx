@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { PaginatedTable } from '@/components/common/PaginatedTable';
 import type { Column } from '@/components/common/PaginatedTable';
 import type { Page } from '@/types/api';
@@ -5,6 +6,7 @@ import type { QueryResult } from '@/types/data';
 
 /** 把 QueryResult（columns + rows）渲染成表格：负责数据形态适配和动态列 */
 export const QueryResultTable = ({ result }: { result: QueryResult }) => {
+  const { t } = useTranslation();
   const pageData: Page<Record<string, unknown>> = {
     items: result.rows,
     total: result.rows.length,
@@ -22,7 +24,7 @@ export const QueryResultTable = ({ result }: { result: QueryResult }) => {
       columns={columns}
       page={pageData}
       rowKey={(row) => JSON.stringify(row)}
-      emptyHint="无结果"
+      emptyHint={t('common.noMatch')}
     />
   );
 };

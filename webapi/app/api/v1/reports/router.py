@@ -1,4 +1,4 @@
-"""报告历史端点：分页列表。"""
+"""Report history endpoints: paginated list."""
 
 from __future__ import annotations
 

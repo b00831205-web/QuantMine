@@ -35,7 +35,11 @@ dev = [
     "yfinance>=1.4",
     "pandas-datareader>=0.11",
 ]
-pipeline = ["apache-airflow>=3.2"]
+# asyncpg 是 Airflow 3.x 连 Postgres 元数据库的硬依赖：除同步引擎外它还会建一个
+# 异步引擎，psycopg2 顶不上。缺了它 scheduler / api-server / dag-processor 三个进程
+# 全部起不来，而 systemctl status 只显示 exit-code=1，真因（ModuleNotFoundError:
+# No module named 'asyncpg'）只在进程自己的日志里。
+pipeline = ["apache-airflow>=3.2", "asyncpg>=0.30"]
 
 [build-system]
 requires = ["hatchling"]

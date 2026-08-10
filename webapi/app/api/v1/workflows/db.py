@@ -1,4 +1,4 @@
-"""Airflow 元数据库（Postgres）连接助手。
+"""Helpers for connecting to the Airflow metadata database (Postgres).
 
 历史：早期 Airflow 元数据库是放在 /mnt/e（WSL 的 9p/drvfs 挂载）上的 SQLite。
 9p 不支持 SQLite 需要的文件锁：读要 ``immutable=1`` 绕锁，写（trigger/pause，经
@@ -26,13 +26,13 @@ from psycopg2.extras import RealDictCursor
 
 
 class _PgConnection:
-    """把 psycopg2 连接包成 service.py 期望的 sqlite3 风格 ``execute`` 接口。"""
+    """Wrap a psycopg2 connection into the sqlite3-style ``execute`` interface expected by service.py."""
 
     def __init__(self, conn: "psycopg2.extensions.connection") -> None:
         self._conn = conn
 
     def execute(self, sql: str, params: tuple = ()):
-        """执行一条查询并返回游标（``fetchall``/``fetchone`` 得到 dict 行）。
+        """Run one query and return a cursor (``fetchall``/``fetchone`` yield dict rows).
 
         service.py 沿用 sqlite3 的 ``?`` 占位符；这里统一转成 psycopg2 的 ``%s``。
         本域全部为字面 SQL，不含真正的问号字面量，替换是安全的。
@@ -57,7 +57,7 @@ def _dsn() -> str:
 
 @contextmanager
 def connect() -> Iterator[_PgConnection]:
-    """打开一个到 Airflow 元数据库（Postgres）的只读短连接，退出时关闭。
+    """Open a short read-only connection to the Airflow metadata database (Postgres), closed on exit.
 
     Raises:
         FileNotFoundError: 未配置连接串或数据库不可达；交由上层转成 503。
@@ -65,7 +65,7 @@ def connect() -> Iterator[_PgConnection]:
     try:
         conn = psycopg2.connect(_dsn())
     except (psycopg2.OperationalError, RuntimeError) as exc:
-        raise FileNotFoundError(f"Airflow 元数据库不可达：{exc}") from exc
+        raise FileNotFoundError(f"Airflow metadata database unreachable: {exc}") from exc
     conn.set_session(readonly=True, autocommit=True)
     try:
         yield _PgConnection(conn)

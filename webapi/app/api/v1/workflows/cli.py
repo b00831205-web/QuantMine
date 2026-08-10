@@ -1,4 +1,4 @@
-"""通过 Airflow CLI 执行变更操作（暂停 / 触发）。
+"""Run mutating Airflow operations through the Airflow CLI (pause / trigger).
 
 为什么用 CLI 而不是直接写 SQLite：airflow.db 在 WSL drvfs 上，普通读写连接会
 "unable to open database file"；且经由 CLI 走的是 Airflow 正式流程，语义正确、能被
@@ -29,7 +29,7 @@ _TASK_ACTION_SCRIPT = Path(__file__).resolve().parent / "_airflow_task_action.py
 
 
 class AirflowCliError(RuntimeError):
-    """airflow CLI 不可用或返回非零。"""
+    """Raised when the airflow CLI is unavailable or returns non-zero."""
 
 
 def _airflow_bin() -> str:
@@ -48,7 +48,7 @@ def _airflow_env() -> dict[str, str]:
 
 
 def run(*args: str, timeout: float = 60.0) -> str:
-    """执行 ``airflow <args>``，成功返回 stdout；失败抛 AirflowCliError。"""
+    """Execute ``airflow <args>``; return stdout on success, raise AirflowCliError on failure."""
     cmd = [_airflow_bin(), *args]
     try:
         proc = subprocess.run(
@@ -63,7 +63,7 @@ def run(*args: str, timeout: float = 60.0) -> str:
             f"未找到 airflow 可执行文件：{_airflow_bin()}；可用 QUANT_AIRFLOW_BIN 指定"
         ) from exc
     except subprocess.TimeoutExpired as exc:
-        raise AirflowCliError(f"airflow {' '.join(args)} 超时（{timeout}s）") from exc
+        raise AirflowCliError(f"airflow {' '.join(args)} timed out ({timeout}s)") from exc
 
     if proc.returncode != 0:
         raise AirflowCliError(
@@ -73,7 +73,7 @@ def run(*args: str, timeout: float = 60.0) -> str:
 
 
 def run_task_action(dag_id: str, run_id: str, task_id: str, action: str, timeout: float = 90.0) -> dict:
-    """执行任务级写操作（clear / mark-success / mark-failed）。
+    """Execute a task-level write operation (clear / mark-success / mark-failed).
 
     通过 Airflow venv 的 python 跑 `_airflow_task_action.py`（该脚本用 Airflow ORM
     直接改 task_instance 状态）。返回脚本最后一行的 JSON dict。
@@ -84,12 +84,12 @@ def run_task_action(dag_id: str, run_id: str, task_id: str, action: str, timeout
             cmd, capture_output=True, text=True, timeout=timeout, env=_airflow_env()
         )
     except FileNotFoundError as exc:
-        raise AirflowCliError(f"未找到 python：{_airflow_python()}") from exc
+        raise AirflowCliError(f"python not found: {_airflow_python()}") from exc
     except subprocess.TimeoutExpired as exc:
-        raise AirflowCliError(f"任务操作超时（{timeout}s）") from exc
+        raise AirflowCliError(f"task operation timed out ({timeout}s)") from exc
 
     if proc.returncode != 0:
-        raise AirflowCliError(proc.stderr.strip() or proc.stdout.strip() or "任务操作失败")
+        raise AirflowCliError(proc.stderr.strip() or proc.stdout.strip() or "task operation failed")
 
     # 脚本会打印 Airflow 日志到 stderr，结果 JSON 在 stdout 最后一行。
     last = ""
@@ -99,4 +99,4 @@ def run_task_action(dag_id: str, run_id: str, task_id: str, action: str, timeout
     try:
         return json.loads(last)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise AirflowCliError(f"无法解析任务操作输出：{last!r}") from exc
+        raise AirflowCliError(f"cannot parse task operation output: {last!r}") from exc

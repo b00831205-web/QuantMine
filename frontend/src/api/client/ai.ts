@@ -78,7 +78,7 @@ export async function streamAIMessage(
   void payload;
   void onToken;
   void signal;
-  throw new Error('TODO(BACKEND): AI 流式接口未实现，接后端 SSE 后填充');
+    throw new Error('TODO(BACKEND): AI streaming interface not implemented; wire to backend SSE');
 }
 
 export function deleteAIConversation(

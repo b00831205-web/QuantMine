@@ -1,4 +1,4 @@
-"""数据速查查询层：白名单校验、筛选/排序/分页、结构化查询、只读 SQL。
+"""Data explorer query layer: whitelist validation, filtering/sorting/pagination, structured queries, read-only SQL.
 
 设计约束：
 - 资源名即表名，但只暴露 DATA_CATALOG 里声明的字段，其余列一律不返回；
@@ -26,7 +26,7 @@ _SELECT_RE = re.compile(r"^\s*select\b", re.IGNORECASE)
 
 
 def catalog_entry(resource: str) -> dict[str, Any]:
-    """按资源名查白名单；不在名单内直接 404。"""
+    """Look up a resource in the whitelist; 404 if not present."""
     for entry in DATA_CATALOG:
         if entry["resource"] == resource:
             return entry
@@ -34,7 +34,7 @@ def catalog_entry(resource: str) -> dict[str, Any]:
 
 
 def catalog_field(catalog: dict[str, Any], name: str) -> dict[str, Any]:
-    """按字段名查 catalog 声明；未知字段 400。"""
+    """Look up a field in the catalog declaration; 400 for unknown fields."""
     for field in catalog["fields"]:
         if field["name"] == name:
             return field
@@ -42,7 +42,7 @@ def catalog_field(catalog: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _typed_value(field: dict[str, Any], value: Any) -> Any:
-    """把字符串筛选值按字段类型转成 Python 值，便于 SQLAlchemy 比较。"""
+    """Convert a string filter value to a Python value by field type, for SQLAlchemy comparisons."""
     if field["type"] == "number":
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             return value
@@ -82,7 +82,7 @@ def _filter_clauses(
     catalog: dict[str, Any],
     filters: dict[str, Any] | None,
 ) -> list:
-    """把 {字段: 值|值列表} 转成 SQLAlchemy 条件；只允许 filterable 字段。"""
+    """Convert {field: value|list} into SQLAlchemy conditions; only filterable fields are allowed."""
     clauses = []
     for name, raw in (filters or {}).items():
         field = catalog_field(catalog, name)
@@ -128,7 +128,7 @@ def fetch_resource_page(
     page: int,
     page_size: int,
 ) -> tuple[list[dict], int]:
-    """白名单资源的筛选 + 排序 + 分页，返回 (items, total)。"""
+    """Filter + sort + paginate a whitelist resource; returns (items, total)."""
     catalog = catalog_entry(resource)
     table = Table(resource, MetaData(), autoload_with=engine)
     columns = [table.c[field["name"]] for field in catalog["fields"]]
@@ -158,7 +158,7 @@ def fetch_resource_rows(
     sort_dir: str | None,
     limit: int,
 ) -> list[dict]:
-    """不分页取前 limit 行，CSV 导出用。"""
+    """Return up to limit rows without pagination (for CSV export)."""
     catalog = catalog_entry(resource)
     table = Table(resource, MetaData(), autoload_with=engine)
     columns = [table.c[field["name"]] for field in catalog["fields"]]
@@ -183,7 +183,7 @@ def run_structured_query(
     conditions: list[dict[str, Any]],
     limit: int,
 ) -> dict[str, Any]:
-    """结构化查询：选字段 + eq/ne/gt/lt/contains 条件，返回 {columns, rows}。"""
+    """Structured query: select fields + eq/ne/gt/lt/contains conditions; returns {columns, rows}."""
     catalog = catalog_entry(resource)
     table = Table(resource, MetaData(), autoload_with=engine)
 
@@ -224,7 +224,7 @@ def run_structured_query(
 
 
 def run_sql_query(engine: Engine, sql: str) -> dict[str, Any]:
-    """只读 SQL：仅允许单条 SELECT，最多返回 MAX_SQL_ROWS 行。"""
+    """Read-only SQL: only a single SELECT is allowed, at most MAX_SQL_ROWS rows."""
     stripped = sql.strip().rstrip(";").strip()
     if not _SELECT_RE.match(stripped):
         raise HTTPException(status_code=403, detail="Only SELECT queries are allowed")
@@ -239,7 +239,7 @@ def run_sql_query(engine: Engine, sql: str) -> dict[str, Any]:
 
 
 def parse_filters(raw: str | None) -> dict[str, Any]:
-    """解析前端传来的 JSON 筛选串；非法 JSON 给 400。"""
+    """Parse the JSON filter string from the frontend; 400 for invalid JSON."""
     if not raw:
         return {}
     try:

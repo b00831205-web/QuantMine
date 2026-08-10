@@ -8,15 +8,15 @@ from ...errors import TRACE_ID_HEADER
 router = APIRouter()
 
 
-@router.get("/health", summary="健康检查")
+@router.get("/health", summary="Health check")
 async def health(request: Request) -> Response:
-    """健康检查端点。
+    """Health check endpoint.
 
-    显式返回带 `x-trace-id` header 的 JSON 响应；中间件会再覆盖一次以保证
-    一致性。
+    Explicitly returns a JSON response with an `x-trace-id` header; the middleware
+    overwrites it again for consistency.
 
-    这是浅层探针：只表示进程存活，不探测 DB 与 Airflow 连通性，因此它返回
-    ok 不代表依赖可用。
+    This is a shallow probe: it only means the process is alive, not that the DB or
+    Airflow are reachable; returning ok does not imply dependencies are available.
     """
     payload = {"status": "ok"}
     trace_id = getattr(request.state, "trace_id", None) or ""

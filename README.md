@@ -158,8 +158,14 @@ config.example.yaml   all pipeline parameters, documented defaults
 **Market data is not included** (Yahoo Finance terms of service do not permit
 redistribution). To reproduce:
 
-1. Historical S&P 500 membership: provide a CSV with `ticker`, `start_date`,
-   `end_date` columns and point `SP500_MEMBERSHIP_CSV` at it.
+1. Historical S&P 500 membership: seed the `index_membership` table once with
+   `.venv/bin/python scripts/import_index_membership.py`. It imports a CSV of `ticker`,
+   `start_date`, `end_date` (defaults to a local clone of
+   [fja05680/sp500](https://github.com/fja05680/sp500); override with
+   `SP500_MEMBERSHIP_CSV`), then reports how far that snapshot has drifted from
+   Wikipedia. Review the drift and re-run with `--apply` to close it;
+   `pipelines/task_0_universe.py` keeps the table current from then on. The CSV
+   remains a fallback for an unseeded database.
 2. Prices/volumes: `python pipelines/task_1.py --date <ds> --batch manual`
    downloads in batches with checkpointing, then `pipelines/task_2.py` cleans
    and merges.
@@ -173,6 +179,69 @@ redistribution). To reproduce:
 For the Airflow DAG, set `QUANT_PROJECT_ROOT` and `QUANT_PYTHON_BIN` (see
 `DAG_pipeline.py` docstring) and copy `airflow.cfg.example` keys into your own
 config — never commit a real `airflow.cfg`.
+
+## Runtime layout (WSL only)
+
+Everything runs inside WSL: Postgres, the webapi, Airflow, and the data
+pipeline. Two virtualenvs, both Linux:
+
+| venv | role | sync command |
+|---|---|---|
+| `.venv` | research library, Airflow, the `pipelines/` tasks | `uv sync --extra data --extra db --group dev --group pipeline` |
+| `webapi/.venv` | the FastAPI app | `cd webapi && uv sync --extra webapi` |
+
+Pass those flags every time. A bare `uv sync` prunes to the default set and
+silently drops `psycopg2` or `apache-airflow`, which then surfaces far from the
+cause — as `permission denied for table` or as an Airflow task dying with
+`python: command not found`.
+
+`QUANT_PYTHON_BIN` must point at `.venv/bin/python`. Unset it defaults to
+`python`, which does not exist in WSL at all (only `python3`), so every DAG task
+fails immediately.
+
+If the host routes traffic through a TUN-mode proxy, WSL will not inherit it and
+Yahoo/Wikipedia time out at the TLS handshake while DNS still resolves (to a
+`198.18.x.x` FakeIP). Point WSL at the client's HTTP port instead — `.env` here
+carries `https_proxy`/`http_proxy` plus `no_proxy=localhost,127.0.0.1,::1` so
+local Postgres is never proxied.
+
+## Running it as a service (WSL)
+
+`deploy/install-services.sh` installs four systemd **user** units — the webapi
+(which serves the built frontend too, so no vite or nginx is needed) plus the
+Airflow api-server, scheduler and dag-processor. `PUT /api/v1/services/{name}/autostart`
+toggles each one's boot autostart from the UI.
+
+```bash
+bash deploy/install-services.sh --dry-run   # render + verify, change nothing
+bash deploy/install-services.sh             # install, enable, start
+```
+
+WSL does not start with Windows, so also register the logon trigger that wakes
+it: `powershell -File deploy\register-startup-task.ps1`.
+
+**Why user units, and what it costs.** Toggling a *system* unit requires root,
+which would mean granting this network-facing API a passwordless sudo rule — a
+ready-made foothold if the webapi is ever compromised. User units are owned by
+the same account the API runs as, so no privilege escalation is involved at all.
+
+The price is that systemd's system and user instances are isolated: a user unit
+**cannot** declare `After=postgresql.service`. Written anyway, it resolves
+against a non-existent *user* unit and the ordering silently does nothing. So at
+boot these services may start before Postgres is accepting connections, fail,
+and be retried by `Restart=on-failure`. In practice that means a handful of
+connection errors in the log for the first 10–30 seconds after boot, after which
+everything settles. Nothing is lost or corrupted — Airflow simply retries.
+
+Two further deliberate limits: only autostart is exposed, never start/stop
+(`quantmine-api` is the process answering the request, so stopping it would kill
+the caller with no way back in); and the unit name from the URL is resolved
+against a fixed allowlist rather than passed to `systemctl`, since forwarding it
+would hand over control of every unit the account owns.
+
+Note that `auth_users` has no role column yet, so **any** logged-in user can
+change autostart. That is acceptable for single-user self-hosting; tighten these
+routes before adding a second user.
 
 ## Known limitations
 

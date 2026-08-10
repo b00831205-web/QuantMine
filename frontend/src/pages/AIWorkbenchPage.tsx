@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { HttpError } from '@/api/http';
 import { Paperclip } from 'lucide-react';
 import { uploadAIAttachment, attachmentFileUrl } from '@/api/client/ai';
@@ -9,7 +10,7 @@ import {
   createAIConversation,
   sendAIMessage,
   confirmAIAction,
-  deleteAIConversation
+  deleteAIConversation,
   // sendAIMessage,      // handleSend 里接入（见 TODO）
   // streamAIMessage,    // 流式回复（见 TODO / client/ai.ts）
   // confirmAIAction,    // 确认卡回传（见 TODO）
@@ -49,11 +50,8 @@ function useAsync<T>(loader: (signal: AbortSignal) => Promise<T>, deps: unknown[
 }
 
 /* ────────────────────────── 引用来源（可折叠） ────────────────────────── */
-const CitationList = ({
-  citations,
-}: {
-  citations: NonNullable<AIMessage['citations']>;
-}) => {
+const CitationList = ({ citations }: { citations: NonNullable<AIMessage['citations']> }) => {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
     <div style={{ marginTop: 'var(--sp-2)' }}>
@@ -69,7 +67,7 @@ const CitationList = ({
           fontSize: 12,
         }}
       >
-        {open ? '▾' : '▸'} 引用来源 ({citations.length})
+        {open ? '▾' : '▸'} {t('aiPanel.citations', { count: citations.length })}
       </button>
       {open && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
@@ -95,17 +93,13 @@ const CitationList = ({
 
 /* ────────────────────────── 工具调用摘要 ────────────────────────── */
 const TOOL_STATUS_LABEL: Record<string, string> = {
-  pending: '待执行',
-  confirmed: '已确认',
-  rejected: '已拒绝',
-  done: '完成',
+  pending: i18n.t('aiPanel.tool.pending'),
+  confirmed: i18n.t('aiPanel.tool.confirmed'),
+  rejected: i18n.t('aiPanel.tool.rejected'),
+  done: i18n.t('aiPanel.tool.done'),
 };
 
-const ToolCallList = ({
-  toolCalls,
-}: {
-  toolCalls: NonNullable<AIMessage['toolCalls']>;
-}) => (
+const ToolCallList = ({ toolCalls }: { toolCalls: NonNullable<AIMessage['toolCalls']> }) => (
   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 'var(--sp-2)' }}>
     {toolCalls.map((tc, i) => (
       <span
@@ -135,6 +129,7 @@ const ConfirmCard = ({
   request: AIConfirmRequest;
   onDecide: (approved: boolean) => void;
 }) => {
+  const { t } = useTranslation();
   const resolved = request.status !== 'pending';
   return (
     <div
@@ -154,15 +149,25 @@ const ConfirmCard = ({
       </div>
       {resolved ? (
         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          {request.status === 'confirmed' ? '✓ 已确认执行' : '✕ 已拒绝'}
+          {request.status === 'confirmed'
+            ? `✓ ${t('aiPanel.confirmed')}`
+            : `✕ ${t('aiPanel.rejected')}`}
         </div>
       ) : (
         <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
-          <button type="button" onClick={() => onDecide(true)} style={confirmBtn('var(--positive)')}>
-            确认
+          <button
+            type="button"
+            onClick={() => onDecide(true)}
+            style={confirmBtn('var(--positive)')}
+          >
+            {t('aiPanel.approve')}
           </button>
-          <button type="button" onClick={() => onDecide(false)} style={confirmBtn('var(--negative)')}>
-            拒绝
+          <button
+            type="button"
+            onClick={() => onDecide(false)}
+            style={confirmBtn('var(--negative)')}
+          >
+            {t('aiPanel.reject')}
           </button>
         </div>
       )}
@@ -240,6 +245,7 @@ const MessageBubble = ({
 
 /* ────────────────────────── 页面 ────────────────────────── */
 export const AIWorkbenchPage = () => {
+  const { t } = useTranslation();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState('');
   const [draft, setDraft] = useState('');
@@ -289,7 +295,7 @@ export const AIWorkbenchPage = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending]);
 
-    useEffect(() => {
+  useEffect(() => {
     sendControllerRef.current?.abort();
   }, [activeId]);
 
@@ -306,20 +312,19 @@ export const AIWorkbenchPage = () => {
     }
   };
 
-  const handleDeleteConversation = async (conversationId: string): Promise<void> =>{
-    if (!window.confirm('删除该对话后及所有信息无法恢复，确定删除？')) return;
+  const handleDeleteConversation = async (conversationId: string): Promise<void> => {
+    if (!window.confirm(t('aiPanel.deleteConfirm'))) return;
     try {
       await deleteAIConversation(conversationId);
-      if (activeId === conversationId){
+      if (activeId === conversationId) {
         setActiveId(null);
         setMessages([]);
       }
-      setConversationRefreshKey((k)=> k+1);
-    } catch{
+      setConversationRefreshKey((k) => k + 1);
+    } catch {
       //删除失败，保持现状，不打断用户
     }
   };
-  
 
   const ensureConversation = async (): Promise<string | null> => {
     if (activeId !== null) return activeId;
@@ -361,9 +366,7 @@ export const AIWorkbenchPage = () => {
         );
       } catch {
         setPendingAttachments((prev) =>
-          prev.map((a) =>
-            a.key === placeholder.key ? { ...a, status: 'failed' } : a,
-          ),
+          prev.map((a) => (a.key === placeholder.key ? { ...a, status: 'failed' } : a)),
         );
       }
     }
@@ -407,43 +410,43 @@ export const AIWorkbenchPage = () => {
 
     try {
       let conversationId = activeId;
-      if (conversationId === null){
+      if (conversationId === null) {
         const conv = await createAIConversation(controller.signal);
         conversationId = conv.conversationId;
         setActiveId(conversationId);
       }
-    
-    await sendAIMessage(
-      conversationId,
-      {
-        content: text,
-        modelId: selectedModel,
-        ...(pendingAttachments.some((a) => a.status === 'ready')
-          ? {
-              attachments: pendingAttachments
-                .filter((a) => a.status === 'ready')
-                .map((a) => ({ attachmentId: a.attachmentId })),
-            }
-          : {}),
-      },
-      controller.signal,
-    );
-    setPendingAttachments([]);
-    // 后端可能自动跑了多步白名单工具，刷新整段对话（隐藏原始工具结果）
-    const all = await fetchAIMessages(conversationId, controller.signal);
-    setMessages(all.filter((m) => m.role !== 'tool'));
-    // 首条消息：刷新会话列表（顺带让新建会话入列）；标题在后台生成，稍后再刷一次以显示
-    if (isFirstMessage) {
-      setConversationRefreshKey((k) => k + 1);
-      setTimeout(() => setConversationRefreshKey((k) => k + 1), 1500);
-    }
-  } catch {setMessages((prev)=>prev.filter((m)=> m.messageId !== userMsg.messageId));
 
-  }finally {
-    sendControllerRef.current = null;
-    setSending(false);
-  }
-    
+      await sendAIMessage(
+        conversationId,
+        {
+          content: text,
+          modelId: selectedModel,
+          ...(pendingAttachments.some((a) => a.status === 'ready')
+            ? {
+                attachments: pendingAttachments
+                  .filter((a) => a.status === 'ready')
+                  .map((a) => ({ attachmentId: a.attachmentId })),
+              }
+            : {}),
+        },
+        controller.signal,
+      );
+      setPendingAttachments([]);
+      // 后端可能自动跑了多步白名单工具，刷新整段对话（隐藏原始工具结果）
+      const all = await fetchAIMessages(conversationId, controller.signal);
+      setMessages(all.filter((m) => m.role !== 'tool'));
+      // 首条消息：刷新会话列表（顺带让新建会话入列）；标题在后台生成，稍后再刷一次以显示
+      if (isFirstMessage) {
+        setConversationRefreshKey((k) => k + 1);
+        setTimeout(() => setConversationRefreshKey((k) => k + 1), 1500);
+      }
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.messageId !== userMsg.messageId));
+    } finally {
+      sendControllerRef.current = null;
+      setSending(false);
+    }
+
     // TODO(USER_LEARNING): 接入 AI 回复
     //   1. 若 activeId 为 null，先 createConversation 拿到 id（后端接口，见 client/ai.ts 待补）
     //   2. 非流式：await sendAIMessage(id, { content: text, modelId: selectedModel })
@@ -453,34 +456,40 @@ export const AIWorkbenchPage = () => {
     //   4. 用 try/catch 处理错误；无论成败，finally 里 setSending(false)
     //   5. 记得携带 AbortController，切换对话时中断
     // 占位：接入真实调用后由 finally 负责
-    
   };
-  
 
   const handleDecideConfirm = async (messageId: string, approved: boolean) => {
     // 乐观更新确认卡状态
     setMessages((prev) =>
       prev.map((m) =>
         m.messageId === messageId && m.confirmRequest
-          ? { ...m, confirmRequest: { ...m.confirmRequest, status: approved ? 'confirmed' : 'rejected' } }
+          ? {
+              ...m,
+              confirmRequest: { ...m.confirmRequest, status: approved ? 'confirmed' : 'rejected' },
+            }
           : m,
       ),
     );
-    const msg = messages.find((m)=> m.messageId === messageId);
-    if(!msg?.confirmRequest || activeId === null) return;
+    const msg = messages.find((m) => m.messageId === messageId);
+    if (!msg?.confirmRequest || activeId === null) return;
 
     setSending(true); // 确认后执行工具 + 生成答复期间，同样算“思考中”，禁用输入框
     try {
       await confirmAIAction(activeId, {
         toolCallId: msg.confirmRequest.toolCallId,
         approved,
-      })
+      });
       // 确认后端可能继续自动跑白名单工具，刷新整段对话
       const all = await fetchAIMessages(activeId);
       setMessages(all.filter((m) => m.role !== 'tool'));
-    } catch{
-      setMessages((prev)=> prev.map((m)=> m.messageId === messageId && m.confirmRequest? {...m, confirmRequest: {...m.confirmRequest, status: 'pending'}}: m
-    ),);
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.messageId === messageId && m.confirmRequest
+            ? { ...m, confirmRequest: { ...m.confirmRequest, status: 'pending' } }
+            : m,
+        ),
+      );
     } finally {
       setSending(false);
     }
@@ -527,17 +536,23 @@ export const AIWorkbenchPage = () => {
                 fontWeight: 600,
               }}
             >
-              ＋ 新建对话
+              ＋ {t('aiPanel.createConversation')}
             </button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-2)' }}>
             {conversationsState.status === 'loading' && (
-              <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', padding: 'var(--sp-2)' }}>
-                加载中…
+              <div
+                style={{
+                  color: 'var(--text-muted)',
+                  fontSize: 'var(--fs-sm)',
+                  padding: 'var(--sp-2)',
+                }}
+              >
+                {t('common.loading')}
               </div>
             )}
             {conversationsState.status === 'success' &&
-                            conversationsState.data.map((c) => {
+              conversationsState.data.map((c) => {
                 const active = activeId === c.conversationId;
                 return (
                   <div
@@ -585,7 +600,7 @@ export const AIWorkbenchPage = () => {
                     </button>
                     <button
                       type="button"
-                      title="删除对话"
+                      title={t('aiPanel.deleteConversation')}
                       onClick={() => handleDeleteConversation(c.conversationId)}
                       style={{
                         background: 'transparent',
@@ -628,12 +643,15 @@ export const AIWorkbenchPage = () => {
             <span style={{ fontWeight: 600 }}>
               {activeId
                 ? conversationsState.status === 'success'
-                  ? conversationsState.data.find((c) => c.conversationId === activeId)?.title ?? '对话'
-                  : '对话'
-                : '新对话'}
+                  ? (conversationsState.data.find((c) => c.conversationId === activeId)?.title ??
+                    t('aiPanel.conversation'))
+                  : t('aiPanel.conversation')
+                : t('aiPanel.newConversation')}
             </span>
             <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
-              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>模型</span>
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                {t('topbar.model')}
+              </span>
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
@@ -669,15 +687,15 @@ export const AIWorkbenchPage = () => {
             }}
           >
             {activeId === null && messages.length === 0 ? (
-              <div style={emptyHint}>新建或从左侧选择一个对话开始</div>
+              <div style={emptyHint}>{t('aiPanel.selectConversationHint')}</div>
             ) : messagesState.status === 'loading' ? (
-              <div style={emptyHint}>加载消息…</div>
+              <div style={emptyHint}>{t('aiPanel.loadingMessages')}</div>
             ) : messagesState.status === 'error' ? (
               <div style={{ ...emptyHint, color: 'var(--negative)' }}>
                 {messagesState.error.title}
               </div>
             ) : messages.length === 0 ? (
-              <div style={emptyHint}>暂无消息，向 AI 提问开始</div>
+              <div style={emptyHint}>{t('aiPanel.emptyMessages')}</div>
             ) : (
               messages.map((m) => (
                 <MessageBubble key={m.messageId} msg={m} onDecideConfirm={handleDecideConfirm} />
@@ -695,7 +713,7 @@ export const AIWorkbenchPage = () => {
                     fontSize: 'var(--fs-sm)',
                   }}
                 >
-                  AI 正在思考…
+                  {t('aiPanel.thinking')}
                 </div>
               </div>
             )}
@@ -705,136 +723,136 @@ export const AIWorkbenchPage = () => {
           {/* 输入栏 */}
           {activeId !== null && (
             <>
-          {pendingAttachments.length > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 6,
-                padding: 'var(--sp-2) var(--sp-3)',
-                borderTop: '1px solid var(--border-subtle)',
-              }}
-            >
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                附件（{pendingAttachments.length}）
+              {pendingAttachments.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    padding: 'var(--sp-2) var(--sp-3)',
+                    borderTop: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    {t('aiPanel.attachments', { count: pendingAttachments.length })}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {pendingAttachments.map((a) => (
+                      <span
+                        key={a.key}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontSize: 11,
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '2px 8px',
+                          background: 'var(--bg-surface)',
+                        }}
+                      >
+                        {a.kind === 'image' ? '🖼' : '📎'} {a.filename}
+                        {a.status === 'uploading' && (
+                          <span style={{ color: 'var(--warning)' }}>{t('aiPanel.uploading')}</span>
+                        )}
+                        {a.status === 'ready' && (
+                          <span style={{ color: 'var(--positive)' }}>✓</span>
+                        )}
+                        {a.status === 'failed' && (
+                          <span style={{ color: 'var(--negative)' }}>✗</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPendingAttachments((prev) => prev.filter((x) => x.key !== a.key))
+                          }
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-muted)',
+                            cursor: 'pointer',
+                            padding: 0,
+                            fontSize: 12,
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 'var(--sp-2)',
+                  padding: 'var(--sp-3)',
+                  borderTop: '1px solid var(--border-subtle)',
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleFilesSelected(Array.from(e.target.files ?? []))}
+                />
+                <button
+                  type="button"
+                  title={t('aiPanel.uploadAttachment')}
+                  disabled={sending || uploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{
+                    padding: 'var(--sp-2)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'transparent',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    opacity: uploading ? 0.5 : 1,
+                  }}
+                >
+                  <Paperclip size={14} />
+                </button>
+                <input
+                  style={{
+                    flex: 1,
+                    padding: 'var(--sp-2) var(--sp-3)',
+                    background: 'var(--bg-surface-2)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    color: 'var(--text-primary)',
+                    opacity: sending ? 0.5 : 1,
+                  }}
+                  disabled={sending}
+                  placeholder={
+                    sending ? t('aiPanel.placeholderThinking') : t('aiPanel.placeholderEnter')
+                  }
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSend();
+                  }}
+                  onPaste={handlePaste}
+                />
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={draft.trim() === '' || sending}
+                  style={{
+                    padding: 'var(--sp-2) var(--sp-4)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: 'none',
+                    background: 'var(--accent)',
+                    color: '#fff',
+                    cursor: draft.trim() === '' || sending ? 'not-allowed' : 'pointer',
+                    opacity: draft.trim() === '' || sending ? 0.5 : 1,
+                  }}
+                >
+                  {t('aiPanel.send')}
+                </button>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {pendingAttachments.map((a) => (
-                  <span
-                    key={a.key}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      fontSize: 11,
-                      color: 'var(--text-secondary)',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-sm)',
-                      padding: '2px 8px',
-                      background: 'var(--bg-surface)',
-                    }}
-                  >
-                    {a.kind === 'image' ? '🖼' : '📎'} {a.filename}
-                    {a.status === 'uploading' && (
-                      <span style={{ color: 'var(--warning)' }}>上传中…</span>
-                    )}
-                    {a.status === 'ready' && (
-                      <span style={{ color: 'var(--positive)' }}>✓</span>
-                    )}
-                    {a.status === 'failed' && (
-                      <span style={{ color: 'var(--negative)' }}>✗</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPendingAttachments((prev) =>
-                          prev.filter((x) => x.key !== a.key),
-                        )
-                      }
-                      style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        padding: 0,
-                        fontSize: 12,
-                      }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          <div
-            style={{
-              display: 'flex',
-              gap: 'var(--sp-2)',
-              padding: 'var(--sp-3)',
-              borderTop: '1px solid var(--border-subtle)',
-            }}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              style={{ display: 'none' }}
-              onChange={(e) => handleFilesSelected(Array.from(e.target.files ?? []))}
-            />
-            <button
-              type="button"
-              title="上传附件"
-              disabled={sending || uploading}
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                padding: 'var(--sp-2)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-subtle)',
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                opacity: uploading ? 0.5 : 1,
-              }}
-            >
-              <Paperclip size={14} />
-            </button>
-            <input
-              style={{
-                flex: 1,
-                padding: 'var(--sp-2) var(--sp-3)',
-                background: 'var(--bg-surface-2)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--text-primary)',
-                opacity: sending ? 0.5 : 1,
-              }}
-              disabled={sending}
-              placeholder={sending ? 'AI 思考中，请稍候…' : '向 AI 提问…（Enter 发送）'}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleSend();
-              }}
-              onPaste={handlePaste}
-            />
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={draft.trim() === '' || sending}
-              style={{
-                padding: 'var(--sp-2) var(--sp-4)',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
-                background: 'var(--accent)',
-                color: '#fff',
-                cursor: draft.trim() === '' || sending ? 'not-allowed' : 'pointer',
-                opacity: draft.trim() === '' || sending ? 0.5 : 1,
-              }}
-            >
-              发送
-            </button>
-          </div>
             </>
           )}
         </section>

@@ -197,6 +197,41 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
         print(f"Batch {batch_index} failed, logging to {failed_log}")
         return None 
 
+def split_price_frames(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split one download into adjusted close, unadjusted close, and volume.
+
+    Requesting ``auto_adjust=False`` returns both price series in a single
+    response -- ``Adj Close`` is bit-for-bit what ``auto_adjust=True`` would
+    have put in ``Close``, and ``Volume`` is identical either way. So the market
+    -cap leg no longer needs its own price download; one request now feeds both
+    the return series and the size series.
+
+    Deriving one series from the other instead is possible in principle
+    (``adjusted = raw * factor``) but not cheaper: recovering the factor needs
+    the dividend and split history, which is another request.
+
+    Args:
+        data: A yfinance frame with MultiIndex columns.
+
+    Returns:
+        ``(adjusted_close, unadjusted_close, volume)``.
+
+    Notes:
+        Handles both layouts on purpose. Checkpoints written before this change
+        were fetched with ``auto_adjust=True`` and have no ``Adj Close``; there
+        the ``Close`` column already *is* adjusted. Without this discriminator a
+        resumed run would silently mix adjusted and unadjusted closes into one
+        series -- which no downstream check would catch, because both are
+        plausible prices.
+    """
+    volume = data["Volume"]
+    if "Adj Close" in data.columns.get_level_values(0):
+        return data["Adj Close"], data["Close"], volume
+    # Legacy checkpoint: Close is already adjusted, and the unadjusted series
+    # was never stored.
+    return data["Close"], None, volume
+
+
 def data_acquisition(
     tickers: list,
     start_date: str,
@@ -210,6 +245,8 @@ def data_acquisition(
     auto_adjust: bool = True,
     file_prefix: str = 'batch',
     with_market_cap: bool = True,
+    shares_wait: float = 0.5,
+    shares_cache_days: int = 30,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Download historical price, volume, and market-cap data in batches.
 
@@ -255,19 +292,25 @@ def data_acquisition(
     os.makedirs(task_checkpoint_dir,exist_ok=True)
       
     all_close = []
+    all_raw_close = []
     all_volume = []
     for i in range(0, len(tickers), batch_size):
         batch = tickers[i: i+batch_size]
         batch_index= i//batch_size+1
         print(f"downloading batch{batch_index} ... \ntickers {i} - {min(len(tickers), (i+batch_size))}")
-        data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir)
+        # auto_adjust=False: 一次请求同时拿到复权(Adj Close)与未复权(Close),
+        # 市值腿因此不必再下载一遍价格。Volume 两种模式完全一致, 语义不变。
+        data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir, auto_adjust=False)
         if data is not None:
             if isinstance(data.columns, pd.MultiIndex):
-                all_close.append(data['Close'])
-                all_volume.append(data['Volume'])
+                adjusted, raw, vol = split_price_frames(data)
+                all_close.append(adjusted)
+                all_volume.append(vol)
+                if raw is not None:
+                    all_raw_close.append(raw)
         if batch_wait > 0:
             time.sleep(batch_wait)
-    
+
     if not all_close:
         raise RuntimeError(
             "No market-data batch succeeded; inspect "
@@ -278,6 +321,9 @@ def data_acquisition(
     # 价格-only 消费者(如 datareader)传 with_market_cap=False, 跳过逐票 get_shares_full 网络开销
     if not with_market_cap:
         return close, volume, pd.DataFrame(), pd.DataFrame()
+    # 未复权价直接复用上面那次下载; 只有全部批次都来自旧格式 checkpoint 时才为 None,
+    # 那种情况下 acquire_market_cap 会自己补下载一次。
+    raw_close = pd.concat(all_raw_close, axis=1) if all_raw_close else None
     shares, market_cap = acquire_market_cap(
         tickers=tickers,
         start_date=start_date,
@@ -288,6 +334,9 @@ def data_acquisition(
         checkpoint_dir=checkpoint_dir,
         batch_wait=batch_wait,
         shares_start_date=shares_start_date,
+        shares_wait=shares_wait,
+        shares_cache_days=shares_cache_days,
+        price=raw_close,
     )
     return close, volume, shares, market_cap
 
@@ -359,8 +408,11 @@ def retry_batches(start_date: str, end_date: str, max_retries: int, checkpoint_d
         success = False
         for attempt in range(max_retries):
             try:
+                # auto_adjust=False 与主下载路径保持一致, 否则重试补回来的批次
+                # 会把未复权价当成复权价混进同一张表, 而两者都是合理价格,
+                # 下游没有任何检查能发现。
                 data = yf.download(batch, start=start_date, end=end_date,
-                                auto_adjust=True, progress=False,
+                                auto_adjust=False, progress=False,
                                 threads=False, timeout=30)
                 if data.empty:
                     raise ValueError("Empty data returned")
@@ -372,8 +424,9 @@ def retry_batches(start_date: str, end_date: str, max_retries: int, checkpoint_d
                 })
                 data.to_parquet(checkpoint_path)
                 if isinstance(data.columns, pd.MultiIndex):
-                    success_close.append(data['Close'])
-                    success_volume.append(data['Volume'])
+                    adjusted, _, vol = split_price_frames(data)
+                    success_close.append(adjusted)
+                    success_volume.append(vol)
                 print(f"{batch} succeeded!")
                 success = True
                 break
@@ -433,8 +486,11 @@ def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint", file_prefix: str =
     for f in files:
         data = pd.read_parquet(f)
         if isinstance(data.columns, pd.MultiIndex):
-            all_close.append(data["Close"])
-            all_volume.append(data["Volume"])
+            # 同一目录里可能新旧格式并存(改用 auto_adjust=False 之前写的 checkpoint
+            # 没有 Adj Close 列)。逐文件判别, 才不会把两种价格混成一列。
+            adjusted, _, vol = split_price_frames(data)
+            all_close.append(adjusted)
+            all_volume.append(vol)
     
     if not all_close:
         return pd.DataFrame(), pd.DataFrame()
@@ -446,7 +502,9 @@ def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint", file_prefix: str =
 def acquire_market_cap(
         tickers: list, start_date: str, end_date: str, batch_size,
         max_retries: int=3, wait: int=60, checkpoint_dir: str = 'tmp/checkpoint',
-        batch_wait = 1.0, shares_start_date: str| None = None
+        batch_wait = 1.0, shares_start_date: str| None = None,
+        shares_wait: float = 0.5, shares_cache_days: int = 30,
+        shares_failure_budget: int = 15, price: pd.DataFrame | None = None,
 )-> tuple[pd.DataFrame, pd.DataFrame]:
     """Download share counts and derive market capitalization.
 
@@ -466,6 +524,17 @@ def acquire_market_cap(
         batch_wait: Seconds to sleep between price batches.
         shares_start_date: Start date for the share history. Defaults to
             ``start_date``.
+        shares_wait: Seconds between individual share requests. There is no
+            batch endpoint for share counts, so this leg makes one request per
+            ticker and is the first thing Yahoo throttles.
+        shares_cache_days: Age at which a cached share series is refetched.
+        shares_failure_budget: Consecutive share failures tolerated before the
+            share leg gives up for this run.
+        price: Unadjusted closes already downloaded by the caller. Supplying
+            them removes this function's own price download entirely -- the
+            caller's single ``auto_adjust=False`` request already carried both
+            price series. Left None only when every batch came from a
+            pre-existing legacy checkpoint, which has no unadjusted column.
 
     Returns:
         A tuple of ``(shares, market_cap)`` as wide date-by-ticker frames,
@@ -473,11 +542,16 @@ def acquire_market_cap(
         fetched stay NaN and therefore drop out of any weighting downstream.
 
     Notes:
-        Prices download in batches, but share counts have no batch endpoint and
-        are fetched one ticker at a time, each with its own checkpoint file.
-        ``get_shares_full`` is called without ``end``: passing it makes the
-        request fail outright, and the trailing surplus is trimmed by the
-        reindex onto the price index anyway.
+        Share counts are cached per ticker under ``<checkpoint_dir>/shares``,
+        outside the per-task signature directory, and stored unaligned. Both
+        details matter: the signature encodes the date window, so a cache under
+        it missed on every run, and storing the series already reindexed onto a
+        price index is what forced it under there in the first place.
+
+        Once enough consecutive requests fail the leg stops rather than working
+        through the remaining hundreds. Past that point the failures are almost
+        certainly rate limiting, and continuing both deepens it and returns
+        nothing.
     """
     tickers = sorted(set(tickers) - load_blacklist(checkpoint_dir))
     task_sig = hashlib.md5(
@@ -485,54 +559,133 @@ def acquire_market_cap(
     task_dir = os.path.join(checkpoint_dir, task_sig, 'mcap')
     os.makedirs(task_dir, exist_ok=True)
 
-    px_batches = []
-    for i in range(0, len(tickers), batch_size):
-        data = download_batch_with_retry(
-            batch =tickers[i: i+batch_size],
-            start_date= start_date,
-            end_date= end_date,
-            batch_index= i//batch_size+1,
-            task_checkpoint_dir=task_dir,
-            max_retries = max_retries,
-            wait = wait,
-            auto_adjust=False,
-            file_prefix='mcap_px'
-        )
-        if data is not None and isinstance(data.columns, pd.MultiIndex):
-            px_batches.append(data['Close'])
-        time.sleep(batch_wait)
-    price = pd.concat(px_batches, axis=1)
-    price.index = price.index.tz_localize(None)
+    if price is None:
+        # 只有全部批次都命中旧格式 checkpoint(auto_adjust=True, 无 Adj Close)时才走到
+        # 这里。新流程下调用方那一次 auto_adjust=False 已经带回未复权价。
+        px_batches = []
+        for i in range(0, len(tickers), batch_size):
+            data = download_batch_with_retry(
+                batch =tickers[i: i+batch_size],
+                start_date= start_date,
+                end_date= end_date,
+                batch_index= i//batch_size+1,
+                task_checkpoint_dir=task_dir,
+                max_retries = max_retries,
+                wait = wait,
+                auto_adjust=False,
+                file_prefix='mcap_px'
+            )
+            if data is not None and isinstance(data.columns, pd.MultiIndex):
+                px_batches.append(data['Close'])
+            time.sleep(batch_wait)
+        if not px_batches:
+            return pd.DataFrame(), pd.DataFrame()
+        price = pd.concat(px_batches, axis=1)
+    else:
+        price = price.copy()
+    if getattr(price.index, "tz", None) is not None:
+        price.index = price.index.tz_localize(None)
 
     shares = {}
+    consecutive_failures = 0
     for t in price.columns:
-        # 单票 checkpoint: 股本端点易被 Yahoo 限流, 缓存避免重跑裸打 + 加剧限流
-        cp = os.path.join(task_dir, f'shares_{t}.parquet')
-        if os.path.exists(cp):
-            shares[t] = pd.read_parquet(cp)['shares']
-            continue
-        # 和价格一致的重试: 一次性裸调遇到抖动会让整列归零
-        s = None
-        for attempt in range(max_retries):
-            try:
-                # 不传 end: yfinance 该端点带 end 常直接失败; 末端多抓无害, 后面 reindex 会裁到价格窗口
-                s = yf.Ticker(t).get_shares_full(start=shares_start_date or start_date)
-                if s is not None and not s.empty:
-                    break
-            except Exception as e:
-                print(f'{t} shares attempt {attempt+1} failed: {e}')
-            if attempt < max_retries - 1:
-                time.sleep(wait)
-        # 抓不到就留 NaN, 不用当前股本铺满历史(会系统性污染历史市值加权)
-        if s is None or s.empty:
-            print(f'{t} shares unavailable, leave NaN')
-            continue
-        s = s[~s.index.duplicated(keep='last')]
-        if s.index.tz is not None:
-            s.index = s.index.tz_localize(None)
-        aligned = s.reindex(price.index, method='ffill')
-        aligned.to_frame('shares').to_parquet(cp)
-        shares[t] = aligned
+        raw = load_shares_cache(checkpoint_dir, t, max_age_days=shares_cache_days)
+        if raw is None:
+            if consecutive_failures >= shares_failure_budget:
+                # 连续失败到这个程度基本就是限流了。继续把剩下几百票挨个裸打
+                # 只会加深限流且全都拿不到, 不如整条腿停在这里, 留 NaN 等下次跑。
+                print(f'{consecutive_failures} consecutive share failures; '
+                      'assuming rate limit, skipping the rest this run')
+                break
+            raw = _download_shares(
+                t, shares_start_date or start_date, max_retries, wait
+            )
+            # 股本端点比价格端点更容易触发限流, 每票之间强制间隔
+            time.sleep(shares_wait)
+            if raw is None:
+                consecutive_failures += 1
+                continue
+            consecutive_failures = 0
+            save_shares_cache(checkpoint_dir, t, raw)
+        # 对齐放在读取之后, 所以缓存本身与日期窗口无关, 可以跨运行复用
+        shares[t] = raw.reindex(price.index, method='ffill')
     shares = pd.DataFrame(shares).reindex(columns = price.columns)
     market_cap = price* shares
     return shares, market_cap
+
+
+def shares_cache_dir(checkpoint_dir: str) -> str:
+    """Directory holding the per-ticker share-count cache.
+
+    Deliberately outside the per-task signature directory. Share counts belong
+    to a ticker, not to a download window, and the signature encodes
+    ``(tickers, start_date, end_date)`` -- so keeping the cache under it meant a
+    100% miss rate on every run whose window differed by even a day. The intent
+    was always to cache (the endpoint is the first thing Yahoo rate-limits);
+    only the key was wrong.
+    """
+    return os.path.join(checkpoint_dir, 'shares')
+
+
+def load_shares_cache(
+    checkpoint_dir: str, ticker: str, *, max_age_days: int
+) -> pd.Series | None:
+    """Return the cached raw share series, or None if absent or stale.
+
+    Args:
+        checkpoint_dir: Root checkpoint directory.
+        ticker: Ticker to look up.
+        max_age_days: Refresh anything older. Share counts move on buybacks and
+            issuance -- roughly quarterly -- so an unbounded cache would freeze
+            market caps at whatever they were the first time this ran.
+
+    Returns:
+        The raw (unaligned) series, or None.
+    """
+    path = os.path.join(shares_cache_dir(checkpoint_dir), f'{ticker}.parquet')
+    if not os.path.exists(path):
+        return None
+    age_days = (time.time() - os.path.getmtime(path)) / 86400
+    if age_days > max_age_days:
+        return None
+    try:
+        return pd.read_parquet(path)['shares']
+    except Exception:  # noqa: BLE001 - a corrupt cache entry must not stop the run
+        return None
+
+
+def save_shares_cache(checkpoint_dir: str, ticker: str, series: pd.Series) -> None:
+    """Persist the raw share series for reuse across runs and date windows."""
+    directory = shares_cache_dir(checkpoint_dir)
+    os.makedirs(directory, exist_ok=True)
+    series.to_frame('shares').to_parquet(
+        os.path.join(directory, f'{ticker}.parquet')
+    )
+
+
+def _download_shares(
+    ticker: str, start: str, max_retries: int, wait: int
+) -> pd.Series | None:
+    """Fetch one ticker's share history, returning None when unavailable.
+
+    Notes:
+        ``get_shares_full`` is called without ``end``: passing it makes the
+        request fail outright, and the surplus is trimmed by the caller's
+        reindex anyway. Failure leaves NaN rather than back-filling today's
+        share count over history, which would systematically corrupt
+        market-cap weighting in the past.
+    """
+    for attempt in range(max_retries):
+        try:
+            series = yf.Ticker(ticker).get_shares_full(start=start)
+            if series is not None and not series.empty:
+                series = series[~series.index.duplicated(keep='last')]
+                if series.index.tz is not None:
+                    series.index = series.index.tz_localize(None)
+                return series
+        except Exception as exc:  # noqa: BLE001
+            print(f'{ticker} shares attempt {attempt+1} failed: {exc}')
+        if attempt < max_retries - 1:
+            time.sleep(wait)
+    print(f'{ticker} shares unavailable, leave NaN')
+    return None

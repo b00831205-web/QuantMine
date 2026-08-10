@@ -1,4 +1,4 @@
-"""Data explorer endpoints：白名单浏览、CSV 导出、结构化查询、只读 SQL。"""
+"""Data explorer endpoints: whitelist browsing, CSV export, structured queries, read-only SQL."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ router = APIRouter()
 
 @router.get("/data/catalog")
 def get_data_catalog():
-    """白名单资源与字段说明（前端动态列/筛选框的数据源）。"""
+    """Whitelist resources and field descriptions (data source for dynamic columns/filters)."""
     return DATA_CATALOG
 
 
@@ -58,7 +58,7 @@ def get_resource_page(
     page_size: int = Query(default=20, ge=1, le=200, alias="pageSize"),
     engine: Engine = Depends(get_request_engine),
 ):
-    """白名单资源数据：筛选（JSON）、排序、分页。"""
+    """Whitelist resource data: filters (JSON), sorting, pagination."""
     items, total = fetch_resource_page(
         engine,
         resource=resource,
@@ -79,7 +79,7 @@ def export_resource_csv(
     sort_dir: Literal["asc", "desc"] | None = Query(default=None, alias="sortDir"),
     engine: Engine = Depends(get_request_engine),
 ):
-    """按当前筛选条件导出 CSV（最多前 MAX_EXPORT_ROWS 行）。"""
+    """Export CSV for the current filters (at most MAX_EXPORT_ROWS rows)."""
     catalog = next((entry for entry in DATA_CATALOG if entry["resource"] == resource), None)
     if catalog is None:
         raise HTTPException(status_code=404, detail=f"Unknown data resource: {resource}")
@@ -112,7 +112,7 @@ def post_structured_query(
     body: StructuredQueryBody,
     engine: Engine = Depends(get_request_engine),
 ):
-    """结构化查询：字段 + 条件，返回 {columns, rows}。"""
+    """Structured query: fields + conditions, returns {columns, rows}."""
     return run_structured_query(
         engine,
         resource=body.resource,
@@ -127,5 +127,5 @@ def post_sql_query(
     body: SqlQueryBody,
     engine: Engine = Depends(get_request_engine),
 ):
-    """只读 SQL 查询（仅 SELECT，最多 MAX_SQL_ROWS 行）。"""
+    """Read-only SQL query (SELECT only, at most MAX_SQL_ROWS rows)."""
     return run_sql_query(engine, body.sql)

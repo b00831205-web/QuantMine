@@ -1,7 +1,7 @@
-"""API 路由聚合（唯一来源）。
+"""API route aggregation (single source of truth).
 
-新增业务域时：在 `app/api/v1/<domain>/` 下新增模块并暴露 `router`，
-然后在这里 `include_router` 即可。
+When adding a domain: create `app/api/v1/<domain>/` with a `router` exposed,
+then `include_router` it here.
 """
 
 from __future__ import annotations
@@ -22,14 +22,15 @@ from .v1.data.router import router as data_router
 from .v1.reports.router import router as reports_router
 from .v1.research.report_xlsx import router as report_xlsx_router
 from .v1.ai.router import router as ai_router
+from .v1.services.router import router as services_router
 
 api_router = APIRouter()
 
-# 开放端点：健康检查 + 登录鉴权本身（否则没登录就永远登不进来）
+# Open endpoints: health check + auth itself (otherwise users could never log in)
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(auth_router, tags=["auth"])
 
-# 受保护端点：统一挂 require_user 依赖，未登录/会话过期一律 401
+# Protected endpoints: all share the require_user dependency; unauthenticated/expired -> 401
 protected = APIRouter(dependencies=[Depends(require_user)])
 protected.include_router(market_series_router, tags=["market"])
 protected.include_router(research_results_router, tags=["research"])
@@ -42,4 +43,7 @@ protected.include_router(data_router, tags=['data'])
 protected.include_router(reports_router, tags=["reports"])
 protected.include_router(report_xlsx_router, tags=["research"])
 protected.include_router(ai_router, tags=["ai"])
+# 注意：目前 auth_users 没有角色列，protected 里所有路由权限相同 —— 任何登录用户
+# 都能改开机自启。单用户自托管下可接受；将来加多用户时这组路由应先收紧。
+protected.include_router(services_router, tags=["services"])
 api_router.include_router(protected)

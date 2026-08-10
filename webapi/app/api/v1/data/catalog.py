@@ -1,4 +1,4 @@
-"""数据速查白名单目录：只暴露这些资源/字段，其余一律拒绝。"""
+"""Data explorer whitelist catalog: only these resources/fields are exposed; everything else is rejected."""
 
 DATA_CATALOG = [
     {

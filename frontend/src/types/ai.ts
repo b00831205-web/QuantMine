@@ -90,3 +90,20 @@ export interface AIEmbeddingConfig{
   dimensions: number;
   configured?: boolean;
 }
+
+export interface AISkill {
+  name: string;
+  displayName: string;
+  description: string;
+  enabled: boolean;
+}
+
+export interface AIConfig {
+  providers: AIProviderConfig[];
+  defaultModel: string;
+  systemPrompt: string;
+  temperature: number;
+  capabilities: AICapabilities;
+  embeddingConfig: AIEmbeddingConfig;
+  skills: AISkill[];
+}

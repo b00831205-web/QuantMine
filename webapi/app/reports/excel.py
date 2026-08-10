@@ -1,4 +1,4 @@
-"""Excel 报告导出：把报告上下文中的原始表格写成 .xlsx。"""
+"""Excel report export: write raw tables from the report context into .xlsx."""
 
 from __future__ import annotations
 

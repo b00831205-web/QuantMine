@@ -53,3 +53,85 @@
   color: var(--text-muted);
   padding: var(--sp-2) var(--sp-4);
 }
+
+/* —— 开机自启开关 —— */
+.autostartBlock {
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.autostartHeading {
+  padding: 0 16px 4px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.autostartError {
+  margin: 4px 0 0;
+  padding: 0 16px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--negative);
+}
+
+.autostartRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 6px 16px;
+}
+
+.autostartLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.autoSwitch {
+  width: 30px;
+  height: 16px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-2);
+  position: relative;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.15s ease-out;
+}
+
+.autoThumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--control-knob);
+  transition: left 0.15s ease-out;
+}
+
+.autoSwitchOn {
+  background: var(--positive);
+}
+
+.autoSwitchOn .autoThumb {
+  left: 15px;
+}
+
+.autoSwitch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.autoSwitch:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.autostartMissing {
+  font-size: 10px;
+  color: var(--text-muted);
+}

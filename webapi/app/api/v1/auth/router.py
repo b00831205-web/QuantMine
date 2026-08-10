@@ -1,4 +1,4 @@
-"""登录鉴权端点：login / logout / me。
+"""Auth endpoints: login / logout / me.
 
 这些端点**不**挂全局 require_user 网关（否则没登录就永远登不进来）；
 其中 /auth/me 自身声明 require_user，用来做前端路由守卫的探针。
@@ -41,7 +41,7 @@ def login(
     user = get_user_by_username(engine, body.username)
     # 统一 401，不区分“用户不存在”和“密码错误”，避免用户名枚举
     if user is None or not user["isActive"] or not verify_password(body.password, user["passwordHash"]):
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_session_token(user["id"], user["username"])
     set_session_cookie(response, token)
     touch_last_login(engine, user["id"])

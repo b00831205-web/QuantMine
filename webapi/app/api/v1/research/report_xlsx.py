@@ -1,4 +1,4 @@
-"""Excel 报告导出端点。"""
+"""Excel report export endpoint."""
 
 from __future__ import annotations
 

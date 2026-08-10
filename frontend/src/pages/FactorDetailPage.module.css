@@ -1,284 +1,494 @@
 .page {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
 }
 
-.selectedPeriod {
+/* —— 返回链 —— */
+.backBtn {
   display: inline-flex;
   align-items: center;
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
-  padding: var(--sp-1) var(--sp-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface-2);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.backBtn {
-  background: transparent;
+  gap: 6px;
   border: none;
-  color: var(--text-muted);
-  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
   font-size: var(--fs-sm);
-  padding: 0;
-  text-align: left;
-  width: fit-content;
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  margin: calc(-1 * var(--sp-1)) 0 0 calc(-1 * var(--sp-2));
+  border-radius: var(--radius-sm);
 }
 
 .backBtn:hover {
-  color: var(--accent);
+  color: var(--text-primary);
+  background: var(--bg-surface-2);
 }
 
-/* ─── 4 个 selector 网格 ───────────────────── */
-.selectorGrid {
+.backBtn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.headerWrap {
+  margin-top: 10px;
+  margin-bottom: calc(var(--sp-3) - var(--sp-5));
+}
+
+.periodMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-top: 6px;
+}
+
+.periodDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* —— 上下文工具条 —— */
+.toolbar {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(4, 1fr) auto;
   gap: var(--sp-3);
+  align-items: end;
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
 }
 
-.field {
+.filter {
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
+  min-width: 0;
 }
 
-.fieldLabel {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+.filterLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 
-.selector {
+.filterSelect {
+  width: 100%;
+  height: 28px;
   background: var(--bg-surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
-  padding: var(--sp-1) var(--sp-2);
-  width: 100%;
-  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+  padding: 0 var(--sp-2);
+  outline: none;
 }
 
-.selector:focus {
-  outline: 1px solid var(--accent);
+.filterSelect:focus {
   border-color: var(--accent);
 }
 
-.selector:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ─── Period tabs ────────────────────────── */
-.tabRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
+.ctxSummary {
+  display: inline-flex;
   align-items: center;
+  align-self: end;
+  padding-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.tab,
-.tabActive {
-  padding: var(--sp-1) var(--sp-3);
+/* —— 面板 —— */
+.panel {
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  background: var(--bg-surface-2);
-  color: var(--text-secondary);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4) var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-1) 0 var(--sp-3);
+}
+
+.panelHead h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.panelMeta {
+  font-family: var(--font-mono);
   font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 持有期分段控件 —— */
+.periodTabs {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.periodTab,
+.periodTabActive {
+  height: 24px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
   cursor: pointer;
 }
 
-.tab:hover {
-  background: var(--bg-surface);
+.periodTab:hover {
   color: var(--text-primary);
 }
 
-.tabActive {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
+.periodTabActive {
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-.tabHint {
-  margin-left: var(--sp-2);
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+.periodTab:focus-visible,
+.periodTabActive:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
-/* ─── 图表区 ─────────────────────────────── */
+/* —— IC 图表 —— */
 .chartWrap {
-  min-height: 240px;
+  min-height: 280px;
 }
 
-.chartPlaceholder {
-  background: var(--bg-surface-2);
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-sm);
-  min-height: 200px;
-  text-align: center;
-  padding: var(--sp-4);
-}
-
-/* ─── 因子统计 ───────────────────────────── */
-.statsLoading,
-.statsEmpty {
-  padding: var(--sp-6);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-
-/* ─── 回测 ─────────────────────────────── */
-.btEmpty {
-  padding: var(--sp-6);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-sm);
-}
-
-.btGrid {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-
-.btMetricsRow {
+/* —— 选中周期统计账本 —— */
+.ledger {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(6, 1fr);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-top: var(--sp-3);
+}
+
+.cell {
+  padding: 10px 14px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.cell:first-child {
+  border-left: none;
+}
+
+.cellLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-1);
+  display: block;
+}
+
+.cellValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cellSigOn .sigDot {
+  background: var(--accent);
+}
+
+.sigDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  display: inline-block;
+}
+
+/* —— 统计表单元格 —— */
+.numCell {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.decision {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.textCell {
+  color: var(--text-secondary);
+}
+
+.sig {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+
+.sigOn {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sigOn .sigDot {
+  background: var(--accent);
+}
+
+.sigOff {
+  color: var(--text-muted);
+}
+
+/* —— 回测架 —— */
+.btGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--sp-3);
+  align-items: start;
+  grid-auto-flow: row dense;
 }
 
 .btCard {
-  background: var(--bg-surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  padding: var(--sp-3) var(--sp-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
+  padding: 14px 16px;
+  background: var(--bg-surface);
 }
 
-.btCardHeader {
+.btCardExpanded {
+  border-color: var(--border-strong);
+}
+
+.btCardHead {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  gap: var(--sp-2);
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .btFactor {
-  font-size: var(--fs-sm);
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text-primary);
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 .btJob {
-  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-muted);
 }
 
-/* 6 列年化收益（Long-Short + Q1..Q5） */
-.btQuantileRow {
+.btQuantiles {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: var(--sp-2);
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--sp-2);
+  grid-template-columns: repeat(6, 1fr);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--sp-3);
 }
 
 .btQuantile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
+  padding: var(--sp-2) 10px;
+  border-left: 1px solid var(--border-subtle);
 }
 
-.btQuantLabel {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+.btQuantile:first-child {
+  border-left: none;
+}
+
+.btQl {
+  font-size: 10px;
   text-transform: uppercase;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.btQuantVal {
-  font-size: var(--fs-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-/* 4 列统计（Sharpe / 最大回撤 / 胜率 / 持有期） */
-.btStatRow {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--sp-2);
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--sp-2);
-}
-
-.btStat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.btStatLabel {
-  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
   color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.btStatValue {
-  font-size: var(--fs-sm);
+.btQv {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
-  white-space: nowrap;
+  margin-top: 2px;
+  display: block;
 }
 
-.btCurveButton {
-  background: var(--bg-surface);
+.btStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.btSl {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.btSv {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: block;
+}
+
+.curveBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  margin-top: var(--sp-3);
+  background: var(--bg-surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  cursor: pointer;
   font-size: var(--fs-sm);
-  padding: var(--sp-1) var(--sp-3);
-  align-self: flex-start;
+  cursor: pointer;
 }
 
-.btCurveButton:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+.curveBtn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
 }
 
-.btChartArea {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--sp-3);
+.curveBtn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
-.expandSubLabel {
-  font-size: var(--fs-xs);
+.chevron {
+  display: inline-flex;
+  transition: transform 0.15s ease-out;
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+}
+
+.curveBtnOpen .chevron {
+  transform: rotate(180deg);
+}
+
+.curvePanel {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--bg-surface-2);
+}
+
+.curveTitle {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+
+.footnote {
+  margin-top: var(--sp-4);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* —— 响应式 —— */
+@media (max-width: 960px) {
+  .toolbar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ctxSummary {
+    grid-column: 1 / -1;
+    align-self: start;
+    padding-bottom: 0;
+  }
+
+  .btGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .ledger {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .cell:nth-child(4) {
+    border-left: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .panel {
+    padding: var(--sp-3) 14px;
+  }
+
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .panelHead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+  }
+
+  .btQuantiles {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .btStats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ledger {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cell {
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .cell:first-child,
+  .cell:nth-child(2) {
+    border-top: none;
+  }
 }

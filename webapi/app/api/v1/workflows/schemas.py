@@ -1,4 +1,4 @@
-"""workflows 域的 Pydantic 契约（camelCase 别名，对齐前端类型）。"""
+"""Pydantic contracts for the workflows domain (camelCase aliases aligned with frontend types)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ TaskState = str  # 'success' | 'failed' | 'running' | 'skipped' | 'upstream_fail
 
 
 class RunRef(BaseModel):
-    """一次 DAG 运行的精简引用（用于最近运行色块 / 上次运行）。"""
+    """Compact reference to one DAG run (for recent run squares / last run)."""
 
     run_id: str = Field(alias="runId")
     state: RunState | None = None
@@ -26,7 +26,7 @@ class RunRef(BaseModel):
 
 
 class DagListItem(BaseModel):
-    """DAG 列表页一行。"""
+    """One row of the DAG list page."""
 
     dag_id: str = Field(alias="dagId")
     display_name: str = Field(alias="displayName")
@@ -43,7 +43,7 @@ class DagListItem(BaseModel):
 
 
 class DagDetail(BaseModel):
-    """DAG 详情页头部元信息。"""
+    """Header metadata for the DAG detail page."""
 
     dag_id: str = Field(alias="dagId")
     display_name: str = Field(alias="displayName")
@@ -77,7 +77,7 @@ class GraphResponse(BaseModel):
 
 
 class GridRun(BaseModel):
-    """网格视图的一列：一次运行 + 各任务状态。"""
+    """One column of the grid view: a run plus per-task states."""
 
     run_id: str = Field(alias="runId")
     state: RunState | None = None
@@ -100,7 +100,7 @@ class GridResponse(BaseModel):
 
 
 class TaskInstanceInfo(BaseModel):
-    """某次运行里单个任务实例的时间信息（甘特图数据源）。"""
+    """Time info of a single task instance within a run (Gantt chart data source)."""
 
     task_id: str = Field(alias="taskId")
     state: TaskState | None = None

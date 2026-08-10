@@ -212,7 +212,7 @@ def fetch_turnover_excess_map(
     engine: Engine,
     run_ids: set[int],
 ) -> dict[tuple, dict]:
-    """一次性取 turnover/excess 指标，key=(run_id, backtest_id, variant, factor, period, rank)。"""
+    """Fetch turnover/excess metrics at once; key=(run_id, backtest_id, variant, factor, period, rank)."""
     if not run_ids:
         return {}
     metadata = MetaData()
@@ -246,7 +246,7 @@ def fetch_turnover_excess_map(
 
 
 def fetch_next_dates_map(engine: Engine) -> dict[tuple, date | None]:
-    """窗口函数一次算每个调仓日的下一个调仓日（key 里日期用 str 对齐）。"""
+    """Compute each rebalance date's next date in one pass with a window function (dates as str in the key)."""
     statement = text(
         """
         SELECT run_id, backtest_id, variant_name, factor_name, period,
@@ -293,7 +293,7 @@ def fetch_holdings_count_map(
     engine: Engine,
     run_ids: set[int],
 ) -> dict[tuple, int]:
-    """从 ticker_history parquet 一次性统计每个调仓日/分组的持仓数。"""
+    """Count holdings per rebalance date/quantile from the ticker_history parquet in one pass."""
     if not run_ids:
         return {}
     metadata = MetaData()

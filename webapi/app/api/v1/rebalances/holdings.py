@@ -1,4 +1,4 @@
-"""从 ticker_history parquet 读取某次调仓的持仓（纯数据访问）。"""
+"""Read holdings of a rebalance from the ticker_history parquet (pure data access)."""
 
 import os
 from pathlib import Path
@@ -12,7 +12,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[5]
 def resolve_ticker_history_path(
     *, run_id: int, backtest_id: str, factor_name: str, period: int
 ) -> str | None:
-    """按项目根相对路径 + glob 解析 ticker_history parquet 的真实位置。
+    """Resolve the real ticker_history parquet location via project-root relative path + glob.
 
     **不信任数据库 `backtest_artifacts.path` 列**：该列存的是写入时机器的绝对路径
     （回测在 Windows 跑 → `E:\\...`），在 WSL 后端上不存在。改用 OS 无关的键 glob：

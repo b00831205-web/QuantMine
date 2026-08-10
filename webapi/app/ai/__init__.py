@@ -1,1 +1,1 @@
-"""AI 回复生成与工具执行层。"""
+"""AI reply generation and tool execution layer."""

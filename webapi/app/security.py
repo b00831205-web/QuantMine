@@ -1,21 +1,22 @@
-"""登录鉴权原语：密码哈希 + 会话 Cookie 签名 + require_user 依赖。
+"""Auth primitives: password hashing + signed session cookies + require_user dependency.
 
-设计取舍：
-- 密码哈希：**bcrypt 优先，标准库 scrypt 兜底**。装了 bcrypt 就用 bcrypt，
-  没装也能直接跑（scrypt 属 hashlib，无需安装）。存储用带方案前缀的自描述
-  串（``bcrypt$...`` / ``scrypt$...``），校验时按前缀分派——将来重置密码即可
-  平滑升级到 bcrypt。
-- 会话：HttpOnly 签名 Cookie（HMAC-SHA256），不落 localStorage，避免 XSS 窃取；
-  也天然复用现有 CORS 的 allow_credentials。密钥取环境变量 ``QUANT_AUTH_SECRET``；
-  缺失时退化为进程内随机密钥（打印一次告警，重启即失效——fail-safe，不是安全依赖）。
+Design choices:
+- Password hashing: prefer **bcrypt**, fall back to stdlib scrypt. If bcrypt is installed
+  use it, otherwise scrypt (part of hashlib) works without installation. Stored values use a
+  self-describing prefix scheme (``bcrypt$...`` / ``scrypt$...``); validation dispatches by
+  prefix, so resetting passwords later can upgrade to bcrypt smoothly.
+- Sessions: HttpOnly signed cookies (HMAC-SHA256), never stored in localStorage to avoid
+  XSS theft; this also reuses existing CORS allow_credentials. The secret comes from the
+  environment variable ``QUANT_AUTH_SECRET``; if missing, fall back to a per-process random
+  key (prints a warning, invalidated on restart - fail-safe, not a security dependency).
 
-环境变量：
-    QUANT_AUTH_SECRET         会话签名密钥（生产必须设置，否则重启后所有会话失效）。
-    QUANT_AUTH_TTL_SECONDS    会话有效期秒数，默认 7 天。
-    QUANT_AUTH_COOKIE_SECURE  设为 1/true 时 Cookie 加 Secure（仅 HTTPS）。默认关闭（本地 http）。
+Environment variables:
+    QUANT_AUTH_SECRET         Session signing secret (required in production; otherwise
+                              all sessions are invalidated on restart).
+    QUANT_AUTH_TTL_SECONDS    Session lifetime in seconds, default 7 days.
+    QUANT_AUTH_COOKIE_SECURE  Set to 1/true to add Secure to the cookie (HTTPS only).
+                              Off by default (local http).
 """
-
-from __future__ import annotations
 
 import base64
 import hashlib
@@ -32,19 +33,19 @@ COOKIE_NAME = "quant_session"
 _DEFAULT_TTL = 7 * 24 * 60 * 60
 
 # ---------------------------------------------------------------------------
-# 密码哈希
+# Password hashing
 # ---------------------------------------------------------------------------
 
-try:  # bcrypt 为可选依赖；缺失时回退 scrypt
+try:  # bcrypt is optional; fall back to scrypt when missing
     import bcrypt as _bcrypt  # type: ignore[import-not-found]
 except Exception:  # noqa: BLE001
     _bcrypt = None
 
 
 def hash_password(password: str) -> str:
-    """返回带方案前缀的自描述哈希串。"""
+    """Return a self-describing hash string with a scheme prefix."""
     if _bcrypt is not None:
-        # bcrypt 只取前 72 字节，超出部分静默丢弃——显式截断以行为可预期
+        # bcrypt only uses the first 72 bytes; truncate explicitly for predictable behavior
         raw = password.encode("utf-8")[:72]
         digest = _bcrypt.hashpw(raw, _bcrypt.gensalt()).decode("ascii")
         return f"bcrypt${digest}"
@@ -54,7 +55,7 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, stored: str) -> bool:
-    """按前缀分派校验；任何异常都视为不匹配（fail-closed）。"""
+    """Dispatch by prefix; any exception is treated as a mismatch (fail-closed)."""
     try:
         if stored.startswith("bcrypt$"):
             if _bcrypt is None:
@@ -69,13 +70,13 @@ def verify_password(password: str, stored: str) -> bool:
                 n=2**14, r=8, p=1, dklen=len(dk_hex) // 2,
             )
             return hmac.compare_digest(dk.hex(), dk_hex)
-    except Exception:  # noqa: BLE001 — 任何解析/编码错误都当作校验失败
+    except Exception:  # noqa: BLE001 — treat any parse/encode error as a validation failure
         return False
     return False
 
 
 # ---------------------------------------------------------------------------
-# 会话 Cookie（HMAC 签名）
+# Session cookies (HMAC-signed)
 # ---------------------------------------------------------------------------
 
 _EPHEMERAL_WARNED = False
@@ -88,8 +89,8 @@ def _secret() -> bytes:
         return value.encode("utf-8")
     if not _EPHEMERAL_WARNED:
         print(
-            "[auth] 警告：未设置 QUANT_AUTH_SECRET，使用进程内临时密钥；"
-            "服务重启后所有会话将失效。生产环境请务必设置。",
+            "[auth] warning: QUANT_AUTH_SECRET not set, using an in-process temporary key; "
+            "all sessions will be invalidated on restart. Set it in production.",
             file=sys.stderr,
         )
         _EPHEMERAL_WARNED = True
@@ -127,7 +128,7 @@ def create_session_token(user_id: int, username: str) -> str:
 
 
 def verify_session_token(token: str | None) -> dict | None:
-    """校验签名与有效期；通过返回 payload，否则 None。"""
+    """Verify signature and expiry; return payload on success, otherwise None."""
     if not token or "." not in token:
         return None
     body, _, sig_part = token.partition(".")
@@ -164,8 +165,9 @@ def clear_session_cookie(response: Response) -> None:
 
 
 def require_user(request: Request) -> dict:
-    """FastAPI 依赖：校验会话 Cookie，返回当前用户；未登录/过期抛 401。"""
+    """FastAPI dependency: validate the session cookie and return the current user;
+    raise 401 if missing/expired."""
     payload = verify_session_token(request.cookies.get(COOKIE_NAME))
     if payload is None:
-        raise HTTPException(status_code=401, detail="未登录或会话已过期")
+        raise HTTPException(status_code=401, detail="Not authenticated or session expired")
     return {"userId": payload["uid"], "username": payload["uname"]}

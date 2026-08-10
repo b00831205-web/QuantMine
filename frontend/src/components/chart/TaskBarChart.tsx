@@ -1,6 +1,7 @@
 import type { TaskInstanceInfo } from '@/types/workflow';
 import { stateColor, stateLabel } from '@/utils/workflowStatus';
 import { fmtDuration } from '@/utils/format';
+import { useTranslation } from 'react-i18next';
 
 /**
  * 任务耗时柱状图（纯 inline 样式）。每个任务一根竖柱，高度 ∝ 时长，按状态着色。
@@ -13,9 +14,8 @@ export const TaskBarChart = ({
   tasks: TaskInstanceInfo[];
   height?: number;
 }) => {
-  const durations = tasks
-    .map((t) => t.durationMs)
-    .filter((v): v is number => v !== null && v > 0);
+  const { t } = useTranslation();
+  const durations = tasks.map((t) => t.durationMs).filter((v): v is number => v !== null && v > 0);
   const fallbackDur =
     durations.length > 0
       ? durations.slice().sort((a, b) => a - b)[Math.floor(durations.length / 2)]!
@@ -31,7 +31,7 @@ export const TaskBarChart = ({
   if (tasks.length === 0) {
     return (
       <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', padding: 'var(--sp-3)' }}>
-        该运行暂无任务数据
+        {t('workflow.chart.noTasks')}
       </div>
     );
   }
@@ -39,7 +39,7 @@ export const TaskBarChart = ({
   return (
     <div>
       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>
-        最长 {fmtDuration(maxDur)}
+        {t('workflow.chart.longest', { duration: fmtDuration(maxDur) })}
       </div>
       {/* 绘图区 */}
       <div

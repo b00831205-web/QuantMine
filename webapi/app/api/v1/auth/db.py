@@ -1,4 +1,4 @@
-"""auth_users 表读写。"""
+"""auth_users table read/write."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def create_user(
     password: str,
     display_name: str | None = None,
 ) -> dict:
-    """新建用户（供 CLI 种子脚本调用）。用户名冲突由 UNIQUE 约束兜底。"""
+    """Create a user (for CLI seed scripts). Username conflicts are guarded by the UNIQUE constraint."""
     from sqlalchemy import insert
 
     table = Table("auth_users", MetaData(), autoload_with=engine)

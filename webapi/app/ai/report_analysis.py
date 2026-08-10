@@ -22,7 +22,7 @@ def _call_llm(config: dict, *, system: str, prompt: str)-> str|None:
     api_key = os.environ.get(api_key_env)
     if not model_id or not provider or not api_key:
         import sys
-        print("[report-ai] 未配置模型/Key，跳过 AI 分析", file=sys.stderr)
+        print("[report-ai] model/key not configured, skipping AI analysis", file=sys.stderr)
         return None
     try:
         reply = complete_chat(
@@ -37,7 +37,7 @@ def _call_llm(config: dict, *, system: str, prompt: str)-> str|None:
         return (reply.get('content') or '').strip() or None
     except Exception as exc:
         import sys
-        print(f"[report-ai] LLM 调用失败: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(f"[report-ai] LLM call failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return None
 
 def _parse_ai_json(text: str)-> dict|None:
@@ -76,7 +76,7 @@ def _parse_sections(text: str) -> dict[str, str]:
     return result
 
 def _appendix_text(context: dict) -> str:
-    """从 appendix_data 生成附录文本，只有有数据的才写，供 AI 阅读。"""
+    """Build appendix text from appendix_data; only sections with data are written, for the AI to read."""
     data = context.get("appendix_data") or {}
     lines = []
 
@@ -139,7 +139,7 @@ def _appendix_text(context: dict) -> str:
 
 
 def _appendix_anchors(context: dict) -> list[str]:
-    """根据附录是否有数据，动态决定 AI 要写哪些附录槽位。"""
+    """Decide which appendix AI slots to fill based on whether appendix data exists."""
     data = context.get("appendix_data") or {}
     anchors = []
     if data.get("yearly"):
@@ -159,7 +159,7 @@ def _appendix_anchors(context: dict) -> list[str]:
     return anchors
 
 def build_report_text(context: dict, lang: str) -> tuple[str, list[str]]:
-    """生成 AI 看到的报告文本版 + 待生成分析的锚点列表。"""
+    """Build the report text version the AI will see, plus the anchor list that still needs analysis."""
     ai_slots = context.get("ai") or {}
     anchors = [key for key, value in ai_slots.items() if value is None]
 

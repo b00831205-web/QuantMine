@@ -53,6 +53,42 @@ CREATE TABLE IF NOT EXISTS market_bars (
 CREATE INDEX IF NOT EXISTS idx_market_bars_ticker_date
     ON market_bars (ticker, trade_date DESC);
 
+-- Point-in-time index membership: which tickers were investable when.
+--
+-- One row per membership spell, not per ticker: a name that left the index and
+-- later rejoined gets a second row, which is why start_date is in the key.
+-- end_date NULL means "still a member"; MembershipTableSource reads it that way
+-- and treats both bounds as inclusive.
+--
+-- Tickers are stored yfinance-style (BRK-B, not BRK.B) so they join straight
+-- onto market_bars. Both the CSV importer and the wiki scraper canonicalize
+-- before writing; otherwise one source switching punctuation would read as a
+-- mass delisting plus a mass addition.
+--
+-- last_seen is the newest as-of date on which a scrape actually observed the
+-- ticker in the index list, and missing_scrapes counts consecutive scrapes
+-- since. Both exist so an absence is not immediately a deletion: a name gone
+-- from one scrape is usually a scrape problem, so end_date is only written once
+-- missing_scrapes clears the grace threshold, and it is written as last_seen --
+-- the last confirmed member day, not the day the grace ran out. The counter is
+-- scrape-based rather than date-based because the DAG's cadence is uneven
+-- (weekends, retries), and calendar arithmetic would expire the grace after a
+-- single real observation.
+CREATE TABLE IF NOT EXISTS index_membership (
+    index_name VARCHAR NOT NULL DEFAULT 'SP500',
+    ticker VARCHAR NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE,
+    last_seen DATE,
+    missing_scrapes INT NOT NULL DEFAULT 0,
+    source VARCHAR NOT NULL DEFAULT 'unknown',
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (index_name, ticker, start_date)
+);
+-- Covers the point-in-time slice query (start_date <= d AND end_date >= d).
+CREATE INDEX IF NOT EXISTS idx_index_membership_window
+    ON index_membership (index_name, start_date, end_date);
+
 -- One latest cleaned observation per ticker, optimized for dashboard reads.
 CREATE TABLE IF NOT EXISTS market_latest (
     ticker VARCHAR PRIMARY KEY,
@@ -330,6 +366,7 @@ CREATE TABLE IF NOT EXISTS ai_config (
     default_model VARCHAR,
     vision_model VARCHAR,
     embedding_config JSONB,
+    skills JSONB NOT NULL DEFAULT '[]'::jsonb,
     system_prompt TEXT NOT NULL DEFAULT '',
     temperature NUMERIC(3,2) NOT NULL DEFAULT 0.7,
     capabilities JSONB NOT NULL DEFAULT '{"read_research": true, "read_market": true, "read_reports": true, "query_database": true, "use_chat_history": true, "rag_corpus": false}'::jsonb
@@ -340,7 +377,8 @@ CREATE TABLE IF NOT EXISTS ai_config (
 CREATE TABLE IF NOT EXISTS auth_users (
     id SERIAL PRIMARY KEY,
     username VARCHAR NOT NULL UNIQUE,
-    password_hash VARCHAR NOT NULL,
+    password_hash VARCHAR NOT NULL
+        CHECK (password_hash ~ '^[A-Za-z0-9$.:/=+_-]+$'),
     display_name VARCHAR,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

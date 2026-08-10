@@ -196,6 +196,89 @@ def fetch_market_bars(engine: Engine,
         result = connection.execute(statement).mappings().all()
     return pd.DataFrame(result, columns=['trade_date', 'ticker', 'close'])
 
+def fetch_ticker_coverage(engine: Engine) -> pd.DataFrame:
+    """Return what history each ticker already has, one row per ticker.
+
+    The download planner needs per-ticker bounds, not the single global
+    watermark ``max(trade_date)``. A name added to the index today has no rows
+    at all, yet the global watermark reports the database current through
+    yesterday -- so a watermark-driven download never reaches back for that
+    name's past, and every lookback factor stays NaN for it.
+
+    Returns:
+        Columns ``ticker``, ``first_date``, ``last_date``, ``observations``;
+        empty with those columns when ``market_bars`` has no rows.
+    """
+    statement = text(
+        """
+        SELECT ticker,
+               MIN(trade_date) AS first_date,
+               MAX(trade_date) AS last_date,
+               COUNT(*)        AS observations
+        FROM market_bars
+        GROUP BY ticker
+        """
+    )
+    with engine.connect() as connection:
+        rows = connection.execute(statement).mappings().all()
+    return pd.DataFrame(
+        rows, columns=["ticker", "first_date", "last_date", "observations"]
+    )
+
+
+def fetch_trading_calendar(
+    engine: Engine,
+    benchmark: str = "SPY",
+) -> list[date]:
+    """Return the distinct trade dates observed for ``benchmark``.
+
+    The benchmark is downloaded on every run alongside the universe, so its
+    date index is a free, self-maintaining trading calendar -- no exchange
+    calendar dependency, and it automatically matches whatever Yahoo actually
+    returns (holidays, half days, and all).
+
+    Returns:
+        Sorted trade dates, empty when the benchmark has no rows yet.
+    """
+    statement = text(
+        "SELECT DISTINCT trade_date FROM market_bars "
+        "WHERE ticker = :benchmark ORDER BY trade_date"
+    )
+    with engine.connect() as connection:
+        return [
+            row[0]
+            for row in connection.execute(statement, {"benchmark": benchmark})
+        ]
+
+
+def fetch_ticker_trade_dates(
+    engine: Engine,
+    tickers: list[str],
+) -> dict[str, set[date]]:
+    """Return the trade dates held for each of ``tickers``.
+
+    Deliberately takes an explicit list rather than scanning the table: pulling
+    every date for every ticker means ~1.65M rows, while the gap detector only
+    ever flags a handful. Callers should narrow with ``find_gap_candidates``
+    first, which needs nothing but the row counts already in coverage.
+
+    Returns:
+        ``{ticker: {date, ...}}``, omitting tickers with no rows.
+    """
+    if not tickers:
+        return {}
+    statement = text(
+        "SELECT ticker, trade_date FROM market_bars WHERE ticker = ANY(:tickers)"
+    )
+    dates: dict[str, set[date]] = {}
+    with engine.connect() as connection:
+        for ticker, trade_date in connection.execute(
+            statement, {"tickers": list(tickers)}
+        ):
+            dates.setdefault(ticker, set()).add(trade_date)
+    return dates
+
+
 def fetch_latest_market_trade_date(engine:Engine)->date|None:
     """Return the most recent trade date in ``market_bars``, or None if empty."""
     metadata = MetaData()

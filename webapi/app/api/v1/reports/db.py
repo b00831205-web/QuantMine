@@ -1,4 +1,4 @@
-"""报告历史查询层：分页列表 + 写入一条生成记录。"""
+"""Report history query layer: paginated list + write one generation record."""
 
 from __future__ import annotations
 

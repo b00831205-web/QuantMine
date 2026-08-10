@@ -1,26 +1,37 @@
+/**
+ * Airflow 工作流页 · Evidence Ledger（证据账本）
+ *
+ * 方向契约：
+ * THESIS：DAG 表格是页面唯一的主证据区，页面性格来自一套统一按钮体系，
+ *         而非整块钴蓝填充的筛选按钮。
+ * OWN-WORLD：沿用 DESIGN.md 的哑光深色研究终端语言——平层色阶、1px 细线、
+ *         钴蓝只留给主要动作、选中与焦点；图标统一为描边 SVG。
+ * STORY：研究员扫读 DAG 健康度，翻转暂停开关，通过主次分明的确认弹窗触发运行。
+ * FIRST VIEWPORT：页头（刷新动作）+ 筛选工具条 + 带边框 DAG 表格 + 状态图例。
+ * FORM：Evidence Ledger，与市场总览 / 调仓收益 template 同构。
+ * FINISH：unreviewed and undocumented is unfinished；本次以类型/测试/构建与人工视觉复核收口。
+ */
+
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Card } from '@/components/common/Card';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
 import { HttpError } from '@/api/http';
 import { fetchWorkflows, pauseDag, triggerWorkflow } from '@/api/client';
 import type { DagListItem, RunRef } from '@/types/workflow';
 import type { AsyncState } from '@/types/api';
-import { stateColor, stateLabel, CORE_LEGEND } from '@/utils/workflowStatus';
+import { stateColor, CORE_LEGEND } from '@/utils/workflowStatus';
 import { fmtDateTime, fmtDuration } from '@/utils/format';
 import { Toggle } from '@/components/common/Toggle';
+import { Play, RotateCcw } from 'lucide-react';
 import i18n from '@/i18n';
+import styles from './WorkflowsPage.module.css';
 
 type StateFilter = 'all' | 'running' | 'success' | 'failed' | 'paused';
 
-const FILTERS: Array<{ key: StateFilter; label: string }> = [
-  { key: 'all', label: '全部' },
-  { key: 'running', label: '运行中' },
-  { key: 'success', label: '成功' },
-  { key: 'failed', label: '失败' },
-  { key: 'paused', label: '已暂停' },
-];
+const FILTERS: StateFilter[] = ['all', 'running', 'success', 'failed', 'paused'];
 
 const RECENT_SQUARES = 10;
 
@@ -34,65 +45,44 @@ const networkError = (): AsyncState<never> => ({
   },
 });
 
+/** 状态 → i18n 文案；未知状态回退到原始值 */
+const stateLabel = (state: string | null | undefined, t: TFunction) =>
+  t(`workflow.state.${state ?? 'none'}`, { defaultValue: state ?? '' });
+
 /* ── 最近运行色块 ── */
 const RecentRuns = ({ runs }: { runs: RunRef[] }) => {
+  const { t } = useTranslation();
   if (runs.length === 0) {
-    return <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>尚未运行</span>;
+    return <span className={styles.notRun}>{t('workflow.notRun')}</span>;
   }
   // 后端按新→旧返回；反转成时间顺序，最新在最右（与 Airflow 一致）。
   const ordered = [...runs].slice(0, RECENT_SQUARES).reverse();
   return (
-    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+    <span className={styles.runs}>
       {ordered.map((r) => (
         <span
           key={r.runId}
-          title={`${r.runId}\n${stateLabel(r.state)} · ${fmtDuration(r.durationMs)}`}
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: 3,
-            background: stateColor(r.state),
-            display: 'inline-block',
-          }}
+          title={`${r.runId}\n${stateLabel(r.state, t)} · ${fmtDuration(r.durationMs)}`}
+          className={styles.runSquare}
+          style={{ background: stateColor(r.state) }}
         />
       ))}
-    </div>
+    </span>
   );
 };
 
-const StateDot = ({ state }: { state: string | null }) => (
-  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-    <span
-      style={{
-        width: 9,
-        height: 9,
-        borderRadius: '50%',
-        background: stateColor(state),
-        display: 'inline-block',
-      }}
-    />
-    <span>{stateLabel(state)}</span>
-  </span>
-);
-
-const thStyle: React.CSSProperties = {
-  textAlign: 'left',
-  padding: 'var(--sp-2) var(--sp-3)',
-  color: 'var(--text-muted)',
-  fontSize: 'var(--fs-sm)',
-  fontWeight: 500,
-  borderBottom: '1px solid var(--border-subtle)',
-  whiteSpace: 'nowrap',
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: 'var(--sp-3)',
-  borderBottom: '1px solid var(--border-subtle)',
-  verticalAlign: 'middle',
-  fontSize: 'var(--fs-sm)',
+const StateDot = ({ state }: { state: string | null }) => {
+  const { t } = useTranslation();
+  return (
+    <span className={styles.state}>
+      <span className={styles.stateDot} style={{ background: stateColor(state) }} />
+      <span>{stateLabel(state, t)}</span>
+    </span>
+  );
 };
 
 export const WorkflowsPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [listState, setListState] = useState<AsyncState<DagListItem[]>>({ status: 'idle' });
   const [refreshKey, setRefreshKey] = useState(0);
@@ -120,7 +110,7 @@ export const WorkflowsPage = () => {
     return () => controller.abort();
   }, [refreshKey]);
 
-  const dags = listState.status === 'success' ? listState.data : [];
+  const dags = useMemo(() => (listState.status === 'success' ? listState.data : []), [listState]);
 
   const summary = useMemo(() => {
     let running = 0;
@@ -158,7 +148,10 @@ export const WorkflowsPage = () => {
   const patchDag = (dagId: string, patch: Partial<DagListItem>) => {
     setListState((prev) =>
       prev.status === 'success'
-        ? { status: 'success', data: prev.data.map((d) => (d.dagId === dagId ? { ...d, ...patch } : d)) }
+        ? {
+            status: 'success',
+            data: prev.data.map((d) => (d.dagId === dagId ? { ...d, ...patch } : d)),
+          }
         : prev,
     );
   };
@@ -170,7 +163,7 @@ export const WorkflowsPage = () => {
       const res = await pauseDag(dag.dagId, !dag.isPaused);
       patchDag(dag.dagId, { isPaused: res.isPaused });
     } catch (error) {
-      setActionMsg(error instanceof HttpError ? error.apiError.title : '暂停操作失败');
+      setActionMsg(error instanceof HttpError ? error.apiError.title : t('workflow.pauseFailed'));
     } finally {
       setBusyDagId(null);
     }
@@ -183,11 +176,11 @@ export const WorkflowsPage = () => {
     setActionMsg(null);
     try {
       await triggerWorkflow(dagId);
-      setActionMsg(`已触发 ${dagId}，稍候刷新查看运行`);
+      setActionMsg(t('workflow.triggered', { dagId }));
       setConfirmTrigger(null);
       setRefreshKey((k) => k + 1);
     } catch (error) {
-      setActionMsg(error instanceof HttpError ? error.apiError.title : '触发失败');
+      setActionMsg(error instanceof HttpError ? error.apiError.title : t('workflow.triggerFailed'));
       setConfirmTrigger(null);
     } finally {
       setBusyDagId(null);
@@ -195,170 +188,159 @@ export const WorkflowsPage = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)' }}>
-      <PageHeader
-        title="Airflow 工作流"
-        subtitle="DAG 列表 · 数据来自 Airflow 元数据库（只读）"
-        actions={
-          <button type="button" onClick={() => setRefreshKey((k) => k + 1)}>
-            刷新
-          </button>
-        }
-      />
+    <div className={styles.page}>
+      <div className={styles.headerWrap}>
+        <PageHeader
+          title={t('nav.workflows')}
+          subtitle={t('workflow.subtitle')}
+          actions={
+            <button
+              type="button"
+              className={styles.refreshBtn}
+              onClick={() => setRefreshKey((k) => k + 1)}
+            >
+              <RotateCcw size={12} strokeWidth={1.75} aria-hidden="true" />
+              {t('workflow.refresh')}
+            </button>
+          }
+        />
+      </div>
 
-      {/* 工具栏 */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--sp-3)',
-          flexWrap: 'wrap',
-        }}
-      >
+      <div className={styles.toolbar}>
         <input
           type="text"
+          className={styles.search}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="搜索 DAG 名称 / ID"
-          style={{
-            padding: 'var(--sp-2) var(--sp-3)',
-            background: 'var(--bg-surface-2)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-sm)',
-            color: 'var(--text-primary)',
-            minWidth: 220,
-          }}
+          placeholder={t('workflow.searchPlaceholder')}
+          aria-label={t('workflow.searchPlaceholder')}
         />
-        <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
+        <div className={styles.filters} role="group" aria-label={t('workflow.filterGroup')}>
           {FILTERS.map((f) => (
             <button
-              key={f.key}
+              key={f}
               type="button"
-              onClick={() => setFilter(f.key)}
-              style={{
-                padding: 'var(--sp-1) var(--sp-3)',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--border-subtle)',
-                background: filter === f.key ? 'var(--accent)' : 'transparent',
-                color: filter === f.key ? '#fff' : 'var(--text-primary)',
-                cursor: 'pointer',
-              }}
+              className={filter === f ? styles.filterActive : styles.filterBtn}
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
             >
-              {f.label}
+              {t(`workflow.filter.${f}`)}
             </button>
           ))}
         </div>
-        <div style={{ flex: 1 }} />
-        <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>
-          {summary.total} 个 DAG · {summary.running} 运行中 · {summary.failed} 失败 · {summary.paused} 暂停
+        <div className={styles.summary}>
+          {t('workflow.summary', {
+            total: summary.total,
+            running: summary.running,
+            failed: summary.failed,
+            paused: summary.paused,
+          })}
         </div>
       </div>
 
-      {actionMsg && (
-        <div
-          style={{
-            padding: 'var(--sp-2) var(--sp-3)',
-            background: 'var(--bg-surface-2)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: 'var(--radius-sm)',
-            fontSize: 'var(--fs-sm)',
-          }}
-        >
+      {actionMsg ? (
+        <div className={styles.notice} role="status">
+          <span className={styles.noticeDot} aria-hidden="true" />
           {actionMsg}
         </div>
-      )}
+      ) : null}
 
-      <Card title="DAGs">
+      <section className={styles.panel} aria-label={t('workflow.dagsTitle')}>
+        <div className={styles.panelHead}>
+          <h2>{t('workflow.dagsTitle')}</h2>
+          <span className={styles.count}>{t('workflow.count', { count: dags.length })}</span>
+        </div>
+
         <AsyncBoundary
           state={listState}
           isEmpty={() => filtered.length === 0}
-          emptyTitle={dags.length === 0 ? '暂无活跃 DAG' : '无匹配 DAG'}
-          emptyHint={
-            dags.length === 0
-              ? '确认后端 /api/v1/workflows 可读取 Airflow 元数据库'
-              : '调整搜索或筛选条件'
-          }
+          emptyTitle={dags.length === 0 ? t('workflow.emptyNoDags') : t('workflow.emptyNoMatch')}
+          emptyHint={dags.length === 0 ? t('workflow.emptyHint') : t('workflow.emptyHintFilter')}
         >
           {() => (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
                 <thead>
                   <tr>
-                    <th style={thStyle}>暂停</th>
-                    <th style={thStyle}>DAG</th>
-                    <th style={thStyle}>最近运行</th>
-                    <th style={thStyle}>上次运行</th>
-                    <th style={thStyle}>下次运行</th>
-                    <th style={thStyle}>调度</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>操作</th>
+                    <th>{t('workflow.col.paused')}</th>
+                    <th>{t('workflow.col.dag')}</th>
+                    <th>{t('workflow.col.recent')}</th>
+                    <th>{t('workflow.col.last')}</th>
+                    <th>{t('workflow.col.next')}</th>
+                    <th>{t('workflow.col.schedule')}</th>
+                    <th className={styles.opsHead}>{t('workflow.col.ops')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((dag) => (
                     <tr
                       key={dag.dagId}
+                      className={styles.row}
                       onClick={() => navigate(`/workflows/${dag.dagId}`)}
-                      style={{ cursor: 'pointer' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-surface-2)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <td style={tdStyle}>
-                        <Toggle
-                          on={dag.isPaused}
-                          disabled={busyDagId === dag.dagId}
-                          onChange={() => handleTogglePause(dag)}
-                        />
-                      </td>
-                      <td style={tdStyle}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>
-                            {dag.displayName}
+                      <td>
+                        <span className={styles.switchCell}>
+                          <Toggle
+                            on={dag.isPaused}
+                            disabled={busyDagId === dag.dagId}
+                            onChange={() => handleTogglePause(dag)}
+                          />
+                          <span className={dag.isPaused ? styles.pausedLabel : styles.runningLabel}>
+                            {dag.isPaused ? t('workflow.paused') : t('workflow.running')}
                           </span>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {dag.tags.map((t) => (
-                              <span
-                                key={t}
-                                style={{
-                                  fontSize: 11,
-                                  color: 'var(--text-muted)',
-                                  border: '1px solid var(--border-subtle)',
-                                  borderRadius: 4,
-                                  padding: '0 6px',
-                                }}
-                              >
-                                {t}
+                        </span>
+                      </td>
+                      <td>
+                        <div className={styles.dagCell}>
+                          <span className={styles.dagName}>{dag.displayName}</span>
+                          <div className={styles.tagRow}>
+                            {dag.tags.map((tag) => (
+                              <span key={tag} className={styles.tag}>
+                                {tag}
                               </span>
                             ))}
                           </div>
                         </div>
                       </td>
-                      <td style={tdStyle}>
+                      <td>
                         <RecentRuns runs={dag.recentRuns} />
                       </td>
-                      <td style={tdStyle}>
+                      <td>
                         {dag.lastRun ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <div className={styles.lastRunCell}>
                             <StateDot state={dag.lastRun.state} />
-                            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                            <span className={styles.lastRunTime}>
                               {fmtDateTime(dag.lastRun.startDate)}
                             </span>
                           </div>
                         ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>尚未运行</span>
+                          <span className={styles.notRun}>{t('workflow.notRun')}</span>
                         )}
                       </td>
-                      <td style={tdStyle}>{fmtDateTime(dag.nextRun)}</td>
-                      <td style={tdStyle}>{dag.scheduleSummary ?? '—'}</td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                      <td className={styles.mono}>{fmtDateTime(dag.nextRun)}</td>
+                      <td className={styles.mono}>{dag.scheduleSummary ?? '—'}</td>
+                      <td className={styles.ops}>
                         <button
                           type="button"
+                          className={styles.triggerBtn}
                           disabled={busyDagId === dag.dagId}
                           onClick={(e) => {
                             e.stopPropagation();
                             setConfirmTrigger(dag.dagId);
                           }}
                         >
-                          ▶ 触发
+                          <Play size={11} strokeWidth={2} aria-hidden="true" />
+                          {t('workflow.trigger')}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.viewBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/workflows/${dag.dagId}`);
+                          }}
+                        >
+                          {t('workflow.view')}
                         </button>
                       </td>
                     </tr>
@@ -369,85 +351,63 @@ export const WorkflowsPage = () => {
           )}
         </AsyncBoundary>
 
-        {/* 图例：状态 → 颜色 */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 'var(--sp-4)',
-            flexWrap: 'wrap',
-            marginTop: 'var(--sp-3)',
-            paddingTop: 'var(--sp-3)',
-            borderTop: '1px solid var(--border-subtle)',
-            fontSize: 'var(--fs-sm)',
-            color: 'var(--text-muted)',
-          }}
-        >
+        <div className={styles.legend}>
           {CORE_LEGEND.map((l) => (
-            <span key={l.state} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span key={l.state}>
               <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 3,
-                  background: stateColor(l.state),
-                  display: 'inline-block',
-                }}
+                className={styles.legendDot}
+                style={{ background: stateColor(l.state) }}
+                aria-hidden="true"
               />
-              {l.label}
+              {stateLabel(l.state, t)}
             </span>
           ))}
         </div>
-      </Card>
+      </section>
 
-      {/* 触发确认弹窗 */}
-      {confirmTrigger !== null && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 100,
-          }}
-          onClick={() => setConfirmTrigger(null)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: 'var(--sp-5)',
-              width: 360,
-            }}
-          >
-            <div style={{ fontWeight: 600, marginBottom: 'var(--sp-2)' }}>确认触发该 DAG？</div>
-            <div
-              style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-4)' }}
-            >
-              {confirmTrigger} · 将创建一次手动运行
+      {confirmTrigger !== null ? (
+        <div className={styles.overlay} onClick={() => setConfirmTrigger(null)}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalTitle}>{t('workflow.confirmTitle')}</div>
+            <div className={styles.modalDesc}>
+              {t('workflow.confirmDesc', { dagId: confirmTrigger })}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
+            <div className={styles.modalActions}>
               <button
                 type="button"
+                className={styles.ghostBtn}
                 disabled={busyDagId === confirmTrigger}
                 onClick={() => setConfirmTrigger(null)}
               >
-                取消
+                {t('workflow.cancel')}
               </button>
               <button
                 type="button"
+                className={styles.primaryBtn}
                 disabled={busyDagId === confirmTrigger}
                 onClick={handleConfirmTrigger}
               >
-                {busyDagId === confirmTrigger ? '提交中…' : '确认触发'}
+                {busyDagId === confirmTrigger ? (
+                  <>
+                    <span className={styles.spinner} aria-hidden="true" />
+                    {t('workflow.submitting')}
+                  </>
+                ) : (
+                  <>
+                    <Play size={11} strokeWidth={2} aria-hidden="true" />
+                    {t('workflow.confirmTrigger')}
+                  </>
+                )}
               </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
+
+      <p className={styles.footnote}>
+        For research and educational purposes only. Not investment advice. Past performance does not
+        guarantee future results.
+      </p>
     </div>
   );
 };

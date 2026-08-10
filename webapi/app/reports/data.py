@@ -161,7 +161,7 @@ def _fetch_sanity_rows(engine: Engine, run_id: int, test_id: str | None) -> list
     return result
 
 def _fetch_turnover_rows(engine: Engine, run_id: int, test_id: str | None) -> list[dict]:
-    """A6 换手率：从 backtest_metrics 读 turnover。"""
+    """A6 turnover: read turnover from backtest_metrics."""
     table = _table(engine, "backtest_metrics")
     conditions = [table.c.run_id == run_id, table.c.metric_name == "turnover"]
     if test_id:
@@ -188,7 +188,7 @@ def _fetch_turnover_rows(engine: Engine, run_id: int, test_id: str | None) -> li
 
 
 def _fetch_gross_rows(engine: Engine, run_id: int, test_id: str | None) -> list[dict]:
-    """A8 毛收益绩效：读 gross_ 前缀指标（需管线落库后才有）。"""
+    """A8 gross-return performance: read gross_ prefixed metrics (requires pipeline persistence first)."""
     table = _table(engine, "backtest_metrics")
     conditions = [table.c.run_id == run_id, table.c.metric_name.like("gross_%")]
     if test_id:

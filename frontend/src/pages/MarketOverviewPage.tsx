@@ -1,23 +1,38 @@
-import { useEffect, useState } from 'react';
+/**
+ * 市场总览页 · Evidence Ledger（证据账本）
+ *
+ * 方向契约：
+ * THESIS：市场比较图是页面唯一的主证据区，筛选工具与辅助指标退居账本行，
+ *         拒绝五张等重 KPI 卡片。
+ * OWN-WORLD：沿用 DESIGN.md 的哑光深色研究终端语言——平层色阶、1px 细线、
+ *         钴蓝只用于交互与焦点，所有机器值使用等宽数字。
+ * STORY：研究员一眼看到图表结论，工具条在同一面板内完成组合筛选，
+ *         指标账本紧贴图表给出证据上下文。
+ * FIRST VIEWPORT：紧凑页头 + 单块带边框主面板（面板头 → 工具条 → 图表 → 底部账本）。
+ * FORM：Evidence Ledger，DESIGN.md 默认工作台方向。
+ * FINISH：unreviewed and undocumented is unfinished；本次以类型/测试/构建与人工视觉复核收口。
+ */
+
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Card } from '@/components/common/Card';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
 import { SeriesChart } from '@/components/chart/SeriesChart';
 import { fetchSeries, fetchLatestMarketDate, fetchMarketOverview } from '@/api/client/market';
 import { fetchWorkflows } from '@/api/client';
-import type { AsyncState, ApiError } from '@/types/api';
-import type { SeriesQuery, SeriesResponse, MarketOverview } from '@/types/market';
-import { stateLabel, stateColor } from '@/utils/workflowStatus';
-import styles from './MarketOverviewPage.module.css';
+import type { AsyncState } from '@/types/api';
+import type { MarketOverview, SeriesQuery, SeriesResponse } from '@/types/market';
+import { stateColor, stateLabel } from '@/utils/workflowStatus';
 import { HttpError } from '@/api/http';
-import { useMemo} from 'react';
-
+import { Plus, X } from 'lucide-react';
+import styles from './MarketOverviewPage.module.css';
 
 type RangeKey = '1M' | '1Y' | '5Y' | 'ALL';
 
 const INITIAL_SYMBOLS = ['SPY', 'AAPL', 'MSFT'];
+
+const RANGE_KEYS: RangeKey[] = ['1M', '1Y', '5Y', 'ALL'];
 
 const RANGE_DAYS: Record<RangeKey, number | 'ALL'> = {
   '1M': 30,
@@ -27,83 +42,72 @@ const RANGE_DAYS: Record<RangeKey, number | 'ALL'> = {
 };
 
 /**
- * 市场总览页（阶段 0）：
- *  - 上方：ticker 多选 + 时间范围 + SPY 基准
- *  - 中部：对比图表（基期 100）
- *  - 下方：最新数据日、当日收益、宽度、任务状态
- *
- * 这是第一次完整 useState + useEffect 切片。
+ * 市场总览页：一个主证据面板承载对比图表，筛选工具与指标账本都在面板内。
  */
 export const MarketOverviewPage = () => {
   const { t } = useTranslation();
-  // —— 视图状态（已由我实现）——
+
+  // —— 视图状态 ——
   const [symbols, setSymbols] = useState<string[]>(INITIAL_SYMBOLS);
   const [range, setRange] = useState<RangeKey>('1Y');
   const [tickerDraft, setTickerDraft] = useState('');
-  
-  // —— 数据状态（effect 留给你实现）——
+  // 错误重试时强制重新拉取序列数据
+  const [reloadKey, setReloadKey] = useState(0);
+
+  // —— 数据状态 ——
   const [seriesState, setSeriesState] = useState<AsyncState<SeriesResponse>>({ status: 'idle' });
   const [latestTradeDate, setLatestTradeDate] = useState<string | null>(null);
   const [overview, setOverview] = useState<MarketOverview | null>(null);
   const [taskStatus, setTaskStatus] = useState<{ label: string; color: string } | null>(null);
-  // —— TODO(USER_LEARNING): 数据拉取 effect —— //
-  //   目标：当 symbols 或 range 变化时，发起 fetchSeries 并写入 seriesState；
-  //   异步状态依次经历 loading → success | error；
-  //   必须处理：
-  //     ① 组件卸载或依赖变化时，取消未完成请求（AbortController）；
-  //     ② 错误时写入 ApiError 而不是裸 throw；
-  //     ③ 清理函数避免 setState on unmounted component。
-  //   提示：使用 useEffect + AbortController；fetchSeries 的 signal 参数可用。
-    
-  const query= useMemo<SeriesQuery|null> (() => {
+
+  const query = useMemo<SeriesQuery | null>(() => {
     if (latestTradeDate === null) return null;
     const endDate = latestTradeDate;
     const end = new Date(`${latestTradeDate}T00:00:00Z`);
     const days = RANGE_DAYS[range];
-    if (days === 'ALL') return { symbols, startDate: '2015-01-01', endDate: endDate, normalize: true };
-    const start = new Date(end.getTime() - days * 86400_000).toISOString().slice(0,10);
-    return { symbols, startDate: start, endDate: endDate, normalize: true };
+    if (days === 'ALL') {
+      return { symbols, startDate: '2015-01-01', endDate, normalize: true };
+    }
+    const start = new Date(end.getTime() - days * 86400_000).toISOString().slice(0, 10);
+    return { symbols, startDate: start, endDate, normalize: true };
   }, [latestTradeDate, symbols, range]);
 
   useEffect(() => {
-  if (query === null) return;
+    if (query === null) return;
 
-  const controller = new AbortController();
+    const controller = new AbortController();
+    setSeriesState({ status: 'loading' });
 
-  setSeriesState({ status: 'loading' });
+    fetchSeries(query, controller.signal)
+      .then((data) => {
+        setSeriesState({ status: 'success', data });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
 
-  fetchSeries(query, controller.signal)
-    .then((data) => {
-      setSeriesState({ status: 'success', data });
-    })
-    .catch((error: unknown) => {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
-      }
+        if (error instanceof HttpError) {
+          setSeriesState({ status: 'error', error: error.apiError });
+          return;
+        }
 
-      if (error instanceof HttpError) {
-        setSeriesState({ status: 'error', error: error.apiError });
-        return;
-      }
-
-      setSeriesState({
-        status: 'error',
-        error: {
-          code: 'NETWORK_ERROR',
-          title: i18n.t('common.networkError.title'),
-          detail: i18n.t('common.networkError.detail'),
-          status: 0,
-        },
+        setSeriesState({
+          status: 'error',
+          error: {
+            code: 'NETWORK_ERROR',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
+            status: 0,
+          },
+        });
       });
-    });
 
-  return () => controller.abort();
-}, [latestTradeDate, symbols, range, query]);
+    return () => controller.abort();
+  }, [latestTradeDate, symbols, range, query, reloadKey]);
 
   useEffect(() => {
     const controller = new AbortController();
     fetchLatestMarketDate().then((data) => {
-      setLatestTradeDate(data.latestTradeDate);
+      if (!controller.signal.aborted) setLatestTradeDate(data.latestTradeDate);
     });
     return () => controller.abort();
   }, []);
@@ -131,9 +135,7 @@ export const MarketOverviewPage = () => {
           .sort((a, b) => (b.startDate! > a.startDate! ? 1 : -1));
         const latest = runs[0];
         setTaskStatus(
-          latest
-            ? { label: stateLabel(latest.state), color: stateColor(latest.state) }
-            : null,
+          latest ? { label: stateLabel(latest.state), color: stateColor(latest.state) } : null,
         );
       })
       .catch(() => {
@@ -142,76 +144,92 @@ export const MarketOverviewPage = () => {
     return () => controller.abort();
   }, []);
 
-
   const handleAddTicker = (): void => {
-    const t = tickerDraft.trim().toUpperCase();
-    if (!t || symbols.includes(t)) return;
-    setSymbols([...symbols, t]);
+    const ticker = tickerDraft.trim().toUpperCase();
+    if (!ticker || symbols.includes(ticker)) return;
+    setSymbols([...symbols, ticker]);
     setTickerDraft('');
   };
 
-  const handleRemoveTicker = (sym: string): void => {
-    setSymbols(symbols.filter((s) => s !== sym));
+  const handleRemoveTicker = (symbol: string): void => {
+    setSymbols(symbols.filter((s) => s !== symbol));
   };
 
-  const spyDailyReturn = (()=>{
-    if(seriesState.status !== 'success') return null;
-    const spySeries = seriesState.data.series.find((series) => series.symbol === 'SPY',
-  );
-  const latestPoint = spySeries?.points.at(-1);
-  const previousPoint = spySeries?.points.at(-2);
-
-  if (latestPoint === undefined || previousPoint ===undefined || previousPoint.value === 0){return null;}
-  return (latestPoint.value / previousPoint.value - 1) * 100;
+  const spyDailyReturn = (() => {
+    if (seriesState.status !== 'success') return null;
+    const spySeries = seriesState.data.series.find((s) => s.symbol === 'SPY');
+    const latestPoint = spySeries?.points.at(-1);
+    const previousPoint = spySeries?.points.at(-2);
+    if (latestPoint === undefined || previousPoint === undefined || previousPoint.value === 0) {
+      return null;
+    }
+    return (latestPoint.value / previousPoint.value - 1) * 100;
   })();
 
-  const spyDailyReturnLabel = spyDailyReturn ===null ? '-' : `${spyDailyReturn >= 0? '+' :  '' }${spyDailyReturn.toFixed(2)}%`;
-
+  const spyDailyReturnLabel =
+    spyDailyReturn === null
+      ? '-'
+      : `${spyDailyReturn >= 0 ? '+' : ''}${spyDailyReturn.toFixed(2)}%`;
 
   return (
     <div className={styles.page}>
-      <PageHeader
-        title={t('market.title')}
-        subtitle={t('market.subtitle')}
-        actions={
-          <div className={styles.rangeGroup}>
-            {(['1M', '1Y', '5Y', 'ALL'] as RangeKey[]).map((r) => (
+      <div className={styles.headerWrap}>
+        <PageHeader title={t('market.title')} subtitle={t('market.subtitle')} />
+      </div>
+
+      <section className={styles.panel} aria-label={t('market.compareCard')}>
+        <div className={styles.panelHead}>
+          <h2>{t('market.compareCard')}</h2>
+          <span className={styles.panelDate}>
+            <span className={styles.panelDateLabel}>{t('market.kpi.latestDate')}</span>
+            <span className={styles.panelDateValue}>{latestTradeDate ?? '-'}</span>
+          </span>
+        </div>
+
+        <div className={styles.toolbar}>
+          <div className={styles.tickerGroup}>
+            {symbols.map((symbol) => (
+              <span key={symbol} className={styles.chip}>
+                {symbol}
+                <button
+                  type="button"
+                  className={styles.chipX}
+                  onClick={() => handleRemoveTicker(symbol)}
+                  aria-label={t('market.removeTicker', { symbol })}
+                >
+                  <X size={10} strokeWidth={1.75} aria-hidden="true" />
+                </button>
+              </span>
+            ))}
+            <div className={styles.addTicker}>
+              <input
+                type="text"
+                placeholder={t('market.addTickerPlaceholder')}
+                value={tickerDraft}
+                onChange={(e) => setTickerDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAddTicker();
+                }}
+              />
+              <button type="button" onClick={handleAddTicker}>
+                <Plus size={12} strokeWidth={1.75} aria-hidden="true" />
+                {t('market.add')}
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.rangeGroup} role="group" aria-label={t('market.timeRange')}>
+            {RANGE_KEYS.map((r) => (
               <button
                 key={r}
-                className={range === r ? styles.rangeActive : styles.range}
+                type="button"
+                className={range === r ? styles.rangeActive : styles.rangeBtn}
+                aria-pressed={range === r}
                 onClick={() => setRange(r)}
               >
                 {r}
               </button>
             ))}
-          </div>
-        }
-      />
-
-      <Card title={t('market.compareCard')}>
-        <div className={styles.tickerRow}>
-          {symbols.map((s) => (
-            <span key={s} className={styles.chip}>
-              {s}
-              <button
-                className={styles.chipX}
-                onClick={() => handleRemoveTicker(s)}
-                aria-label={t('market.removeTicker', { symbol: s })}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          <div className={styles.addTicker}>
-            <input
-              placeholder={t('market.addTickerPlaceholder')}
-              value={tickerDraft}
-              onChange={(e) => setTickerDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAddTicker();
-              }}
-            />
-            <button onClick={handleAddTicker}>{t('market.add')}</button>
           </div>
         </div>
 
@@ -219,14 +237,18 @@ export const MarketOverviewPage = () => {
           <AsyncBoundary
             state={seriesState}
             isEmpty={(d) => d.series.length === 0}
-            onRetry={() => setRange(range)} // 触发 effect 重跑
+            onRetry={() => setReloadKey((k) => k + 1)}
             emptyTitle={t('market.emptyTitle')}
-            emptyHint={t('market.rangeHint', { start: query?.startDate ?? '-', end: query?.endDate ?? '-' })}
+            emptyHint={t('market.rangeHint', {
+              start: query?.startDate ?? '-',
+              end: query?.endDate ?? '-',
+            })}
           >
             {(data) => (
               <SeriesChart
                 series={data.series}
                 height={360}
+                drawEffect
                 onReset={() => {
                   setSymbols(INITIAL_SYMBOLS);
                   setRange('1Y');
@@ -235,58 +257,78 @@ export const MarketOverviewPage = () => {
             )}
           </AsyncBoundary>
         </div>
-      </Card>
 
-      <section className={styles.kpis}>
-        <Kpi label={t('market.kpi.latestDate')} value={latestTradeDate ?? '-'} />
-        <Kpi label={t('market.kpi.dailyReturn')} value={spyDailyReturnLabel} tone="muted" />
-        <Kpi
-          label={t('market.kpi.advancers')}
-          value={overview ? `${overview.advancers} / ${overview.total}` : '-'}
-          tone="muted"
-        />
-        <Kpi
-          label={t('market.kpi.breadth')}
-          value={overview ? `${(overview.breadth * 100).toFixed(1)}%` : '-'}
-          tone="muted"
-        />
-        <Kpi
-          label={t('market.kpi.taskStatus')}
-          value={taskStatus ? taskStatus.label : '尚未运行'}
-          valueColor={taskStatus?.color}
-          tone="muted"
-        />
+        <div className={styles.ledger}>
+          <LedgerCell
+            primary
+            label={t('market.kpi.latestDate')}
+            value={latestTradeDate ?? '-'}
+            note={overview ? t('market.kpi.constituents', { total: overview.total }) : undefined}
+          />
+          <LedgerCell
+            label={t('market.kpi.dailyReturn')}
+            value={spyDailyReturnLabel}
+            note={t('market.kpi.normalizeBase')}
+          />
+          <LedgerCell
+            label={t('market.kpi.advancers')}
+            value={overview ? `${overview.advancers} / ${overview.total}` : '-'}
+            note={overview ? t('market.kpi.decliners', { count: overview.decliners }) : undefined}
+          />
+          <LedgerCell
+            label={t('market.kpi.breadth')}
+            value={overview ? `${(overview.breadth * 100).toFixed(1)}%` : '-'}
+            note={t('market.kpi.breadthNote')}
+          />
+          <LedgerCell
+            label={t('market.kpi.taskStatus')}
+            value={taskStatus ? taskStatus.label : t('market.kpi.notRun')}
+            valueColor={taskStatus?.color}
+            taskState={taskStatus !== null}
+          />
+        </div>
       </section>
+
+      <p className={styles.footnote}>
+        For research and educational purposes only. Not investment advice. Past performance does not
+        guarantee future results.
+      </p>
     </div>
   );
 };
 
-const Kpi = ({
+const LedgerCell = ({
   label,
   value,
-  hint,
-  tone,
+  note,
+  primary = false,
   valueColor,
+  taskState = false,
 }: {
   label: string;
   value: string;
-  hint?: string;
-  tone?: 'muted';
+  note?: string | undefined;
+  primary?: boolean;
   valueColor?: string | undefined;
+  taskState?: boolean;
 }) => {
+  const cellClass = primary
+    ? `${styles.ledgerCell} ${styles.ledgerCellPrimary}`
+    : styles.ledgerCell;
   return (
-    <div className={styles.kpi}>
-      <div className={styles.kpiLabel}>{label}</div>
-      <div
-        className={tone === 'muted' ? styles.kpiValueMuted : styles.kpiValue}
-        style={valueColor ? { color: valueColor } : undefined}
-      >
+    <div className={cellClass}>
+      <div className={styles.ledgerLabel}>{label}</div>
+      <div className={styles.ledgerValue} style={valueColor ? { color: valueColor } : undefined}>
+        {taskState ? (
+          <span
+            className={styles.taskDot}
+            style={valueColor ? { background: valueColor } : undefined}
+            aria-hidden="true"
+          />
+        ) : null}
         {value}
       </div>
-      {hint ? <div className={styles.kpiHint}>{hint}</div> : null}
+      {note ? <div className={styles.ledgerNote}>{note}</div> : null}
     </div>
   );
 };
-
-// 抑制未使用变量告警；这些会在阶段 2 真正接入 fetch 时被使用
-void ({} as ApiError);

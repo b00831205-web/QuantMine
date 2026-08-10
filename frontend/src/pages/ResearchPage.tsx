@@ -1,446 +1,488 @@
+/**
+ * 研究结果页 · Evidence Ledger（证据账本）
+ *
+ * 方向契约：
+ * THESIS：因子 IC 表是页面唯一的主证据区，筛选与选中因子的统计退居同面板
+ *         内的账本行，回测指标构成其下的次级证据架。
+ * OWN-WORLD：沿用 DESIGN.md 的哑光深色研究终端语言——平层色阶、1px 细线、
+ *         钴蓝只用于选中/焦点/显著性；机器值一律等宽数字；显著性用
+ *         单点 + 中性/钴蓝文字，不用红绿。
+ * STORY：研究员筛选 run，扫读 IC/t/p 显著性，选中因子查看统计与对应回测，
+ *         再展开某张回测读净值曲线。
+ * FIRST VIEWPORT：页头 + 筛选工具条 + 单块因子面板（表头 + 密集显著性表 +
+ *         选中因子账本），回测架与曲线在首屏之下。
+ * FORM：Evidence Ledger，与市场总览 / 调仓收益 template 同构。
+ * FINISH：unreviewed and undocumented is unfinished；本次以类型/测试/构建与人工视觉复核收口。
+ */
+
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Card } from '@/components/common/Card';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
 import { PaginatedTable } from '@/components/common/PaginatedTable';
-import type { FactorResultRow, FactorResultPage, BacktestSummaryCard, BacktestSummaryPage, ResearchFilterOptions, BacktestSeriesQuery, BacktestSeriesResponse } from '@/types/research';
+import type {
+  FactorResultRow,
+  FactorResultPage,
+  BacktestSummaryCard,
+  BacktestSummaryPage,
+  ResearchFilterOptions,
+  BacktestSeriesQuery,
+  BacktestSeriesResponse,
+} from '@/types/research';
 import type { AsyncState } from '@/types/api';
 import styles from './ResearchPage.module.css';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/i18n';
 import type { TFunction } from 'i18next';
-import { fetchResearchOptions, fetchFactorResults, fetchBacktestSummaries, fetchBacktestSeries } from '@/api/client';
+import {
+  fetchResearchOptions,
+  fetchFactorResults,
+  fetchBacktestSummaries,
+  fetchBacktestSeries,
+} from '@/api/client';
 import { HttpError } from '@/api/http';
 import { SeriesChart } from '@/components/chart/SeriesChart';
 
-
-
-
-/* ──────────────────────────────────────────────
-   状态骨架（类型由用户在学习任务中实现真实请求）
-   TODO(USER_LEARNING): 用真实 fetch 替换下面的 useState 空数组。
-   数据来源示例：
-     GET /api/v1/research/options                          → ResearchRunFilterOptions
-     GET /api/v1/research/factors?runId=...                 → TestSummary[]
-     GET /api/v1/research/backtest-metrics?runId=...      → BacktestSummary[]
-────────────────────────────────────────────── */
-type BtState = AsyncState<BacktestSummaryPage>
-type TestsState  = AsyncState<FactorResultPage>;
+type BtState = AsyncState<BacktestSummaryPage>;
+type TestsState = AsyncState<FactorResultPage>;
 type OptionsState = AsyncState<ResearchFilterOptions>;
 type CurveState = AsyncState<BacktestSeriesResponse>;
 
-// TODO(USER_LEARNING)
-const EMPTY_TESTS: TestsState   = { status: 'idle' };
-const EMPTY_BT: BtState         = { status: 'idle' };
-const EMPTY_FACTOR_PAGE : FactorResultPage = {
+const EMPTY_TESTS: TestsState = { status: 'idle' };
+const EMPTY_BT: BtState = { status: 'idle' };
+const EMPTY_FACTOR_PAGE: FactorResultPage = {
   items: [],
   total: 0,
-  page : 1,
-  pageSize: 25
-}
+  page: 1,
+  pageSize: 25,
+};
 
-/* ─── 全局筛选默认值 ──────────────────────────── */
+const formatNumber = (value: number | null, digits: number): string =>
+  value === null ? '-' : value.toFixed(digits);
 
+const formatPercent = (value: number | null, digits = 1): string =>
+  value === null ? '-' : `${(value * 100).toFixed(digits)}%`;
 
-/* ──────────────────────────────────────────────
-   因子 IC 表格列定义
-   预留完整列结构；render 骨架供用户填充真实数据展示逻辑
-   TODO(USER_LEARNING): 在各列 render 中加入格式化（如 p<0.05 高亮）、
-   趋势图标（↑↓）或单元格颜色映射。
-────────────────────────────────────────────── */
-const formatNumber = (value: number | null, digits : number): string =>
-  value === null? '-': value.toFixed(digits);
-
-const buildTestColumns = (t: TFunction): Array<{
+const buildTestColumns = (
+  t: TFunction,
+): Array<{
   key: string;
   header: string;
-  align?: 'left' | 'center' |'right';
+  align?: 'left' | 'center' | 'right';
   render: (row: FactorResultRow) => React.ReactNode;
 }> => [
   {
-    key: 'factor', header: t('research.factorCard.columnFactor'), align: 'left',
+    key: 'factor',
+    header: t('research.factorCard.columnFactor'),
+    align: 'left',
     render: (r) => <span className={styles.factorName}>{r.factorName}</span>,
   },
   {
-    key: 'period', header: t('research.factorCard.columnPeriod'), align: 'right',
-    render: (r) => String(r.period),
+    key: 'period',
+    header: t('research.factorCard.columnPeriod'),
+    align: 'right',
+    render: (r) => <span className={styles.numCell}>{String(r.period)}</span>,
   },
   {
-    key: 'icMean', header: 'IC Mean', align: 'right',
-    render: (r) => formatNumber(r.icMean, 4),
+    key: 'icMean',
+    header: t('research.col.icMean'),
+    align: 'right',
+    render: (r) => (
+      <span className={`${styles.numCell} ${styles.decision}`}>{formatNumber(r.icMean, 4)}</span>
+    ),
   },
   {
-    key: 'icStd', header: 'IC Std', align: 'right',
-    render: (r) => formatNumber(r.icStd, 4),
+    key: 'icStd',
+    header: t('research.col.icStd'),
+    align: 'right',
+    render: (r) => <span className={styles.numCell}>{formatNumber(r.icStd, 4)}</span>,
   },
   {
-    key: 'ir', header: 'IR', align: 'right',
-    render: (r) => formatNumber(r.ir, 4),
+    key: 'ir',
+    header: t('research.col.ir'),
+    align: 'right',
+    render: (r) => (
+      <span className={`${styles.numCell} ${styles.decision}`}>{formatNumber(r.ir, 4)}</span>
+    ),
   },
   {
-    key: 'tStat', header: t('metric.tStat'), align: 'right',
-    render: (r) => formatNumber(r.tStat, 3),
+    key: 'tStat',
+    header: t('metric.tStat'),
+    align: 'right',
+    render: (r) => (
+      <span className={`${styles.numCell} ${styles.decision}`}>{formatNumber(r.tStat, 3)}</span>
+    ),
   },
   {
-    key: 'pValue', header: t('metric.pValue'), align: 'right',
-    render: (r) => formatNumber(r.pValue, 4),
+    key: 'pValue',
+    header: t('metric.pValue'),
+    align: 'right',
+    render: (r) => (
+      <span className={`${styles.numCell} ${styles.decision}`}>{formatNumber(r.pValue, 4)}</span>
+    ),
   },
   {
-    key: 'bhSignificant', header: t('metric.bhSignificant'), align: 'center',
-    render: (r) => (r.bhSignificant ? '✓' : '—'),
+    key: 'bhSignificant',
+    header: t('metric.bhSignificant'),
+    align: 'left',
+    render: (r) => {
+      if (r.bhSignificant === null) return <span className={styles.mutedCell}>—</span>;
+      const cls = r.bhSignificant
+        ? `${styles.sig} ${styles.sigOn}`
+        : `${styles.sig} ${styles.sigOff}`;
+      return (
+        <span className={cls}>
+          <span className={styles.sigDot} aria-hidden="true" />
+          {r.bhSignificant ? t('research.significant') : t('research.notSignificant')}
+        </span>
+      );
+    },
   },
 ];
 
-/* ──────────────────────────────────────────────
-   回测指标卡片中每个 quantile 的列名
-   TODO(USER_LEARNING): 列名和 Quantile 数量由后端返回的 quantileReturns keys 决定，
-   这里仅为骨架占位，用户需要在 fetch 后动态生成列。
-────────────────────────────────────────────── */
-
-/* ──────────────────────────────────────────────
-   主组件
-────────────────────────────────────────────── */
 export const ResearchPage = () => {
   const { t } = useTranslation();
   const TEST_COLUMNS = useMemo(() => buildTestColumns(t), [t]);
 
   /* ── 全局筛选状态 ── */
-
-  const [variant,     setVariant]     = useState<string>('');
-  const [testId,      setTestId]      = useState<string>('');
+  const [variant, setVariant] = useState<string>('');
+  const [testId, setTestId] = useState<string>('');
   const [sampleScope, setSampleScope] = useState<string>('');
 
   /* ── 因子区状态 ── */
   const [testsState, setTestsState] = useState<TestsState>(EMPTY_TESTS);
   const [selectedFactor, setSelectedFactor] = useState<FactorResultRow | null>(null);
-  const [optionsState, setOptionsState] = useState<OptionsState>({status: 'idle'});
+  const [optionsState, setOptionsState] = useState<OptionsState>({ status: 'idle' });
   const [activeRunId, setActiveRunId] = useState<number | null>(null);
-  const [filterOptionsState, setFilterOptionsState] = useState<OptionsState>({status: 'idle'});
+  const [filterOptionsState, setFilterOptionsState] = useState<OptionsState>({ status: 'idle' });
 
   /* ── 回测区状态 ── */
   const [btState, setBtState] = useState<BtState>(EMPTY_BT);
   const [expandedBacktest, setExpandedBacktest] = useState<BacktestSeriesQuery | null>(null);
-  const [curveState, setCurveState] = useState<CurveState>({status: 'idle'})
-  /* ── 单击行 → 选中因子 ── */
+  const [curveState, setCurveState] = useState<CurveState>({ status: 'idle' });
+
   const handleRowClick = (row: FactorResultRow): void => {
     setSelectedFactor(row);
   };
 
-  /* ── 双击行 → 跳转因子详情 ── */
   const navigate = useNavigate();
-  const handleRowDoubleClick = (row: FactorResultRow): void =>{
-    if (activeRunId === null){
-      return;
-    }
+  const handleRowDoubleClick = (row: FactorResultRow): void => {
+    if (activeRunId === null) return;
     const search = new URLSearchParams({
       runId: String(activeRunId),
       variant: row.variantName,
       testId: row.testId,
       sampleScope: row.sampleScope,
-      period: String(row.period)
+      period: String(row.period),
     });
-    navigate(`/research/factors/${encodeURIComponent(row.factorName)}?${search}`,
-  );
+    navigate(`/research/factors/${encodeURIComponent(row.factorName)}?${search}`);
   };
-  /* ── 选中因子展开区 ──
-     实现：
-       1. 关键指标（来自当前选中的 FactorResultRow）
-       2. 对应回测卡列表（按 factorName 在 btState.items 中过滤）
-     留在未来学习的：IC 时序曲线（详情页已实现）、滚动/年度 IC（spec 没要求）。
-  ── */
-  useEffect(()=>{let cancelled = false;
-    
-    setOptionsState ({'status': 'loading'});
 
-    fetchResearchOptions().then((data)=>{if (cancelled) return;
-      setOptionsState({status: 'success', data});
-      setFilterOptionsState({status: 'success', data});
-      setActiveRunId(data.defaultRunId);
-    }).catch((error)=>{if (cancelled) return;
-      if(error instanceof HttpError){setOptionsState({status: 'error', error: error.apiError});
-    return;}
-      setOptionsState({
-        status: 'error',
-        error:{
-          code: 'NETWORK_ERROR',
-          title: i18n.t('common.networkError.title'),
-          detail: i18n.t('common.networkError.detail'),
-          status: 0
-        },
-      });
-  });
-  return ()=>{cancelled = true;};},[]);
-  
   useEffect(() => {
-  if (activeRunId === null) return;
+    let cancelled = false;
+    setOptionsState({ status: 'loading' });
+    fetchResearchOptions()
+      .then((data) => {
+        if (cancelled) return;
+        setOptionsState({ status: 'success', data });
+        setFilterOptionsState({ status: 'success', data });
+        setActiveRunId(data.defaultRunId);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (error instanceof HttpError) {
+          setOptionsState({ status: 'error', error: error.apiError });
+          return;
+        }
+        setOptionsState({
+          status: 'error',
+          error: {
+            code: 'NETWORK_ERROR',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
+            status: 0,
+          },
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const controller = new AbortController();
-
-  setVariant('');
-  setTestId('');
-  setSampleScope('');
-  setFilterOptionsState({ status: 'loading' });
-
-  fetchResearchOptions(activeRunId, controller.signal)
-    .then((data) => {
-      if (controller.signal.aborted) return;
-      setFilterOptionsState({ status: 'success', data });
-    })
-    .catch((error) => {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
-      }
-
-      if (error instanceof HttpError) {
+  useEffect(() => {
+    if (activeRunId === null) return;
+    const controller = new AbortController();
+    setVariant('');
+    setTestId('');
+    setSampleScope('');
+    setFilterOptionsState({ status: 'loading' });
+    fetchResearchOptions(activeRunId, controller.signal)
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setFilterOptionsState({ status: 'success', data });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (error instanceof HttpError) {
+          setFilterOptionsState({ status: 'error', error: error.apiError });
+          return;
+        }
         setFilterOptionsState({
           status: 'error',
-          error: error.apiError,
+          error: {
+            code: 'NETWORK_ERROR',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
+            status: 0,
+          },
         });
-        return;
-      }
-
-      setFilterOptionsState({
-        status: 'error',
-        error: {
-          code: 'NETWORK_ERROR',
-          title: i18n.t('common.networkError.title'),
-          detail: i18n.t('common.networkError.detail'),
-          status: 0,
-        },
       });
-    });
+    return () => controller.abort();
+  }, [activeRunId]);
 
-  return () => {
-    controller.abort();
-  };
-}, [activeRunId]);
-
-  useEffect(()=>{if (activeRunId === null){
-    setTestsState({
-      status: 'success',
-      data : EMPTY_FACTOR_PAGE,
-    });
-    return;
-  }
-  const controller = new AbortController();
-  setTestsState({status : 'loading'});
-  setSelectedFactor(null);
-  const validSampleScope =
-  sampleScope === 'train' || sampleScope === 'test'
-    ? sampleScope
-    : undefined;
-  
-    
-
-  fetchFactorResults(
-  {
-    runId: activeRunId,
-    page: 1,
-    pageSize: 25,
-
-    ...(variant ? { variant } : {}),
-    ...(testId ? { testId } : {}),
-    ...(validSampleScope ? { sampleScope: validSampleScope } : {}),
-  },
-  controller.signal,
-).then((data)=> {setTestsState({status : 'success', data});
-  }).catch((error)=> {if (error instanceof DOMException && error.name === 'AbortError'){
-    return;
-  }
-  if (error instanceof HttpError){
-    setTestsState({status: 'error', error: error.apiError});
-    return ;
-  }
-  setTestsState({
-    status: 'error',
-    error: {
-      code: 'NETWORK_ERROR',
-      title: i18n.t('common.networkError.title'),
-      detail: i18n.t('common.networkError.detail'),
-      status:0,
-    },
-  });
-  });
-  return () => {
-    controller.abort();
-  };
-  }, [activeRunId, variant, testId, sampleScope]);
-  
-  useEffect(()=>{
-    if (activeRunId === null){
-      setBtState({
-        status : 'success',
-        data : {items: [], total: 0, page: 1, pageSize: 25}
-      });
-      return ;
-    }
-    const contorller = new AbortController();
-    setBtState({status: 'loading'});
-    fetchBacktestSummaries({
-      runId: activeRunId,
-      page: 1,
-      pageSize: 25,
-      ...(variant? {variant}: {}),
-      ...(testId? {testId}: {}),
-    },
-  contorller.signal,)
-  .then((data)=>{if(!contorller.signal.aborted){setBtState({status: 'success', data});
-}
-}).catch((error)=>{if(error instanceof DOMException && error.name === 'AbortError'){return;}
-if (error instanceof HttpError){setBtState({status: 'error', error: error.apiError}); return;}
-
-setBtState({status: 'error', error:{
-  code: 'NETWORK_ERROR',
-  title: i18n.t('common.networkError.title'),
-  detail:i18n.t('common.networkError.detail'),
-  status: 0,
-},
-});
-});
-return () => contorller.abort();
-  },[activeRunId, variant, testId])
-
-  useEffect(()=>{
-    setExpandedBacktest(null);
-  },[activeRunId, variant, testId])
-
-  useEffect(()=>{
-    if(expandedBacktest === null){
-      setCurveState({status: 'idle'});
+  useEffect(() => {
+    if (activeRunId === null) {
+      setTestsState({ status: 'success', data: EMPTY_FACTOR_PAGE });
       return;
     }
     const controller = new AbortController();
-    setCurveState({status: 'loading'});
+    setTestsState({ status: 'loading' });
+    setSelectedFactor(null);
+    const validSampleScope =
+      sampleScope === 'train' || sampleScope === 'test' ? sampleScope : undefined;
+    fetchFactorResults(
+      {
+        runId: activeRunId,
+        page: 1,
+        pageSize: 25,
+        ...(variant ? { variant } : {}),
+        ...(testId ? { testId } : {}),
+        ...(validSampleScope ? { sampleScope: validSampleScope } : {}),
+      },
+      controller.signal,
+    )
+      .then((data) => {
+        setTestsState({ status: 'success', data });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (error instanceof HttpError) {
+          setTestsState({ status: 'error', error: error.apiError });
+          return;
+        }
+        setTestsState({
+          status: 'error',
+          error: {
+            code: 'NETWORK_ERROR',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
+            status: 0,
+          },
+        });
+      });
+    return () => controller.abort();
+  }, [activeRunId, variant, testId, sampleScope]);
 
+  useEffect(() => {
+    if (activeRunId === null) {
+      setBtState({ status: 'success', data: { items: [], total: 0, page: 1, pageSize: 25 } });
+      return;
+    }
+    const controller = new AbortController();
+    setBtState({ status: 'loading' });
+    fetchBacktestSummaries(
+      {
+        runId: activeRunId,
+        page: 1,
+        pageSize: 25,
+        ...(variant ? { variant } : {}),
+        ...(testId ? { testId } : {}),
+      },
+      controller.signal,
+    )
+      .then((data) => {
+        if (!controller.signal.aborted) setBtState({ status: 'success', data });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (error instanceof HttpError) {
+          setBtState({ status: 'error', error: error.apiError });
+          return;
+        }
+        setBtState({
+          status: 'error',
+          error: {
+            code: 'NETWORK_ERROR',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
+            status: 0,
+          },
+        });
+      });
+    return () => controller.abort();
+  }, [activeRunId, variant, testId]);
+
+  useEffect(() => {
+    setExpandedBacktest(null);
+  }, [activeRunId, variant, testId]);
+
+  useEffect(() => {
+    if (expandedBacktest === null) {
+      setCurveState({ status: 'idle' });
+      return;
+    }
+    const controller = new AbortController();
+    setCurveState({ status: 'loading' });
     fetchBacktestSeries(expandedBacktest, controller.signal)
-    .then((data)=>{if (!controller.signal.aborted){setCurveState({status: 'success', data});
-  }
-}).catch((error)=>{if(error instanceof DOMException && error.name === 'AbortError'){
-  return;
-}
-if (error instanceof HttpError){
-  setCurveState({status: 'error', error: error.apiError});
-  return ;
-}
-setCurveState({
-  status: 'error',
-  error:{
-    code: 'NETWORK_ERROR',
-    title: i18n.t('common.networkError.title'),
-    detail: i18n.t('common.networkError.detail'),
-    status: 0
-  },
-});
-});
-    return () => controller.abort();},[expandedBacktest]);
- 
+      .then((data) => {
+        if (!controller.signal.aborted) setCurveState({ status: 'success', data });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (error instanceof HttpError) {
+          setCurveState({ status: 'error', error: error.apiError });
+          return;
+        }
+        setCurveState({
+          status: 'error',
+          error: {
+            code: 'NETWORK_ERROR',
+            title: i18n.t('common.networkError.title'),
+            detail: i18n.t('common.networkError.detail'),
+            status: 0,
+          },
+        });
+      });
+    return () => controller.abort();
+  }, [expandedBacktest]);
+
   const availableRuns = optionsState.status === 'success' ? optionsState.data.runs : [];
   const filterOptions = filterOptionsState.status === 'success' ? filterOptionsState.data : null;
 
-  /* ── 选中因子对应的回测卡（从 btState.items 里过滤） ── */
   const selectedFactorBacktests =
     selectedFactor !== null && btState.status === 'success'
-      ? btState.data.items.filter(
-          (item) => item.factorName === selectedFactor.factorName,
-        )
+      ? btState.data.items.filter((item) => item.factorName === selectedFactor.factorName)
       : [];
+
+  const factorTotal = testsState.status === 'success' ? testsState.data.total : null;
+  const btTotal = btState.status === 'success' ? btState.data.total : null;
 
   return (
     <div className={styles.page}>
-      {/* 1. 页面标题 */}
-      <PageHeader
-        title={t('research.title')}
-        subtitle={t('research.subtitle')}
-      />
+      <div className={styles.headerWrap}>
+        <PageHeader title={t('research.title')} subtitle={t('research.subtitle')} />
+      </div>
 
-      {/* 2. 顶部全局筛选卡 */}
-      <Card title={t('research.filter.title')}>
-        <div className={styles.filterRow}>
-          {/* research run 下拉 */}
-          <label className={styles.filterField}>
-            <span className={styles.filterLabel}>Research Run</span>
-            <select
-              className={styles.filterSelect}
-              value = {activeRunId ?? ''}
-              disabled = {optionsState.status === 'loading'}
-              // TODO(USER_LEARNING): 绑定后端返回的 runId 列表
-              onChange={(e) => {
-                // 切换 run 时重置选中因子、重新请求 tests + backtests
-                const value = e.target.value;
-                setActiveRunId(value === ''? null: Number(value));
-                setSelectedFactor(null);
-              }}
-            >
-              <option value="">{t('research.filter.selectRun')}</option>
-                {availableRuns.map((run) => (
-                  <option key={run.runId} value = {run.runId}>
-                    {`Run ${run.runId} · ${run.createdAt}`}
-                    </option>
-                ))}
-              </select>
-            </label>
-          {/* variant */}
-          <label className={styles.filterField}>
-            <span className={styles.filterLabel}>Variant</span>
-            <select
-              className={styles.filterSelect}
-              value={variant}
-              disabled = {filterOptionsState.status !== 'success'}
-              onChange={(e) => setVariant(e.target.value)}
-            >
-          <option value = ''>{t('common.all')}</option>
-
-          {filterOptions?.variants.map((value) => (<option key ={value} value = {value}>{value}</option>))}
-          </select>
+      {/* 全局筛选工具条 */}
+      <div className={styles.toolbar} role="group" aria-label={t('research.filter.title')}>
+        <div className={styles.filter}>
+          <label className={styles.filterLabel} htmlFor="research-run">
+            {t('research.filter.researchRun')}
           </label>
-
-          {/* test id */}
-          <label className={styles.filterField}>
-            <span className={styles.filterLabel}>Test ID</span>
-            <select
-              className={styles.filterSelect}
-              value={testId}
-              disabled = {filterOptionsState.status !== 'success'}
-              onChange={(e) => setTestId(e.target.value)}
-            >
-          <option value = ''>{t('common.all')}</option>
-          {filterOptions?.testIds.map((value)=><option key={value} value={value}>{value}</option>)}
+          <select
+            id="research-run"
+            className={styles.filterSelect}
+            value={activeRunId ?? ''}
+            disabled={optionsState.status === 'loading'}
+            onChange={(e) => {
+              const value = e.target.value;
+              setActiveRunId(value === '' ? null : Number(value));
+              setSelectedFactor(null);
+            }}
+          >
+            <option value="">{t('research.filter.selectRun')}</option>
+            {availableRuns.map((run) => (
+              <option key={run.runId} value={run.runId}>
+                {`Run ${run.runId} · ${run.createdAt}`}
+              </option>
+            ))}
           </select>
-          </label>
-
-          {/* sample scope */}
-          <label className={styles.filterField}>
-            <span className={styles.filterLabel}>Sample Scope</span>
-            <select
-              className={styles.filterSelect}
-              value={sampleScope}
-              disabled = {filterOptionsState.status !== 'success'}
-              onChange={(e) => setSampleScope(e.target.value)}
-            >
-          <option value = ''>{t('common.all')}</option>
-          {filterOptions?.sampleScopes.map((value)=>(<option key = {value} value={value}>{value}</option>))}
-          </select>
-          </label>
         </div>
-      </Card>
+        <div className={styles.filter}>
+          <label className={styles.filterLabel} htmlFor="research-variant">
+            {t('research.filter.variant')}
+          </label>
+          <select
+            id="research-variant"
+            className={styles.filterSelect}
+            value={variant}
+            disabled={filterOptionsState.status !== 'success'}
+            onChange={(e) => setVariant(e.target.value)}
+          >
+            <option value="">{t('common.all')}</option>
+            {filterOptions?.variants.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className={styles.filter}>
+          <label className={styles.filterLabel} htmlFor="research-test">
+            {t('research.filter.testId')}
+          </label>
+          <select
+            id="research-test"
+            className={styles.filterSelect}
+            value={testId}
+            disabled={filterOptionsState.status !== 'success'}
+            onChange={(e) => setTestId(e.target.value)}
+          >
+            <option value="">{t('common.all')}</option>
+            {filterOptions?.testIds.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className={styles.filter}>
+          <label className={styles.filterLabel} htmlFor="research-scope">
+            {t('research.filter.sampleScope')}
+          </label>
+          <select
+            id="research-scope"
+            className={styles.filterSelect}
+            value={sampleScope}
+            disabled={filterOptionsState.status !== 'success'}
+            onChange={(e) => setSampleScope(e.target.value)}
+          >
+            <option value="">{t('common.all')}</option>
+            {filterOptions?.sampleScopes.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className={styles.runSummary}>
+          <span className={styles.summaryDot} aria-hidden="true" />
+          {activeRunId !== null
+            ? t('research.summary', {
+                runId: activeRunId,
+                factors: factorTotal ?? '-',
+                backtests: btTotal ?? '-',
+              })
+            : t('research.noRun')}
+        </div>
+      </div>
 
-      {/* 3. 因子 IC 与显著性区域（全宽纵向） */}
-      <Card
-        title={t('research.factorCard.title')}
-        extra={
-          <span className={styles.cardMeta}>
-            {activeRunId!== null
-              ? `${activeRunId}`
+      {/* 主证据面板：因子 IC 与显著性 */}
+      <section className={styles.panel} aria-label={t('research.factorCard.title')}>
+        <div className={styles.panelHead}>
+          <h2>{t('research.factorCard.title')}</h2>
+          <span className={styles.panelMeta}>
+            {activeRunId !== null
+              ? t('research.factorMeta', { runId: activeRunId })
               : t('research.noRun')}
           </span>
-        }
-      >
+        </div>
+
         <AsyncBoundary
           state={testsState}
           isEmpty={(data) => data.items.length === 0}
           emptyTitle={t('research.factorCard.emptyTitle')}
-          emptyHint={`Run: ${activeRunId}`}
+          emptyHint={t('research.emptyRunHint', { runId: activeRunId ?? '-' })}
         >
           {(data) => (
             <PaginatedTable
@@ -456,72 +498,72 @@ setCurveState({
               }
               onPageChange={(page) => {
                 void page;
-                // TODO(USER_LEARNING): 真实分页请求 — 携带 activeRunId + variant/testId/sampleScope 拉取 page=page
               }}
               emptyHint={t('research.factorCard.noMatch')}
             />
           )}
         </AsyncBoundary>
 
-        {/* 当前选中因子展开区 */}
-        {selectedFactor && (
-          <FactorExpandSection
+        {selectedFactor ? (
+          <FactorLedger
             factor={selectedFactor}
             items={selectedFactorBacktests}
             onClose={() => setSelectedFactor(null)}
           />
-        )}
-      </Card>
+        ) : null}
+      </section>
 
-      {/* 4. 回测结果区域（全宽纵向，在因子区之后） */}
-      <Card
-        title={t('research.backtestCard.title')}
-        extra={
-          <span className={styles.cardMeta}>
-            {t('research.backtestCard.extra')}
-          </span>
-        }
-      >
+      {/* 回测结果面板 */}
+      <section className={styles.panel} aria-label={t('research.backtestCard.title')}>
+        <div className={styles.panelHead}>
+          <h2>{t('research.backtestCard.title')}</h2>
+          <span className={styles.panelMeta}>{t('research.backtestCard.extra')}</span>
+        </div>
+
         <AsyncBoundary
           state={btState}
           isEmpty={(d) => d.items.length === 0}
           emptyTitle={t('research.backtestCard.emptyTitle')}
-          emptyHint={`Run: ${activeRunId}`}
+          emptyHint={t('research.emptyRunHint', { runId: activeRunId ?? '-' })}
         >
           {(data) => (
-            <BacktestSection 
-            items={data.items}
-            expandedBacktest = {expandedBacktest}
-            curveState={curveState}
-            onToggleCurve = {(item)=>{
-              const next: BacktestSeriesQuery={
-                runId: activeRunId!,
-                variant: item.variantName,
-                backtestId: item.backtestId,
-                testId: item.testId,
-                factorName: item.factorName,
-                period:item.period,
-              };
-              setExpandedBacktest((current)=>(
-                current?.backtestId === next.backtestId
-                && current.factorName === next.factorName
-                && current.period === next.period? null : next
-              ));
-            }} 
+            <BacktestSection
+              items={data.items}
+              expandedBacktest={expandedBacktest}
+              curveState={curveState}
+              onToggleCurve={(item) => {
+                if (activeRunId === null) return;
+                const next: BacktestSeriesQuery = {
+                  runId: activeRunId,
+                  variant: item.variantName,
+                  backtestId: item.backtestId,
+                  testId: item.testId,
+                  factorName: item.factorName,
+                  period: item.period,
+                };
+                setExpandedBacktest((current) =>
+                  current?.backtestId === next.backtestId &&
+                  current.factorName === next.factorName &&
+                  current.period === next.period
+                    ? null
+                    : next,
+                );
+              }}
             />
           )}
         </AsyncBoundary>
-      </Card>
+      </section>
+
+      <p className={styles.footnote}>
+        For research and educational purposes only. Not investment advice. Past performance does not
+        guarantee future results.
+      </p>
     </div>
   );
-}
+};
 
-/* ──────────────────────────────────────────────
-   选中因子展开区
-   - 顶部摘要：因子名 + 当前行关键指标
-   - 对应回测卡列表（从 BacktestSummaryCard[] 中过滤同名因子）
-────────────────────────────────────────────── */
-const FactorExpandSection = ({
+/* ── 选中因子证据账本 ── */
+const FactorLedger = ({
   factor,
   items,
   onClose,
@@ -532,11 +574,14 @@ const FactorExpandSection = ({
 }) => {
   const { t } = useTranslation();
   return (
-    <div className={styles.expandSection}>
-      <div className={styles.expandHeader}>
-        <span className={styles.expandTitle}>
-          {t('research.expand.selected')}<strong>{factor.factorName}</strong>
-          <span className={styles.expandMeta}>
+    <div className={styles.factorLedger}>
+      <div className={styles.ledgerHead}>
+        <div>
+          <span className={styles.ledgerTitle}>
+            {t('research.expand.selected')}
+            <strong className={styles.ledgerFactor}>{factor.factorName}</strong>
+          </span>
+          <span className={styles.ledgerMeta}>
             {t('research.expand.meta', {
               period: factor.period,
               variant: factor.variantName,
@@ -544,41 +589,48 @@ const FactorExpandSection = ({
               sampleScope: factor.sampleScope,
             })}
           </span>
-        </span>
-        <button className={styles.expandClose} onClick={onClose}>
+        </div>
+        <button type="button" className={styles.closeBtn} onClick={onClose}>
           {t('research.expand.close')}
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+            <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth={1.2} />
+          </svg>
         </button>
       </div>
 
-      <div className={styles.expandKpiRow}>
-        <ExpandKpi label="IC Mean"    value={formatNumber(factor.icMean, 4)} />
-        <ExpandKpi label="IC Std"     value={formatNumber(factor.icStd, 4)} />
-        <ExpandKpi label="IR"         value={formatNumber(factor.ir, 3)} />
-        <ExpandKpi label={t('metric.tStat')}       value={formatNumber(factor.tStat, 3)} />
-        <ExpandKpi label={t('metric.pValue')}       value={formatNumber(factor.pValue, 4)} />
-        <ExpandKpi label={t('metric.bhSignificant')}    value={factor.bhSignificant ? t('common.yes') : t('common.no')} />
+      <div className={styles.kpiRow}>
+        <ExpandKpi label={t('research.col.icMean')} value={formatNumber(factor.icMean, 4)} />
+        <ExpandKpi label={t('research.col.icStd')} value={formatNumber(factor.icStd, 4)} />
+        <ExpandKpi label={t('research.col.ir')} value={formatNumber(factor.ir, 4)} />
+        <ExpandKpi label={t('metric.tStat')} value={formatNumber(factor.tStat, 3)} />
+        <ExpandKpi label={t('metric.pValue')} value={formatNumber(factor.pValue, 4)} />
+        <ExpandKpi
+          label={t('metric.bhSignificant')}
+          value={
+            factor.bhSignificant === null
+              ? '—'
+              : factor.bhSignificant
+                ? t('research.significant')
+                : t('research.notSignificant')
+          }
+          significance={factor.bhSignificant === true}
+        />
       </div>
 
-      <div className={styles.expandBtSummary}>
-        <div className={styles.expandSubLabel}>
-          {t('research.expand.backtestCount', { count: items.length })}
-        </div>
-        {items.length === 0 ? (
-          <div className={styles.expandPlaceholder}>
-            {t('research.expand.noBacktest', { factor: factor.factorName })}
-          </div>
-        ) : (
-          <div className={styles.expandBtList}>
-            {items.map((item) => (
-              <BtMetricCard
-                key={`${item.backtestId}-${item.factorName}-${item.period}`}
-                item={item}
-                compact
-              />
-            ))}
-          </div>
-        )}
+      <div className={styles.relatedHead}>
+        {t('research.expand.backtestCount', { count: items.length })}
       </div>
+      {items.length === 0 ? (
+        <div className={styles.relatedEmpty}>
+          {t('research.expand.noBacktest', { factor: factor.factorName })}
+        </div>
+      ) : (
+        <div className={styles.btMiniRow}>
+          {items.map((item) => (
+            <BtMiniCard key={`${item.backtestId}-${item.factorName}-${item.period}`} item={item} />
+          ))}
+        </div>
+      )}
     </div>
   );
 };
@@ -586,54 +638,83 @@ const FactorExpandSection = ({
 const ExpandKpi = ({
   label,
   value,
+  significance,
 }: {
   label: string;
   value: string;
+  significance?: boolean;
 }) => (
-  <div className={styles.expandKpi}>
-    <span className={styles.expandKpiLabel}>{label}</span>
-    <span className={styles.expandKpiValue}>{value}</span>
+  <div className={styles.kpi}>
+    <span className={styles.kpiLabel}>{label}</span>
+    <span className={significance ? `${styles.kpiValue} ${styles.kpiSigOn}` : styles.kpiValue}>
+      {significance ? <span className={styles.sigDot} aria-hidden="true" /> : null}
+      {value}
+    </span>
   </div>
 );
 
-/* ──────────────────────────────────────────────
-   回测结果区域
-   - 卡片网格 + 展开式净值曲线（spec: expandable-backtest-curves）
-────────────────────────────────────────────── */
-const BacktestSection = ({ items,
-  expandedBacktest, curveState, onToggleCurve }: { 
-    items: BacktestSummaryCard[],
-    expandedBacktest: BacktestSeriesQuery|null;
-    curveState : CurveState; 
-    onToggleCurve: (item: BacktestSummaryCard)=>void; }) => {
+const BtMiniCard = ({ item }: { item: BacktestSummaryCard }) => {
+  const { t } = useTranslation();
+  const quantiles = Object.entries(item.quantileYearlyReturns).filter(
+    ([key]) => /^Q[15]$/.test(key) || key === 'longShort',
+  );
+  const entries = quantiles.length > 0 ? quantiles : Object.entries(item.quantileYearlyReturns);
+  return (
+    <div className={styles.btMini}>
+      <div className={styles.btMiniHead}>
+        <span className={styles.btMiniFactor}>{item.factorName}</span>
+        <span className={styles.btMiniJob}>{item.backtestId}</span>
+      </div>
+      <div className={styles.btMiniQuantiles}>
+        {entries.map(([key, value]) => (
+          <div key={key} className={styles.btMiniQ}>
+            <span className={styles.btMiniQl}>
+              {key === 'longShort' ? t('research.col.longShort') : key}
+            </span>
+            <span className={styles.btMiniQv}>{formatPercent(value, 2)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/* ── 回测结果区 ── */
+const BacktestSection = ({
+  items,
+  expandedBacktest,
+  curveState,
+  onToggleCurve,
+}: {
+  items: BacktestSummaryCard[];
+  expandedBacktest: BacktestSeriesQuery | null;
+  curveState: CurveState;
+  onToggleCurve: (item: BacktestSummaryCard) => void;
+}) => {
   const { t } = useTranslation();
   if (items.length === 0) {
     return <div className={styles.btEmpty}>{t('research.backtestCard.empty')}</div>;
   }
   return (
     <div className={styles.btGrid}>
-      {/* 指标汇总卡 */}
-      <div className={styles.btMetricsRow}>
-        {items.map((item) => (
-          <BtMetricCard key={`${item.backtestId}-${item.factorName}-${item.period}`} item={item} 
-          isExpanded = {
-            expandedBacktest?.backtestId === item.backtestId
-            && expandedBacktest.factorName === item.factorName
-            && expandedBacktest.period === item.period
-          }
-          onToggleCurve = {()=>onToggleCurve(item)}/>
-        ))}
-      </div>
-
-      {/* 净值曲线占位 */}
-      <div className={styles.btChartArea}>
-        {expandedBacktest && (
-        <BacktestCurvePanel
-    query={expandedBacktest}
-    state={curveState}
-      />
-    )}
-      </div>
+      {items.map((item) => {
+        const isExpanded =
+          expandedBacktest?.backtestId === item.backtestId &&
+          expandedBacktest.factorName === item.factorName &&
+          expandedBacktest.period === item.period;
+        return (
+          <Fragment key={`${item.backtestId}-${item.factorName}-${item.period}`}>
+            <BtMetricCard
+              item={item}
+              isExpanded={isExpanded}
+              onToggleCurve={() => onToggleCurve(item)}
+            />
+            {isExpanded && expandedBacktest ? (
+              <BacktestCurvePanel query={expandedBacktest} state={curveState} />
+            ) : null}
+          </Fragment>
+        );
+      })}
     </div>
   );
 };
@@ -647,11 +728,10 @@ const BacktestCurvePanel = ({
 }) => {
   const { t } = useTranslation();
   return (
-    <div className={styles.btChartArea}>
-      <div className={styles.expandSubLabel}>
+    <div className={styles.curvePanel}>
+      <div className={styles.curveTitle}>
         {t('research.curve.title', { factor: query.factorName, period: query.period })}
       </div>
-
       <AsyncBoundary
         state={state}
         isEmpty={(data) => data.series.length === 0}
@@ -662,7 +742,8 @@ const BacktestCurvePanel = ({
           <SeriesChart
             series={data.series}
             baseDate={data.baseDate ?? undefined}
-            height={300}
+            height={260}
+            drawEffect
           />
         )}
       </AsyncBoundary>
@@ -670,65 +751,67 @@ const BacktestCurvePanel = ({
   );
 };
 
-/* ──────────────────────────────────────────────
-   单次回测指标卡
-   TODO(USER_LEARNING): 指标全部来自 BacktestSummary 字段，
-   用户可在此添加趋势图标（↑↓）、高亮逻辑、点击跳转详情等。
-────────────────────────────────────────────── */
 const BtMetricCard = ({
   item,
   isExpanded,
   onToggleCurve,
-  compact = false,
 }: {
   item: BacktestSummaryCard;
   isExpanded?: boolean;
   onToggleCurve?: () => void;
-  compact?: boolean;
 }) => {
   const { t } = useTranslation();
   return (
-    <div className={compact ? styles.btCardCompact : styles.btCard}>
-      <div className={styles.btCardHeader}>
+    <div className={isExpanded ? `${styles.btCard} ${styles.btCardExpanded}` : styles.btCard}>
+      <div className={styles.btCardHead}>
         <span className={styles.btFactor}>{item.factorName}</span>
-        <span className={styles.btJob}>{item.backtestId}</span>
+        <span className={styles.btJob}>
+          {item.backtestId} · {item.period}d
+        </span>
       </div>
 
-      <div className={styles.btQuantileRow}>
+      <div className={styles.btQuantiles}>
         {Object.entries(item.quantileYearlyReturns).map(([key, value]) => (
           <div key={key} className={styles.btQuantile}>
-            <span className={styles.btQuantLabel}>
-              {key === 'longShort' ? 'Long-Short' : key}
+            <span className={styles.btQl}>
+              {key === 'longShort' ? t('research.col.longShort') : key}
             </span>
-            <span className={styles.btQuantVal}>
-              {(value * 100).toFixed(2)}%
-            </span>
+            <span className={styles.btQv}>{formatPercent(value, 2)}</span>
           </div>
         ))}
       </div>
 
-      <div className={styles.btStatGrid}>
-        <BtStat label="Sharpe"     value={formatNumber(item.sharpe, 2)} />
-        <BtStat label={t('metric.maxDrawdown')}   value={item.maxDrawdown === null ? '-' : `${(item.maxDrawdown * 100).toFixed(1)}%`} />
-        <BtStat label={t('metric.winRate')}       value={item.winRate === null ? '-' : `${(item.winRate * 100).toFixed(1)}%`} />
-        <BtStat label={t('metric.holdingPeriod')}     value={t('metric.days', { count: item.period })} />
+      <div className={styles.btStats}>
+        <BtStat label={t('metric.sharpe')} value={formatNumber(item.sharpe, 2)} />
+        <BtStat label={t('metric.maxDrawdown')} value={formatPercent(item.maxDrawdown)} />
+        <BtStat label={t('metric.winRate')} value={formatPercent(item.winRate)} />
+        <BtStat
+          label={t('metric.holdingPeriod')}
+          value={t('metric.days', { count: item.period })}
+        />
       </div>
-      {!compact && onToggleCurve && (
+
+      {onToggleCurve ? (
         <button
           type="button"
-          className={styles.btCurveButton}
+          className={isExpanded ? `${styles.curveBtn} ${styles.curveBtnOpen}` : styles.curveBtn}
           onClick={onToggleCurve}
         >
           {isExpanded ? t('research.curve.hide') : t('research.curve.show')}
+          <span className={styles.chevron}>
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="m3 4.5 3 3 3-3" stroke="currentColor" strokeWidth={1.4} />
+            </svg>
+          </span>
         </button>
-      )}
+      ) : null}
     </div>
   );
 };
 
 const BtStat = ({ label, value }: { label: string; value: string }) => (
   <div className={styles.btStat}>
-    <span className={styles.btStatLabel}>{label}</span>
-    <span className={styles.btStatValue}>{value}</span>
+    <span className={styles.btSl}>{label}</span>
+    <span className={styles.btSv}>{value}</span>
   </div>
 );

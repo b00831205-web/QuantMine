@@ -38,12 +38,21 @@ interface Props {
   normalize?: boolean;
   /** 点击“还原”图标后回调（由页面负责重置回初始状态） */
   onReset?: () => void;
+  /** 启用“走势绘制”入场动画：曲线从左到右逐点绘制，多序列依次入场 */
+  drawEffect?: boolean;
 }
 
-export const SeriesChart = ({ series, height = 360, normalize = true, onReset }: Props) => {
+export const SeriesChart = ({
+  series,
+  height = 360,
+  normalize = true,
+  onReset,
+  drawEffect = false,
+}: Props) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const onResetRef = useRef(onReset);
+  const lastOptionRef = useRef<Record<string, unknown> | null>(null);
   onResetRef.current = onReset;
 
   useEffect(() => {
@@ -66,6 +75,23 @@ export const SeriesChart = ({ series, height = 360, normalize = true, onReset }:
       name: s.symbol,
       data: (normalize ? normalizeToBase100(s.points) : s.points).map((p) => [p.date, p.value]),
     }));
+    const seriesOption = datasets.map((d) => ({
+      name: d.name,
+      type: 'line',
+      showSymbol: false,
+      data: d.data,
+    }));
+    const drawOption = drawEffect
+      ? {
+          animation: true,
+          animationDuration: 1200,
+          animationEasing: 'cubicOut' as const,
+          series: seriesOption.map((s, i) => ({
+            ...s,
+            animationDelay: (idx: number) => idx * 2 + i * 250,
+          })),
+        }
+      : {};
     const option = {
       tooltip: { trigger: 'axis' },
       legend: { top: 0, textStyle: { color: '#9aa3b8' } },
@@ -80,15 +106,32 @@ export const SeriesChart = ({ series, height = 360, normalize = true, onReset }:
         right: 8,
         feature: { dataZoom: { yAxisIndex: 'none' }, restore: {} },
       },
-      series: datasets.map((d) => ({
-        name: d.name,
-        type: 'line',
-        showSymbol: false,
-        data: d.data,
-      })),
+      series: seriesOption,
+      ...drawOption,
     };
+    lastOptionRef.current = option;
+    if (drawEffect) {
+      // 保证每次数据写入都重放完整“走势绘制”动画：
+      // 实例已存在（HMR 更新 / 数据变化）时也生效，而不是只在新挂载时播放。
+      chartRef.current.clear();
+      chartRef.current.setOption(option, { notMerge: true });
+      return;
+    }
     chartRef.current.setOption(option);
-  }, [series, normalize]);
+  }, [series, normalize, drawEffect]);
+
+  // 页面在后台加载时会吞掉动画（RAF 不跑）；回到前台时重放走势动画。
+  useEffect(() => {
+    const replayOnVisible = () => {
+      if (!drawEffect || document.visibilityState !== 'visible') return;
+      const option = lastOptionRef.current;
+      if (!option || !chartRef.current) return;
+      chartRef.current.clear();
+      chartRef.current.setOption(option, { notMerge: true });
+    };
+    document.addEventListener('visibilitychange', replayOnVisible);
+    return () => document.removeEventListener('visibilitychange', replayOnVisible);
+  }, [drawEffect]);
 
   return <div ref={ref} style={{ width: '100%', height }} />;
 };

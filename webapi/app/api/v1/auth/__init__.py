@@ -1,3 +1,3 @@
-"""登录鉴权域：用户表读写 + login/logout/me 端点。"""
+"""Auth domain: user table read/write + login/logout/me endpoints."""
 
 from __future__ import annotations

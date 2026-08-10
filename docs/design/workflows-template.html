@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUANTMINE · Airflow Workflows — Design Template</title>
+<!--
+  Design contract — Airflow Workflows (Evidence Ledger)
+  THESIS: the DAG table is the primary evidence; the page's character comes
+          from one coherent button system, not from a filled-cobalt filter.
+  OWN-WORLD: matte navy-black surfaces, tonal layering, cobalt reserved for
+          the one primary action, selection, and focus; icons are drawn SVG,
+          never unicode glyphs.
+  STORY: the researcher scans DAG health, flips pause toggles, and triggers
+          a run through a confirm dialog whose primary button is unmistakable.
+  FIRST VIEWPORT: page header with refresh action, a filter toolbar, one
+          bordered DAG table with row actions, and a status legend.
+  FORM: Evidence Ledger, same world as Market Overview / Rebalance.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with
+          the finish review, the verdict, and DESIGN.md.
+  Mock data only — for design review, not live values.
+-->
+<style>
+  :root {
+    --bg-app: #0e1116;
+    --surface: #161a22;
+    --surface-2: #1d2230;
+    --elevated: #232a3a;
+    --border-subtle: #2a3142;
+    --border-strong: #3a4258;
+    --text-primary: #e6e8ee;
+    --text-secondary: #9aa3b8;
+    --text-muted: #6b7388;
+    --accent: #4f8cff;
+    --accent-hover: #6ea0ff;
+    --accent-active: #3c74d9;
+    --positive: #4ec98a;
+    --negative: #ef6464;
+    --warning: #f0b35e;
+    --info: #56b6ff;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .content {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* ---- Buttons (the point of this template) ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out;
+  }
+  .btn svg { flex: none; }
+  .btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  .btn-primary:active:not(:disabled) {
+    background: var(--accent-active);
+    border-color: var(--accent-active);
+  }
+
+  .btn-secondary {
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: var(--elevated);
+    border-color: var(--border-strong);
+  }
+  .btn-secondary:hover:not(:disabled) .btn-icon-stroke {
+    stroke: var(--accent);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  .btn-icon {
+    width: 28px;
+    padding: 0;
+  }
+
+  .spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ---- Page header ---- */
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  .page-header .actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 4px;
+  }
+
+  /* ---- Toolbar ---- */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .search {
+    min-width: 220px;
+    height: 28px;
+    padding: 0 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+  }
+  .search:focus {
+    border-color: var(--accent);
+  }
+  .search::placeholder {
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+  }
+  .filters {
+    display: inline-flex;
+    gap: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+  }
+  .filter-btn {
+    height: 24px;
+    padding: 0 12px;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .filter-btn:hover {
+    color: var(--text-primary);
+  }
+  .filter-btn.active {
+    color: var(--text-primary);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .filter-btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .summary {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ---- Notice ---- */
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .notice .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--info);
+    flex: none;
+  }
+
+  /* ---- DAG panel ---- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 24px;
+  }
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0 12px;
+  }
+  .panel-head h2 {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .panel-head .count {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  th, td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-2);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+  tbody tr {
+    cursor: pointer;
+  }
+  tbody tr:hover {
+    background: var(--surface-2);
+  }
+  .dag-name {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+    border-radius: 4px;
+    padding: 0 6px;
+    margin-right: 4px;
+  }
+  .runs {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+  }
+  .run-square {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .state {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .state-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .muted {
+    color: var(--text-muted);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+  }
+  .ops {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .ops .btn {
+    margin-left: 8px;
+  }
+
+  /* ---- Pause switch ---- */
+  .switch-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .switch {
+    width: 38px;
+    height: 20px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: var(--surface-2);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.15s ease-out;
+  }
+  .switch .thumb {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left 0.15s ease-out;
+  }
+  .switch.off {
+    background: var(--positive);
+  }
+  .switch.off .thumb {
+    left: 19px;
+  }
+  .switch:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .switch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .switch-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .switch-label.on {
+    color: var(--text-muted);
+  }
+
+  /* ---- Legend ---- */
+  .legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-subtle);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .legend .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+
+  /* ---- Button spec panel ---- */
+  .spec {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 24px;
+    margin-top: 16px;
+  }
+  .spec h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .spec .sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  .spec-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .spec-row .label {
+    width: 110px;
+    flex: none;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .spec-row .items {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  /* ---- Confirm dialog (demo) ---- */
+  .dialog {
+    width: 360px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    padding: 20px 24px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+  .dialog-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .dialog-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .footnote {
+    margin-top: 16px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 900px) {
+    .summary {
+      margin-left: 0;
+      width: 100%;
+    }
+  }
+  @media (max-width: 640px) {
+    .content {
+      padding: 16px;
+    }
+    .panel,
+    .spec {
+      padding: 12px 14px;
+    }
+    .page-header {
+      flex-direction: column;
+    }
+    .spec-row .label {
+      width: 100%;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <header class="page-header">
+      <div>
+        <h1>Airflow 工作流</h1>
+        <p>DAG 列表 · 数据来自 Airflow 元数据库（只读）</p>
+      </div>
+      <div class="actions">
+        <button class="btn btn-secondary" type="button" aria-label="刷新">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path class="btn-icon-stroke" d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" stroke-width="1.3"/><path class="btn-icon-stroke" d="M3 3v5h5" stroke="currentColor" stroke-width="1.3"/></svg>
+          刷新
+        </button>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <input class="search" type="text" placeholder="搜索 DAG 名称 / ID" aria-label="搜索 DAG">
+      <div class="filters" role="group" aria-label="状态筛选">
+        <button class="filter-btn active" type="button" aria-pressed="true">全部</button>
+        <button class="filter-btn" type="button" aria-pressed="false">运行中</button>
+        <button class="filter-btn" type="button" aria-pressed="false">成功</button>
+        <button class="filter-btn" type="button" aria-pressed="false">失败</button>
+        <button class="filter-btn" type="button" aria-pressed="false">已暂停</button>
+      </div>
+      <div class="summary">5 个 DAG · 1 运行中 · 1 失败 · 1 暂停</div>
+    </div>
+
+    <div class="notice">
+      <span class="dot"></span>
+      已触发 market-data-refresh，稍候刷新查看运行
+    </div>
+
+    <main class="panel">
+      <div class="panel-head">
+        <h2>DAGs</h2>
+        <span class="count">共 5 个</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>暂停</th>
+              <th>DAG</th>
+              <th>最近运行</th>
+              <th>上次运行</th>
+              <th>下次运行</th>
+              <th>调度</th>
+              <th style="text-align:right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <span class="switch-cell">
+                  <button class="switch off" type="button" role="switch" aria-checked="true" title="运行中，点击暂停">
+                    <span class="thumb"></span>
+                  </button>
+                  <span class="switch-label">运行中</span>
+                </span>
+              </td>
+              <td>
+                <span class="dag-name">market-data-refresh</span>
+                <div style="margin-top:2px">
+                  <span class="tag">market</span><span class="tag">daily</span>
+                </div>
+              </td>
+              <td>
+                <span class="runs">
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#56b6ff"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#f0b35e"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#56b6ff"></span>
+                </span>
+              </td>
+              <td>
+                <span class="state"><span class="state-dot" style="background:#4ec98a"></span>成功</span>
+                <div class="muted" style="font-size:11px">08-06 06:10</div>
+              </td>
+              <td class="mono">08-07 06:00</td>
+              <td class="mono">@daily</td>
+              <td class="ops">
+                <button class="btn btn-secondary" type="button">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 3v6l5-3z" fill="currentColor"/></svg>
+                  触发
+                </button>
+                <button class="btn btn-ghost" type="button">查看</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span class="switch-cell">
+                  <button class="switch off" type="button" role="switch" aria-checked="true" title="运行中，点击暂停">
+                    <span class="thumb"></span>
+                  </button>
+                  <span class="switch-label">运行中</span>
+                </span>
+              </td>
+              <td>
+                <span class="dag-name">factor-mining</span>
+                <div style="margin-top:2px">
+                  <span class="tag">research</span><span class="tag">factors</span>
+                </div>
+              </td>
+              <td>
+                <span class="runs">
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#f0b35e"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                </span>
+              </td>
+              <td>
+                <span class="state"><span class="state-dot" style="background:#4ec98a"></span>成功</span>
+                <div class="muted" style="font-size:11px">08-06 05:40</div>
+              </td>
+              <td class="mono">—</td>
+              <td class="mono">@daily</td>
+              <td class="ops">
+                <button class="btn btn-secondary" type="button">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 3v6l5-3z" fill="currentColor"/></svg>
+                  触发
+                </button>
+                <button class="btn btn-ghost" type="button">查看</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span class="switch-cell">
+                  <button class="switch on" type="button" role="switch" aria-checked="false" title="已暂停，点击恢复">
+                    <span class="thumb"></span>
+                  </button>
+                  <span class="switch-label on">已暂停</span>
+                </span>
+              </td>
+              <td>
+                <span class="dag-name">ic-test</span>
+                <div style="margin-top:2px">
+                  <span class="tag">research</span><span class="tag">ic</span>
+                </div>
+              </td>
+              <td>
+                <span class="runs">
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                </span>
+              </td>
+              <td>
+                <span class="state"><span class="state-dot" style="background:#4ec98a"></span>成功</span>
+                <div class="muted" style="font-size:11px">08-05 22:00</div>
+              </td>
+              <td class="muted">已暂停</td>
+              <td class="mono">@daily</td>
+              <td class="ops">
+                <button class="btn btn-secondary" type="button">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 3v6l5-3z" fill="currentColor"/></svg>
+                  触发
+                </button>
+                <button class="btn btn-ghost" type="button">查看</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span class="switch-cell">
+                  <button class="switch off" type="button" role="switch" aria-checked="true" title="运行中，点击暂停">
+                    <span class="thumb"></span>
+                  </button>
+                  <span class="switch-label">运行中</span>
+                </span>
+              </td>
+              <td>
+                <span class="dag-name">backtest-report</span>
+                <div style="margin-top:2px">
+                  <span class="tag">reports</span>
+                </div>
+              </td>
+              <td>
+                <span class="runs">
+                  <span class="run-square" style="background:#ef6464"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#ef6464"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#f0b35e"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#ef6464"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                </span>
+              </td>
+              <td>
+                <span class="state"><span class="state-dot" style="background:#ef6464"></span>失败</span>
+                <div class="muted" style="font-size:11px">08-06 04:15</div>
+              </td>
+              <td class="mono">08-07 04:00</td>
+              <td class="mono">@daily</td>
+              <td class="ops">
+                <button class="btn btn-secondary" type="button">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 3v6l5-3z" fill="currentColor"/></svg>
+                  触发
+                </button>
+                <button class="btn btn-ghost" type="button">查看</button>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span class="switch-cell">
+                  <button class="switch off" type="button" role="switch" aria-checked="true" title="运行中，点击暂停">
+                    <span class="thumb"></span>
+                  </button>
+                  <span class="switch-label">运行中</span>
+                </span>
+              </td>
+              <td>
+                <span class="dag-name">ai-indexer</span>
+                <div style="margin-top:2px">
+                  <span class="tag">ai</span><span class="tag">rag</span>
+                </div>
+              </td>
+              <td>
+                <span class="runs">
+                  <span class="run-square" style="background:#f0b35e"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#2a3142"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                  <span class="run-square" style="background:#4ec98a"></span>
+                </span>
+              </td>
+              <td>
+                <span class="state"><span class="state-dot" style="background:#f0b35e"></span>排队中</span>
+                <div class="muted" style="font-size:11px">08-06 06:02</div>
+              </td>
+              <td class="mono">08-07 06:00</td>
+              <td class="mono">@hourly</td>
+              <td class="ops">
+                <button class="btn btn-secondary" type="button">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 3v6l5-3z" fill="currentColor"/></svg>
+                  触发
+                </button>
+                <button class="btn btn-ghost" type="button">查看</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="legend">
+        <span><span class="dot" style="background:#4ec98a"></span>成功</span>
+        <span><span class="dot" style="background:#ef6464"></span>失败</span>
+        <span><span class="dot" style="background:#56b6ff"></span>运行中</span>
+        <span><span class="dot" style="background:#f0b35e"></span>排队中</span>
+        <span><span class="dot" style="background:#2a3142"></span>跳过</span>
+      </div>
+    </main>
+
+    <!-- 按钮样式参考：本次改动的重点 -->
+    <section class="spec" aria-label="按钮样式参考">
+      <h2>按钮样式参考</h2>
+      <p class="sub">钴蓝只留给主要动作；筛选选中态用描边而非大面积填充；图标统一为描边 SVG。</p>
+
+      <div class="spec-row">
+        <span class="label">按钮变体</span>
+        <div class="items">
+          <button class="btn btn-primary" type="button">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 3v6l5-3z" fill="currentColor"/></svg>
+            确认触发
+          </button>
+          <button class="btn btn-secondary" type="button">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 3v6l5-3z" fill="currentColor"/></svg>
+            触发
+          </button>
+          <button class="btn btn-ghost" type="button">查看</button>
+          <button class="btn btn-secondary btn-icon" type="button" aria-label="刷新">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path class="btn-icon-stroke" d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" stroke-width="1.3"/><path class="btn-icon-stroke" d="M3 3v5h5" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+          <button class="btn btn-secondary" type="button" disabled>触发</button>
+          <button class="btn btn-primary" type="button" disabled>
+            <span class="spinner"></span>
+            提交中…
+          </button>
+        </div>
+      </div>
+
+      <div class="spec-row">
+        <span class="label">弹窗动作</span>
+        <div class="items">
+          <div class="dialog">
+            <div class="dialog-title">确认触发该 DAG？</div>
+            <div class="dialog-desc">market-data-refresh · 将创建一次手动运行</div>
+            <div class="dialog-actions">
+              <button class="btn btn-ghost" type="button">取消</button>
+              <button class="btn btn-primary" type="button">
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M4 3v6l5-3z" fill="currentColor"/></svg>
+                确认触发
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="spec-row">
+        <span class="label">暂停开关</span>
+        <div class="items">
+          <span class="switch-cell">
+            <button class="switch off" type="button" role="switch" aria-checked="true" title="运行中，点击暂停">
+              <span class="thumb"></span>
+            </button>
+            <span class="switch-label">运行中</span>
+          </span>
+          <span class="switch-cell">
+            <button class="switch on" type="button" role="switch" aria-checked="false" title="已暂停，点击恢复">
+              <span class="thumb"></span>
+            </button>
+            <span class="switch-label on">已暂停</span>
+          </span>
+          <button class="switch off" type="button" role="switch" aria-checked="true" disabled title="运行中，点击暂停">
+            <span class="thumb"></span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <p class="footnote">For research and educational purposes only. Not investment advice. Past performance does not guarantee future results.</p>
+  </div>
+</body>
+</html>

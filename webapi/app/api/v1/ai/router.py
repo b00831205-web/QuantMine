@@ -35,6 +35,7 @@ from ....ai.tools import execute_tool_call
 from ....ai.chat import build_system_prompt, complete_chat, summarize_title
 from ....ai.catalog import get_database_catalog
 from ....ai.rag import index_message, search_messages
+from ....ai.skills import discover_skills, skill_definitions
 
 router = APIRouter()
 
@@ -71,6 +72,7 @@ class ConfigBody(BaseModel):
     temperature: float = Field(default = 0.7, ge= 0, le =2)
     capabilities: dict[str, bool] | None = None
     embeddingConfig: EmbeddingBody | None = None
+    skills: list[dict[str, Any]] | None = None
 
 def _resolve_provider(config: dict, model_id: str) -> dict|None:
     for provider in config.get('providers', []):
@@ -115,11 +117,11 @@ def _persist_reply(engine: Engine, cid: int, config: dict, *, content: str, inde
     return message
 
 def _assistant_from_reply(engine: Engine, cid: int, config: dict, reply: dict, index_rag: bool = False) -> dict:
-    """把一次 LLM 回复落成 assistant 消息。
+    """Persist one LLM reply as an assistant message.
 
-    有 tool_calls → 附确认卡（pending），等用户确认后再执行；否则落最终文本答复。
-    **post_message 和 confirm 都用它**，这样多步查询（如"先查最新 run、再查显著因子"）
-    的后续工具调用不会被丢弃。
+    With tool_calls -> attach a confirmation card (pending); execute after user confirms;
+    otherwise persist the final text reply.
+    **post_message and confirm both use it**, so follow-up tool calls in multi-step queries
     """
     tool_calls = reply.get('tool_calls')
     if tool_calls:
@@ -138,17 +140,17 @@ def _assistant_from_reply(engine: Engine, cid: int, config: dict, reply: dict, i
     return _persist_reply(engine, cid, config, content=reply.get('content') or '（未返回内容）', index_rag=index_rag)
 
 
-# 工具审批名单：
-#   白名单 TOOL_WHITELIST —— 只读/安全工具，自动执行、不弹确认卡；
-#   灰名单 TOOL_GRAYLIST  —— 高影响/写操作工具，必须用户确认后才执行；
-#   不在任何名单里的未知工具，出于安全默认按“需确认”处理。
+# Tool approval lists:
+#   Whitelist TOOL_WHITELIST — read-only/safe tools, auto-executed without a confirmation card;
+#   Graylist TOOL_GRAYLIST  — high-impact/write tools, must be confirmed by the user first;
+#   Unknown tools not in any list are treated as "needs confirmation" by default for safety.
 TOOL_WHITELIST = {'query_database'}
-TOOL_GRAYLIST: set[str] = set()  # 例：{'trigger_backtest', 'write_config'}——目前尚无写操作工具
-MAX_AGENT_STEPS = 12             # 单轮内最多自动工具调用次数，避免死循环
+TOOL_GRAYLIST: set[str] = set()  # e.g. {'trigger_backtest', 'write_config'} — no write tools yet
+MAX_AGENT_STEPS = 12             # max automatic tool calls per turn, avoids infinite loops
 
 
 def _needs_confirm(tool_name: str) -> bool:
-    """白名单直接放行；其余（灰名单或未知工具）都需要用户确认。"""
+    """Whitelist tools run directly; everything else (graylist or unknown) needs user confirmation."""
     return tool_name not in TOOL_WHITELIST
 
 
@@ -176,6 +178,8 @@ def _run_agent(engine: Engine, cid: int, config: dict, capabilities: dict, model
                 int(latest_user['messageId'].removeprefix('msg-'))
                 if latest_user else None
             ),
+            
+            
         )
 
     system_prompt = build_system_prompt(
@@ -184,6 +188,11 @@ def _run_agent(engine: Engine, cid: int, config: dict, capabilities: dict, model
         rag_context=rag_context,
         attached_context=attached_context,
     )
+    enabled_skill_names = {
+                    skill.get('name') for skill in config.get('skills') or []
+                    if skill.get('enabled')
+                }
+    skill_tools = skill_definitions(discover_skills(), enabled_skill_names)
 
     def _enrich_history() -> list[dict]:
         history = list_messages(engine, cid) if capabilities.get('use_chat_history', True) else []
@@ -191,6 +200,7 @@ def _run_agent(engine: Engine, cid: int, config: dict, capabilities: dict, model
             if message.get('attachments'):
                 message['attachments'] = load_attachment_records(engine, message['attachments'])
         return history
+    
 
     for _ in range(MAX_AGENT_STEPS):
         history = _enrich_history()
@@ -203,6 +213,7 @@ def _run_agent(engine: Engine, cid: int, config: dict, capabilities: dict, model
                 base_url=(provider or {}).get('baseUrl'),
                 api_key=api_key,
                 allow_query_database=allow_db,
+                extra_tools=skill_tools
             )
         except Exception as error:
             raise HTTPException(status_code=502, detail=str(error)) from error
@@ -313,7 +324,7 @@ def get_messages(conversation_id: str, engine: Engine = Depends(get_request_engi
     return list_messages(engine, cid)
 
 def _generate_title(engine: Engine, cid: int, config: dict, first_message: str) -> None:
-    """后台任务：用首条用户消息总结一个会话标题并写回库（失败静默，标题保持默认）。"""
+    """Background task: summarize a conversation title from the first user message and write it back (fail silently, keep the default title)."""
     provider = _resolve_provider(config, config.get('defaultModel') or '')
     api_key = os.environ.get((provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY')
     title = summarize_title(
@@ -361,7 +372,7 @@ def post_message(
     config = fetch_config(engine)
     capabilities = effective_capabilities(config)
 
-    # 首条消息（会话仍是默认标题）→ 后台异步总结标题，不阻塞本次回复
+    # First message (conversation still has the default title) -> summarize title in the background without blocking this reply
     if conversation['title'] == DEFAULT_TITLE:
         background_tasks.add_task(_generate_title, engine, cid, config, body.content)
 
@@ -414,14 +425,22 @@ def confirm_action(
             content = '当前配置禁止数据库查询'
         )
 
-    # 用户已确认这次（灰名单）工具 → 执行、落结果，然后继续 agent 循环
+    # User confirmed this (graylist) tool -> execute, persist the result, then continue the agent loop
     result_text = execute_tool_call(engine, tool_call)
     create_message(engine, conversation_id=cid, role='tool', content=result_text)
     return _run_agent(engine, cid, config, capabilities, config.get('defaultModel'))
 
 @router.get('/ai/config')
 def get_ai_config(engine: Engine = Depends(get_request_engine)):
-    return _mark_configured(fetch_config(engine))
+    config = _mark_configured(fetch_config(engine))
+    discovered = discover_skills()
+    enabled_map = {
+        skill.get('name'): bool(skill.get('enabled')) for skill in config.get('skills') or []
+    }
+    config['skill'] = [{
+        **skill, 'enabled': bool(enabled_map.get(skill['name'], False))
+    } for skill in discovered]
+    return config
 
 @router.put('/ai/config')
 def put_ai_config(body: ConfigBody, engine: Engine =Depends(get_request_engine)):

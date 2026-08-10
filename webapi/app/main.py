@@ -14,8 +14,9 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT/'.env')
 
-# 同源部署（quantmine-web）下前端与 API 同源，CORS 不参与；这里的默认值只服务
-# 开发态直连 Vite 的情况。部署到独立域名时用 QUANT_CORS_ORIGINS 覆盖（逗号分隔）。
+# Same-origin deployment (quantmine-web): frontend and API are same-origin, CORS is not
+# involved; these defaults only serve the dev-mode direct-to-Vite case. Override with
+# QUANT_CORS_ORIGINS (comma separated) for separate domains.
 DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 from fastapi import FastAPI, HTTPException
@@ -33,14 +34,14 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="QUANTMINE Web API",
         version="0.0.0",
-        description="因子研究平台 API；具体端点见 docs/api/openapi.yaml",
+        description="Quant factor research platform API; see docs/api/openapi.yaml for endpoints",
     )
 
-    # 顺序：
-    #   1. trace-id 中间件——确保 request.state 有 trace_id（错误处理依赖它）
-    #   2. CORS——preflight 与真实请求均需带 trace-id
-    #   3. 异常处理器——错误响应也带 trace-id
-    #   4. 业务路由
+    # Order:
+    #   1. trace-id middleware — ensures request.state has trace_id (error handling depends on it)
+    #   2. CORS — preflight and real requests both carry trace-id
+    #   3. exception handlers — error responses also carry trace-id
+    #   4. business routes
     install_trace_id_middleware(app)
 
     configured_origins = os.environ.get("QUANT_CORS_ORIGINS", "")

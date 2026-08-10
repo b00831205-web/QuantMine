@@ -60,6 +60,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+# setup.py / create_user.py / reset_password.py 生成的明文登录凭据
+.initial-credentials.json
 
 # --- build artifacts ---
 # 前端构建产物, 由 `npm run build` + 拷贝生成, 不入库

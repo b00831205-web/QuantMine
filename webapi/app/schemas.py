@@ -1,6 +1,7 @@
 """Pydantic schemas mirroring docs/api/openapi.yaml.
 
-契约的唯一来源：端点的请求/响应模型都在这里定义，改动需同步 openapi.yaml。
+    The single source of truth for contracts: request/response models are defined here;
+    sync openapi.yaml when changed.
 """
 
 from __future__ import annotations
