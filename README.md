@@ -281,7 +281,62 @@ rejected at container startup.
 | `QUANT_AIRFLOW_PYTHON` | Python used for task-state operations |
 | `QUANT_PROJECT_ROOT` | Project path seen by Airflow tasks |
 | `QUANT_PYTHON_BIN` | Python interpreter used by DAG task commands |
+| `OPENAI_API_KEY` | Default API key for OpenAI-compatible AI providers |
+| `DEEPSEEK_API_KEY` | Recommended dedicated API key variable for DeepSeek |
+| `SILICONFLOW_API_KEY` | Default API key for the embedding provider |
 | `http_proxy` / `https_proxy` | Optional upstream proxy for WSL market data |
+
+### AI API configuration
+
+AI Config stores provider metadata in the database, but it deliberately does
+not store or return the secret API key. Put the real key in the ignored root
+`.env` file first:
+
+```dotenv
+DEEPSEEK_API_KEY=replace_with_your_deepseek_api_key
+```
+
+Then open **AI Config**, add or edit the provider, and use these DeepSeek
+values:
+
+| Field | Value |
+|---|---|
+| Provider name | `DeepSeek` (the display name is arbitrary) |
+| API Key env var | `DEEPSEEK_API_KEY` |
+| Base URL | `https://api.deepseek.com` |
+| Models | `deepseek-v4-flash, deepseek-v4-pro` |
+| Default Model | Select one of the saved models |
+
+The current DeepSeek OpenAI-compatible endpoint and model identifiers are
+documented in the [official DeepSeek API documentation](https://api-docs.deepseek.com/quick_start/pricing).
+After saving the page, restart `quantmine-api` so the running process reloads
+`.env`, then refresh the browser.
+
+Common pitfalls:
+
+- **API Key env var is a variable name, not the key itself.** Enter
+  `DEEPSEEK_API_KEY` in the page and put `DEEPSEEK_API_KEY=sk-...` in `.env`.
+- The `.env` file must be in the repository root, beside this README. A
+  PowerShell-only value such as `$env:DEEPSEEK_API_KEY=...` is not inherited by
+  the persistent WSL systemd service.
+- Do not commit `.env`, paste the key into AI Config, or expect the frontend to
+  display an existing key. The browser only receives a configured/not-configured
+  state.
+- Use the provider's API base URL, not a full request URL. Do not append
+  `/chat/completions`. For the current DeepSeek API, use
+  `https://api.deepseek.com` rather than adding `/v1`.
+- Model identifiers must be exact. For example, `deepseek-v4flash` is invalid;
+  use `deepseek-v4-flash`. The top-right model selector only lists models saved
+  in provider configuration.
+- Select a **Default Model** and click **Save**. A provider card can appear
+  configured while the application still has no usable default model.
+- `Configured` only proves that the named environment variable is present. It
+  does not validate the key, account balance, model access, or rate limit.
+  Typical upstream responses are `401` for an invalid key, `402` for no balance,
+  `400`/`422` for a wrong model or request, and `429` for rate limiting.
+- If AI report generation fails, check the API service status and log before
+  retrying. The report endpoint returns an error instead of silently generating
+  a data-only report when AI analysis was requested but unavailable.
 
 ### Research configuration
 
@@ -343,6 +398,47 @@ For an offline refresh using the existing uv cache, add `-Offline`.
 The service environments install locked dependencies only; application code is
 loaded directly from the checkout, so updating source never requires rebuilding
 the project as a wheel.
+
+### Restart commands
+
+Run these commands from Windows PowerShell. Always specify `Ubuntu`; otherwise
+`wsl.exe` may open `docker-desktop`, where the expected shell and QuantMine
+services do not exist.
+
+Restart only the API and production frontend server after changing `.env`, AI
+configuration, or backend Python code:
+
+```powershell
+wsl.exe -d Ubuntu -- sh -lc "systemctl --user restart quantmine-api"
+wsl.exe -d Ubuntu -- sh -lc "systemctl --user --no-pager status quantmine-api"
+```
+
+Restart the complete QuantMine stack, including Airflow:
+
+```powershell
+wsl.exe -d Ubuntu -- sh -lc "systemctl --user restart quantmine.target"
+wsl.exe -d Ubuntu -- sh -lc "systemctl --user --no-pager status quantmine.target quantmine-api quantmine-airflow-apiserver quantmine-airflow-scheduler quantmine-airflow-dag-processor"
+```
+
+After frontend source or dependency changes, a service restart alone is not
+enough because port 8000 serves the built frontend. Build, deploy, restart, and
+verify everything with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\update-service.ps1
+```
+
+Useful health and log checks:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/api/v1/health
+Get-Content .\airflow\service-quantmine-api.log -Tail 100
+```
+
+If WSL reports that the distribution disk was mounted read-only, do not reinstall
+the project or its environments. Stop WSL first with `wsl.exe --shutdown`, repair
+the Ubuntu VHD mount, and only then restart the services. A read-only filesystem
+cannot be repaired by repeatedly restarting `quantmine-api`.
 
 The equivalent manual WSL commands are:
 
