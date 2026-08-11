@@ -16,7 +16,9 @@ dependencies = [
 ]
 
 [project.scripts]
-dev = "quantmine.dev:main"
+# Namespaced deliberately: this lands on the PATH of everyone who installs the
+# library, and a bare `dev` is far too generic a name to claim.
+quantmine-dev = "quantmine.dev:main"
 
 [project.optional-dependencies]
 data = ["yfinance>=1.4", "beautifulsoup4>=4.14", "pandas-datareader>=0.11", "curl-cffi>=0.15"]
@@ -50,6 +52,23 @@ packages = ["quantmine"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "quantmine/storage/schema.sql" = "quantmine/storage/schema.sql"
+
+# Hatchling's default sdist is "everything git does not ignore", which for this
+# repo means the whole application: frontend/, webapi/, docker/, a 1 MB
+# architecture PNG, and the lockfiles. That is ~1.9 MB of material irrelevant to
+# anyone installing the research library. List the contents explicitly instead.
+# Patterns are gitignore-style, so they must be anchored with a leading slash:
+# a bare "README.md" also matches webapi/README.md and frontend/README.md, and a
+# bare "test/" matches frontend/src/test/.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/quantmine/",
+    "/test/",
+    "/config.example.yaml",
+    "/README.md",
+    "/LICENSE",
+    "/pyproject.toml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

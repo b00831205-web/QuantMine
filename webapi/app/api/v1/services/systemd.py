@@ -78,7 +78,7 @@ def _env() -> dict[str, str]:
 
     Without ``XDG_RUNTIME_DIR`` systemctl cannot find the user bus and fails
     with "Failed to connect to bus". A process started by the user manager
-    inherits it, but one started from a bare shell (or by `uv run dev`) may not,
+    inherits it, but one started from a bare shell (or by `uv run quantmine-dev`) may not,
     so fill it in rather than fail confusingly.
     """
     env = dict(os.environ)
