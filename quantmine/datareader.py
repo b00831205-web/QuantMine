@@ -84,7 +84,7 @@ class YFinanceSource:
         """Download closes and volumes for the tickers over the date range."""
         #lazy import: users who only read local files don't need the yfinance dependency chain
         from .data_acquisition import data_acquisition
-        # 只需价格: with_market_cap=False 跳过逐票 get_shares_full 网络开销
+        # Prices only: skip per-ticker get_shares_full network requests.
         close, volume, _, _ = data_acquisition(tickers=tickers, start_date = start, end_date = end, batch_size= self.batch_size,
                                     max_retries= self.max_retries, wait= self.wait, checkpoint_dir=self.checkpoint_dir,
                                     with_market_cap=False)

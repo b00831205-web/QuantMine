@@ -53,3 +53,7 @@ packages = ["quantmine"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+addopts = "-m 'not network'"
+markers = [
+    "network: live upstream integration test; excluded from the deterministic default suite",
+]

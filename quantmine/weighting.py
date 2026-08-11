@@ -33,7 +33,8 @@ def mcap_weight(tickers, date, market_cap, **params):
     if market_cap is None:
         raise ValueError('mcap weighting requires a market_cap frame')
     tickers = list(tickers)
-    # reindex(不是 .loc): 某票被清洗丢出 market_cap 列时当 NaN, 归一时自然忽略, 不 KeyError
+    # Use reindex rather than .loc: cleaned-away market-cap columns become NaN
+    # and are ignored during normalization instead of raising KeyError.
     w = market_cap.reindex(index=[date], columns=tickers).iloc[0].astype(float)
     total = w.sum()
     if not (total > 0):

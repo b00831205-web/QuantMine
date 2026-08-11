@@ -11,7 +11,7 @@ export function fetchAIConversations(signal?: AbortSignal): Promise<AIConversati
   return http<AIConversation[]>('/api/v1/ai/conversations', { signal });
 }
 
-/** POST /api/v1/ai/conversations —— 新建对话 */
+/** POST /api/v1/ai/conversations -- create a conversation */
 export function createAIConversation(signal?: AbortSignal): Promise<AIConversation> {
   return http<AIConversation>('/api/v1/ai/conversations', { method: 'POST', signal });
 }
@@ -40,10 +40,9 @@ export function fetchAIModels(signal?: AbortSignal): Promise<string[]> {
 }
 
 /**
- * 高影响操作确认。前端把确认卡的确认/拒绝回传后端；后端据此执行或取消工具调用，
- * 返回一条更新后的 assistant 消息（或新消息）。
- *
- * TODO(BACKEND): 实现 POST /api/v1/ai/conversations/{id}/confirm，落库并驱动工具执行。
+ * Confirmation for a high-impact action. The frontend sends the confirmation
+ * card's approve/reject decision back; the backend executes or cancels the tool
+ * call accordingly and returns the updated (or a new) assistant message.
  */
 export function confirmAIAction(
   conversationId: string,
@@ -55,30 +54,6 @@ export function confirmAIAction(
     body: payload,
     signal,
   });
-}
-
-/**
- * AI 流式回复接口（占位）。当前无后端，先固化调用契约供后续接入。
- *
- * TODO(BACKEND): 后端在 POST /api/v1/ai/conversations/{id}/stream 上以
- *   `text/event-stream` 逐段返回 token。前端实现建议：
- *     const res = await fetch(url, { method:'POST', body, signal });
- *     const reader = res.body!.getReader(); const dec = new TextDecoder();
- *     while (true) { const { done, value } = await reader.read(); if (done) break;
- *       onToken(dec.decode(value, { stream: true })); }
- *   末尾后端应给出完整 AIMessage（含 citations/toolCalls）以对齐最终态。
- */
-export async function streamAIMessage(
-  conversationId: string,
-  payload: SendMessageRequest,
-  onToken: (chunk: string) => void,
-  signal?: AbortSignal,
-): Promise<AIMessage> {
-  void conversationId;
-  void payload;
-  void onToken;
-  void signal;
-    throw new Error('TODO(BACKEND): AI streaming interface not implemented; wire to backend SSE');
 }
 
 export function deleteAIConversation(
@@ -99,7 +74,7 @@ export function saveAIConfig(config: AIConfig, signal?: AbortSignal): Promise<AI
   return http<AIConfig>('/api/v1/ai/config', { method: 'PUT', body: config, signal });
 }
 
-/** POST /api/v1/ai/attachments —— 上传附件（multipart） */
+/** POST /api/v1/ai/attachments -- upload an attachment (multipart) */
 export async function uploadAIAttachment(
   conversationId: string,
   file: File,
@@ -119,7 +94,7 @@ export async function uploadAIAttachment(
   return response.json();
 }
 
-/** GET /api/v1/ai/attachments/{id}/file —— 取附件文件（图片预览用） */
+/** GET /api/v1/ai/attachments/{id}/file -- fetch an attachment file (image preview) */
 export function attachmentFileUrl(attachmentId: string): string {
   return `/api/v1/ai/attachments/${attachmentId}/file`;
 }

@@ -67,10 +67,13 @@ def _start_airflow(env: dict) -> subprocess.Popen | None:
         present = False
     if not present:
         print(
-            f"[dev] 跳过 Airflow: 找不到 {binary}\n"
-            "[dev]   前后端照常启动; 只有 Workflows 页面的暂停/触发会返回 502\n"
-            "[dev]   （DAG 列表仍可读, 它直接查元数据库, 不走 CLI）\n"
-            "[dev]   装上: uv sync --group pipeline   或设 QUANT_AIRFLOW_BIN 指向已有 CLI",
+            f"[dev] Skipping Airflow: {binary} was not found.\n"
+            "[dev]   The API and frontend will still start; only pause/trigger "
+            "actions on Workflows will return 502.\n"
+            "[dev]   The DAG list remains readable because it queries the metadata "
+            "database directly.\n"
+            "[dev]   Install it with: uv sync --group pipeline, or set "
+            "QUANT_AIRFLOW_BIN to an existing CLI.",
             file=sys.stderr,
         )
         return None
@@ -82,7 +85,7 @@ def _start_airflow(env: dict) -> subprocess.Popen | None:
     # enough: its bin directory must also be on PATH for those children.
     current_path = airflow_env.get("PATH", "")
     airflow_env["PATH"] = str(binary.parent) + (os.pathsep + current_path if current_path else "")
-    print(f"[dev] 启动 Airflow standalone ({binary})")
+    print(f"[dev] Starting Airflow standalone ({binary})")
     return subprocess.Popen(
         [str(binary), "standalone"], cwd=ROOT, env=airflow_env,
     )
@@ -100,7 +103,8 @@ def _frontend_command() -> list[str]:
     node = shutil.which("node") or shutil.which("node.exe")
     if not node:
         sys.exit(
-            "[dev] 找不到 Node.js。请在 WSL 安装 node，或确保 Windows node.exe 可由 WSL 调用。"
+            "[dev] Node.js was not found. Install Node in WSL or ensure the "
+            "Windows node.exe is accessible from WSL."
         )
     return [
         node,
@@ -119,20 +123,21 @@ def main() -> None:
     """
     env = _load_env()
 
-    # 后端: 用 webapi 自己的 venv, 绑 0.0.0.0 让 Windows 浏览器/vite proxy 能访问 WSL 的 8000
+    # Use webapi's own venv and bind 0.0.0.0 so the Windows browser and Vite
+    # proxy can reach port 8000 inside WSL.
     api_python = ROOT / "webapi" / ".venv" / "bin" / "python"
     try:
         usable = api_python.exists()
     except OSError:
-        # Windows 上这是一个指向 WSL 文件系统的符号链接, stat() 抛 WinError 1920
-        # 而不是返回 False。不接住的话这里就直接崩掉, 拿不到下面那句提示。
+        # On Windows this may be a symlink into WSL whose stat() raises
+        # WinError 1920 instead of returning False. Preserve the useful message.
         usable = False
     if not usable:
-        # bin/python 是 Linux 布局。从 Windows 跑到这里, Popen 会抛一句语焉不详的
-        # FileNotFoundError, 先说清楚。
+        # bin/python is a Linux layout. Explain the WSL requirement before
+        # Popen emits an opaque FileNotFoundError on Windows.
         sys.exit(
-            f"[dev] 找不到后端解释器: {api_python}\n"
-            "      webapi/.venv 是 Linux venv, 本命令须在 WSL 内运行:\n"
+            f"[dev] Backend interpreter not found: {api_python}\n"
+            "      webapi/.venv is a Linux venv; run this command inside WSL:\n"
             "      wsl -d Ubuntu -- bash -lc 'cd <repo> && uv run dev'"
         )
     api = subprocess.Popen(
@@ -140,7 +145,7 @@ def main() -> None:
          "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
         cwd=ROOT / "webapi", env=env,
     )
-    # 前端: vite dev (HMR)
+    # Frontend: Vite development server with HMR.
     web = subprocess.Popen(
         _frontend_command(), cwd=ROOT / "frontend", env=env,
     )
@@ -153,7 +158,7 @@ def main() -> None:
     interrupted = False
     casualty: tuple[str, int | None] | None = None
     try:
-        # 任一进程退出就整体收尾, 不留孤儿
+        # Shut down the whole stack when any child exits; leave no orphan.
         while True:
             dead = [(name, p) for name, p in procs if p.poll() is not None]
             if dead:
@@ -176,14 +181,15 @@ def main() -> None:
     if interrupted or casualty is None:
         sys.exit(0)
 
-    # 不能沿用子进程的退出码: uvicorn 的 reload 监督进程在 app import 失败时也返回 0
-    # (它认为"已按预期停止")。照搬就会把后端崩溃报成一次干净退出, 而真正的 traceback
-    # 早被 vite 的输出刷走了。开发期任一端自行退出都是异常, 一律非零。
+    # Do not propagate a child's exit code: uvicorn's reload supervisor can
+    # return 0 after an app import failure because it considers itself stopped
+    # as requested. Any unprompted child exit is an error during development.
     name, code = casualty
     print(
-        f"\n[dev] {name} 端先退出了 (exit={code}), 已一并停止另一端。\n"
-        f"[dev] 退出码 0 不代表正常 —— 若 {name} 是后端, 请向上翻找 Traceback: "
-        "app import 失败时 uvicorn 也返回 0。",
+        f"\n[dev] {name} exited first (exit={code}); the remaining services "
+        "were stopped.\n"
+        f"[dev] Exit code 0 does not guarantee success. If {name} is the API, "
+        "look above for a traceback; uvicorn may return 0 after an app import failure.",
         file=sys.stderr,
     )
     sys.exit(1)

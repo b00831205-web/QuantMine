@@ -2,11 +2,9 @@ import type { ApiError } from '@/types/api';
 import i18n from '@/i18n';
 
 /**
- * 统一 HTTP 客户端：fetch + 超时 + AbortController + 错误归一化。
- *
- * 阶段 0 留空具体实现：
- *  - 你需要完成 fetch 封装、超时、状态码到 ApiError 的映射；
- *  - 该函数会被 MSW handler 拦截，不会真正打到后端。
+ * Shared HTTP client: fetch, query-string building, AbortController support and
+ * error normalization. Non-2xx responses are parsed as an ApiError and rethrown
+ * as HttpError, so callers only ever handle one error shape.
  */
 
 export interface HttpRequestOptions {
@@ -44,7 +42,8 @@ export async function http<T>(path: string, options: HttpRequestOptions = {}): P
   const init: RequestInit = {
     method: options.method ?? 'GET',
     signal: options.signal ?? null,
-    // 携带 HttpOnly 会话 Cookie（登录鉴权）；同源代理下默认也会带，显式声明更稳妥
+    // Send the HttpOnly session cookie. A same-origin proxy would include it by
+    // default, but stating it explicitly keeps the behavior stable.
     credentials: 'include',
     ...(options.body !== undefined
       ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options.body) }
@@ -59,14 +58,12 @@ export async function http<T>(path: string, options: HttpRequestOptions = {}): P
 }
 
 /**
- * 状态码 → 用户可读中文消息映射。
+ * Turn an ApiError into a short, user-readable sentence for the page banner.
  *
- * TODO(USER_LEARNING):
- *   目标：把 ApiError 转为页面顶部可展示的中文短句；
- *   覆盖：401 / 403 / 404 / 422 / 429 / 500 / 502 / 503 / 超时 / 默认；
- *   提示：① 区分 title 优先 vs detail 优先；② 包含 traceId 方便反馈。
+ * The backend already localizes `title` per request, so it is used as-is when
+ * present; the i18n fallback covers transport failures that never reached the
+ * API and therefore carry no server-authored title.
  */
 export function toUserMessage(err: ApiError): string {
-  // TODO(USER_LEARNING): 见上方契约
   return err.title ?? i18n.t('common.requestFailed');
 }

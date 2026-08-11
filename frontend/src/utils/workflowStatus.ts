@@ -1,13 +1,15 @@
 /**
- * Airflow 状态 → 颜色 / 文案 的单一来源。
+ * Single source of truth mapping Airflow state to color and label.
  *
- * 列表页的“最近运行”色块、上次运行状态点，以及后续图视图的节点着色都复用这里，
- * 保证全站配色一致。颜色一律用设计 token（CSS 变量），跟随主题。
+ * The list page's "recent runs" swatches, the last-run status dot, and later the
+ * graph view's node coloring all reuse this, which keeps the palette consistent
+ * across the app. Colors are always design tokens (CSS variables) so they follow
+ * the active theme.
  */
 
 import i18n from '@/i18n';
 
-/** dag_run.state / task_instance.state 的原始取值（含 null=尚无状态）。 */
+/** Raw values of dag_run.state / task_instance.state (null means no state yet). */
 export type AirflowState =
   | 'success'
   | 'failed'

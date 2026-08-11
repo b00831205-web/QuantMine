@@ -11,7 +11,7 @@ def _assert_unified_error(body: dict, *, code: str, status: int) -> None:
 
 
 def test_validation_error_returns_unified_format(client: TestClient) -> None:
-    """缺少必填参数应返回 422 + ApiError 结构。"""
+    """Missing required parameters return 422 with the ApiError shape."""
     resp = client.get("/api/v1/market/series")  # 缺 symbols / startDate / endDate
     assert resp.status_code == 422
     body = resp.json()

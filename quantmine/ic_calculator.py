@@ -357,9 +357,9 @@ def orthogonalize(factors: dict[str, pd.DataFrame], high_corr_dict: dict, ic_sum
     
     factor_ir = ic_summary['IR'].abs().groupby(level = 'factor').mean()
 
-    print("Average IR:")
+    print("Average |IR| per factor:")
     print({k: round(v,4) for k,v in sorted(factor_ir.items())})
-    print(f"threshold={threshold}, will be dropped because it is below the threshold")
+    print(f"IR threshold={threshold}; within each correlated pair, a factor below it is dropped")
 
     result = factors.copy()
     drop = set()
@@ -436,10 +436,9 @@ def time_series_stationary_test(cs_result:tuple[pd.DataFrame,bool], rolling_peri
 
     for col in CS_IC_matrix.columns:
         for period in periods:
-                # acf_ic —— key 必须展平成标量层 (factor, forward_period, lag)。
-                # cs_ic 的列是 (factor, period) 元组，若直接用 (col, period) 当 key，
-                # 生成的 MultiIndex 第 0 层值会是"元组"(object 层)，写 parquet 时
-                # pyarrow 报 "Expected bytes, got a 'int' object / column None"。
+        # acf_ic keys must be flat scalar levels: (factor, forward_period, lag).
+        # cs_ic columns are (factor, period) tuples; using (col, period) would
+        # put tuple objects in MultiIndex level 0 and make pyarrow reject Parquet.
                 key = (*col, period) if isinstance(col, tuple) else (col, period)
                 acf_ic[key] = CS_IC_matrix[col].corr(CS_IC_matrix[col].shift(period), method="pearson") #corr is for Series, corrwith is for DataFrame
     acf_df = pd.Series(acf_ic).to_frame(name = 'ACF') #dict values are scalars, so convert to a Series before building the frame
@@ -600,7 +599,7 @@ def run_test(variant: ICVariant ,test_method:str, TEST_METHOD:dict, test_params:
     param_pool = {
         'cs_result': (
             variant.train['cs_ic'],
-            variant.train['orthogonalized'], #现在还是硬编码
+                variant.train['orthogonalized'],  # Still hard-coded for now.
         ),
         **(test_params or {})
     }

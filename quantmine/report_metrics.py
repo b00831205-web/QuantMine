@@ -1,6 +1,7 @@
-"""报告附录指标计算：集中放在 quantmine，供 webapi 报告层调用。
+"""Report appendix metrics shared with the Web API reporting layer.
 
-这里只负责"算"，不画图；图表渲染在 webapi/app/reports/charts.py。
+This module computes data only; charts are rendered in
+``webapi/app/reports/charts.py``.
 """
 from __future__ import annotations
 
@@ -14,15 +15,16 @@ from sqlalchemy.engine import Engine
 from .storage.ic import load_ic_variants
 from .storage.paths import resolve_artifact_path
 
-# A6 开发期因子目录：项目根 tmp/factors（后续因子工件落库后改从表读）
+# Development-time A6 factor directory. Read from storage once factor artifacts
+# are persisted in the database.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FACTOR_DIR = PROJECT_ROOT / "tmp" / "factors"
 
 
 def build_ic_decay_frame(engine: Engine, run_id: int) -> pd.DataFrame | None:
-    """A4：每个 (variant·factor) 组合按持有期聚合 IC 均值。
+    """Aggregate mean IC by holding period for each variant-factor pair.
 
-    返回 index=持有期、columns=组合名 的 DataFrame。
+    Returns a DataFrame indexed by holding period with pair names as columns.
     """
     variants = load_ic_variants(engine, run_id)
     records = []
@@ -49,7 +51,7 @@ def build_ic_decay_frame(engine: Engine, run_id: int) -> pd.DataFrame | None:
 
 
 def load_net_return_curve(engine: Engine, run_id: int) -> pd.DataFrame | None:
-    """A5：取 run 的第一个净收益曲线 artifact（宽表：日期 × 分位组净值）。"""
+    """Load the run's first net-return-curve artifact as a wide DataFrame."""
     metadata = MetaData()
     table = Table("backtest_artifacts", metadata, autoload_with=engine)
     statement = (
@@ -68,7 +70,7 @@ def load_net_return_curve(engine: Engine, run_id: int) -> pd.DataFrame | None:
 
 
 def fetch_spy_series(engine: Engine, start, end) -> pd.Series:
-    """A5：区间内 SPY 收盘价序列。"""
+    """Return SPY closes within the requested interval."""
     metadata = MetaData()
     table = Table("market_bars", metadata, autoload_with=engine)
     statement = (
@@ -88,7 +90,7 @@ def fetch_spy_series(engine: Engine, start, end) -> pd.Series:
 
 
 def factor_autocorr_rows(factor_dir: Path | None = None) -> list[dict]:
-    """A6：每个因子横截面 lag-1 自相关的均值。"""
+    """Return mean cross-sectional lag-1 autocorrelation for each factor."""
     directory = factor_dir or FACTOR_DIR
     rows = []
     if not directory.exists():
@@ -113,7 +115,7 @@ def factor_autocorr_rows(factor_dir: Path | None = None) -> list[dict]:
 
 
 def build_backtest_metrics_data(engine: Engine, run_id: int) -> dict:
-    """A5 滚动 Sharpe 序列 + Alpha/Beta + A6 因子自相关（只算数据，不画图）。"""
+    """Compute rolling Sharpe, alpha/beta, and factor autocorrelation data."""
     result = {
         "rolling_sharpe_dates": [],
         "rolling_sharpe_values": [],

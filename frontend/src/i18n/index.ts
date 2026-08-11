@@ -6,11 +6,14 @@ import en from './locales/en.json';
 import zh from './locales/zh.json';
 
 /**
- * i18n 初始化。
- * - LanguageDetector 读取系统/浏览器语言（navigator.language）、localStorage、URL ?lng=
- * - supportedLngs 限定为 en / zh；nonExplicitSupportedLngs 让 zh-CN、zh-TW → zh，en-US → en
- * - 命中不了支持列表的语言（如 fr、ja）回退到英文
- * 新增语言：加一个 locales/xx.json，在 resources 与 supportedLngs 里登记即可。
+ * i18n initialization.
+ * - LanguageDetector reads the system/browser language (navigator.language),
+ *   localStorage, and the URL's ?lng=
+ * - supportedLngs is limited to en / zh; nonExplicitSupportedLngs maps zh-CN and
+ *   zh-TW to zh, and en-US to en
+ * - languages outside the supported list (fr, ja, ...) fall back to English
+ * To add a language: drop in a locales/xx.json and register it in resources and
+ * supportedLngs.
  */
 void i18n
   .use(LanguageDetector)

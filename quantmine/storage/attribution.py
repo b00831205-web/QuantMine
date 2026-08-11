@@ -18,11 +18,12 @@ def load_long_short_returns(
     run_id: int,
     test_id: str | None = None,
 ) -> dict[tuple[str, str, int, str], pd.Series]:
-    """读回每个组合的多空日收益序列（``quantile_rank = 0``）。
+    """Load daily long-short returns for each combination.
 
     Returns:
-        ``{(variant, factor, period, test_id): Series}``，Series 以 ``trade_date``
-        为索引。key 带上 ``test_id`` 以便归因结果与来源回测行对齐。
+        ``{(variant, factor, period, test_id): Series}``, indexed by
+        ``trade_date``. Including ``test_id`` aligns attribution results with
+        their source backtest rows. Long-short rows use ``quantile_rank = 0``.
     """
     table = Table("backtest_results", MetaData(), autoload_with=engine)
     conditions = [table.c.run_id == run_id, table.c.quantile_rank == 0]

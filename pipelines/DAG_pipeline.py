@@ -57,9 +57,19 @@ def task_command(script: str, *, uses_config: bool = False) -> str:
     command = (
         f'cd "{PROJECT_ROOT}" && '
         '{ set -a; [ -f .env ] && . ./.env; set +a; } && '
+        # WSL commonly receives only the proxy client's HTTP endpoint.  HTTPS
+        # destinations (Wikipedia and Yahoo) still use that CONNECT proxy, but
+        # urllib/curl-cffi require it to be advertised as https_proxy too.
+        'export https_proxy="${https_proxy:-$http_proxy}" && '
+        'export HTTP_PROXY="${HTTP_PROXY:-$http_proxy}" && '
+        'export HTTPS_PROXY="${HTTPS_PROXY:-$https_proxy}" && '
         'export QUANTMINE_DATABASE_URL="${QUANTMINE_PIPELINE_DATABASE_URL:-$QUANTMINE_DATABASE_URL}" && '
         f'{PYTHON_BIN_EXPR} pipelines/{script} '
-        '--date {{ ds }} --batch {{ run_id }}'
+        # Airflow 3 manual runs created without an explicit logical date do not
+        # expose the legacy ``ds`` template variable. ``run_after`` exists for
+        # scheduled and manual runs alike, so the UI/API trigger path remains
+        # renderable as well as the daily schedule.
+        '--date {{ dag_run.run_after | ds }} --batch {{ run_id }}'
     )
     if uses_config:
         command += f' --config "{CONFIG_PATH}"'

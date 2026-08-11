@@ -1280,10 +1280,15 @@ provides-extras = ["data", "viz", "db"]
 dev = [
     { name = "ipykernel", specifier = ">=7.2" },
     { name = "jupyter", specifier = ">=1.1" },
+    { name = "pandas-datareader", specifier = ">=0.11" },
     { name = "pytest", specifier = ">=9.1" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "yfinance", specifier = ">=1.4" },
 ]
-pipeline = [{ name = "apache-airflow", specifier = ">=3.2" }]
+pipeline = [
+    { name = "apache-airflow", specifier = ">=3.2" },
+    { name = "asyncpg", specifier = ">=0.30" },
+]
 
 [[package]]
 name = "quantmine-webapi"

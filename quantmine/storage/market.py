@@ -75,7 +75,7 @@ def build_market_bars(
         market_bars = market_bars.merge(
             cap_long, on = ['trade_date', 'ticker'], how='left'
         )
-    # 未传 shares/market_cap 时也保证列存在, 否则下游 snapshot/upsert 会 KeyError
+    # Keep optional columns present so downstream snapshot/upsert code is stable.
     for col in ("shares_outstanding", "market_cap"):
         if col not in market_bars.columns:
             market_bars[col] = pd.NA
@@ -290,10 +290,10 @@ def fetch_latest_market_trade_date(engine:Engine)->date|None:
 
 
 def fetch_market_breadth(engine: Engine) -> dict | None:
-    """最新交易日上涨/下跌家数与市场宽度（上涨家数占比）。
+    """Return advancers, decliners, and breadth for the latest trading day.
 
-    对每只 ticker 取最近两个交易日的收盘价比较；只有最新一天没有
-    前一交易日的 ticker 不参与统计。
+    Compare each ticker's two most recent closes. Exclude tickers that have a
+    latest-day observation but no previous trading-day observation.
     """
     statement = text(
         """

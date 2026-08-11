@@ -52,7 +52,8 @@ def run_backtest_job(close: pd.DataFrame, variant: ICVariant, test_result: TestR
     if selector not in REGISTER_FACTOR_SELECTOR:
         raise ValueError(f'{selector} not in registry')
 
-    # 加权方法: 照 selector 的注册表模式, 配置里写 weighting: {name, params}; 缺省等权
+    # Weighting follows the selector registry pattern. Configuration accepts
+    # weighting: {name, params}; equal weighting is the default.
     weighting = job_config.get('weighting', {'name': 'equal'})
     validate_in_registry(weighting['name'], REGISTER_WEIGHTING, 'weighting')
     weight_fn = REGISTER_WEIGHTING[weighting['name']]
@@ -90,7 +91,7 @@ def run_backtest_job(close: pd.DataFrame, variant: ICVariant, test_result: TestR
 
 
 def _annualized_return(daily: pd.Series) -> float:
-    """把一段日收益复利成年化收益（252 交易日/年）。空/无效返回 NaN。"""
+    """Compound daily returns into a 252-day annualized return, or NaN."""
     daily = daily.dropna()
     if daily.empty:
         return float('nan')
@@ -133,7 +134,7 @@ def back_test_workflow(back_test_job: dict, backtest_config: dict, close: pd.Dat
             quantile_backtest[factor_period], periods=factor_period[1]
         )
 
-        # —— 换手率（turnover）：每组按调仓取平均换手；long_short 用 Q1+Q_top 两腿之和 ——
+        # Average turnover by group; long_short charges both Q1 and Q_top legs.
         history = ticker_history_by_fp.get(factor_period, [])
 
         def _group_turnover(group: str) -> float:
@@ -148,7 +149,7 @@ def back_test_workflow(back_test_job: dict, backtest_config: dict, close: pd.Dat
                 turnover_map[group] = _group_turnover(group)
         summary_df['turnover'] = pd.Series(turnover_map)
 
-        # —— 超额（excess）：各组年化收益 − SPY 同区间年化收益 ——
+        # Excess return is each group's annualized return minus SPY over the interval.
         if close is not None and 'SPY' in close.columns and not daily_df.empty:
             spy_annual = _annualized_return(close['SPY'].pct_change().reindex(daily_df.index))
             summary_df['excess'] = summary_df['yearly_return'] - spy_annual

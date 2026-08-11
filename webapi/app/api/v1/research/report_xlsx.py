@@ -9,7 +9,8 @@ from sqlalchemy.engine import Engine
 from ....dependencies import get_request_engine
 from ....reports import assemble_context, resolve_lang
 from ....reports.excel import build_xlsx
-from ..reports.db import insert_report_history
+from ..reports.db import finalize_report_history, insert_report_history
+from ....reports.artifacts import save_report_artifact
 from .results import research_run_exists
 
 router = APIRouter()
@@ -36,13 +37,32 @@ def get_research_report_xlsx(
     )
     xlsx_bytes = build_xlsx(context)
 
-    insert_report_history(
+    report_id = insert_report_history(
         engine,
         run_id=run_id,
         test_id=test_id,
         lang=language,
         ai=ai,
+        artifact_type="xlsx",
     )
+    try:
+        artifact_path, artifact_size = save_report_artifact(xlsx_bytes, report_id, "xlsx")
+        finalize_report_history(
+            engine,
+            report_id,
+            artifact_path=artifact_path,
+            artifact_size=artifact_size,
+            status="ready",
+        )
+    except Exception:
+        finalize_report_history(
+            engine,
+            report_id,
+            artifact_path=None,
+            artifact_size=None,
+            status="failed",
+        )
+        raise
 
     filename = f"report_{test_id or run_id}_{language}.xlsx"
     return Response(

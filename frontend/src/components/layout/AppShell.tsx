@@ -16,7 +16,9 @@ import styles from './AppShell.module.css';
  */
 export const AppShell = () => {
   const { pathname } = useLocation();
-  const onAiPage = pathname.startsWith('/ai');
+  // Only the conversation workbench owns a fixed-height viewport. AI Config is
+  // a regular, document-length settings page and must keep the shell scroller.
+  const onAiWorkbench = pathname === '/ai' || pathname === '/ai/';
   const [aiOpen, setAiOpen] = useState(false);
   const contentRef = useRef<HTMLElement | null>(null);
 
@@ -31,7 +33,7 @@ export const AppShell = () => {
         className={styles.shell}
         style={{
           gridTemplateColumns:
-            onAiPage || !aiOpen
+            onAiWorkbench || !aiOpen
               ? 'var(--sidenav-w) 1fr'
               : 'var(--sidenav-w) 1fr var(--ai-quickpanel-w)',
         }}
@@ -39,8 +41,16 @@ export const AppShell = () => {
         <SideNav />
         <div className={styles.main}>
           <TopBar />
-          <main className={styles.content} ref={contentRef}>
-            <KeepAlive id={pathname} name={pathname}>
+          <main
+            className={`${styles.content} ${onAiWorkbench ? styles.workbenchContent : ''}`}
+            ref={contentRef}
+          >
+            <KeepAlive
+              id={pathname}
+              name={pathname}
+              wrapperProps={{ className: onAiWorkbench ? styles.keepAliveFullHeight : '' }}
+              contentProps={{ className: onAiWorkbench ? styles.keepAliveFullHeight : '' }}
+            >
               <Outlet />
             </KeepAlive>
           </main>

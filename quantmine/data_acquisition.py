@@ -158,8 +158,9 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
 
         for attempt in range(max_retries):
             try:
-                #threads=False: 串行请求, 避免并发触发Yahoo限流(429被误报成"possibly delisted")
-                #timeout=30: 单请求超时, 卡住快速失败而非无限挂起
+        # threads=False serializes requests to reduce Yahoo throttling; yfinance
+        # can otherwise misreport HTTP 429 responses as "possibly delisted".
+        # timeout=30 makes a stuck request fail instead of waiting indefinitely.
                 data = yf.download(batch, start=start_date, end=end_date,
                                 auto_adjust=auto_adjust, progress=False,
                                 threads=False, timeout=30)
@@ -168,8 +169,9 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
                 if isinstance(data.columns, pd.MultiIndex):
                     close = data["Close"]
                     empty_tickers = close.columns[close.isnull().all()].tolist()
-                    #不再自动拉黑: 空列多为限流的真实票, 拉黑会永久排除它们, 越跑数据越少。
-                    #真退市由历史成分股表(带end_date)判定; 这里只记录不排除。
+        # Do not blacklist empty columns automatically: they are usually valid
+        # tickers affected by throttling. Delistings come from point-in-time
+        # membership end dates; this path records failures without excluding them.
                     if empty_tickers:
                         print(f"Empty columns (not blacklisted): {empty_tickers}")
                 data.to_parquet(checkpoint_path)
@@ -246,6 +248,7 @@ def data_acquisition(
     file_prefix: str = 'batch',
     with_market_cap: bool = True,
     shares_wait: float = 0.5,
+    shares_max_retries: int = 1,
     shares_cache_days: int = 30,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Download historical price, volume, and market-cap data in batches.
@@ -268,6 +271,9 @@ def data_acquisition(
         with_market_cap: When False, skip the market-cap leg entirely and
             return empty frames for it. Price-only consumers should pass False
             to avoid the per-ticker share-count requests.
+        shares_max_retries: Per-ticker attempts for the rate-limit-prone share
+            endpoint. This is independent from price retries so its
+            60-second backoff cannot stall a whole DAG for tens of minutes.
 
     Returns:
         A tuple of ``(close, volume, shares, market_cap)``. All four are wide
@@ -298,8 +304,9 @@ def data_acquisition(
         batch = tickers[i: i+batch_size]
         batch_index= i//batch_size+1
         print(f"downloading batch{batch_index} ... \ntickers {i} - {min(len(tickers), (i+batch_size))}")
-        # auto_adjust=False: 一次请求同时拿到复权(Adj Close)与未复权(Close),
-        # 市值腿因此不必再下载一遍价格。Volume 两种模式完全一致, 语义不变。
+                # auto_adjust=False returns adjusted and raw close prices in one
+                # request, avoiding a second price download for market cap.
+                # Volume is identical in both modes.
         data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir, auto_adjust=False)
         if data is not None:
             if isinstance(data.columns, pd.MultiIndex):
@@ -318,11 +325,11 @@ def data_acquisition(
         )
     close = pd.concat(all_close, axis=1)
     volume = pd.concat(all_volume, axis=1)
-    # 价格-only 消费者(如 datareader)传 with_market_cap=False, 跳过逐票 get_shares_full 网络开销
+        # Price-only consumers such as datareader skip per-ticker share requests.
     if not with_market_cap:
         return close, volume, pd.DataFrame(), pd.DataFrame()
-    # 未复权价直接复用上面那次下载; 只有全部批次都来自旧格式 checkpoint 时才为 None,
-    # 那种情况下 acquire_market_cap 会自己补下载一次。
+        # Reuse raw closes from the download above. This is None only when every
+        # batch came from a legacy checkpoint; acquire_market_cap then downloads it.
     raw_close = pd.concat(all_raw_close, axis=1) if all_raw_close else None
     shares, market_cap = acquire_market_cap(
         tickers=tickers,
@@ -335,6 +342,7 @@ def data_acquisition(
         batch_wait=batch_wait,
         shares_start_date=shares_start_date,
         shares_wait=shares_wait,
+        shares_max_retries=shares_max_retries,
         shares_cache_days=shares_cache_days,
         price=raw_close,
     )
@@ -408,9 +416,8 @@ def retry_batches(start_date: str, end_date: str, max_retries: int, checkpoint_d
         success = False
         for attempt in range(max_retries):
             try:
-                # auto_adjust=False 与主下载路径保持一致, 否则重试补回来的批次
-                # 会把未复权价当成复权价混进同一张表, 而两者都是合理价格,
-                # 下游没有任何检查能发现。
+                    # Match the primary path's auto_adjust=False mode. Otherwise a
+                    # retry can silently mix raw and adjusted prices in one table.
                 data = yf.download(batch, start=start_date, end=end_date,
                                 auto_adjust=False, progress=False,
                                 threads=False, timeout=30)
@@ -486,8 +493,8 @@ def merge_checkpoints(checkpoint_dir: str = "tmp/checkpoint", file_prefix: str =
     for f in files:
         data = pd.read_parquet(f)
         if isinstance(data.columns, pd.MultiIndex):
-            # 同一目录里可能新旧格式并存(改用 auto_adjust=False 之前写的 checkpoint
-            # 没有 Adj Close 列)。逐文件判别, 才不会把两种价格混成一列。
+            # Legacy checkpoints may lack Adj Close. Detect the format per file
+            # so raw and adjusted prices are never merged into the same column.
             adjusted, _, vol = split_price_frames(data)
             all_close.append(adjusted)
             all_volume.append(vol)
@@ -503,7 +510,8 @@ def acquire_market_cap(
         tickers: list, start_date: str, end_date: str, batch_size,
         max_retries: int=3, wait: int=60, checkpoint_dir: str = 'tmp/checkpoint',
         batch_wait = 1.0, shares_start_date: str| None = None,
-        shares_wait: float = 0.5, shares_cache_days: int = 30,
+        shares_wait: float = 0.5, shares_max_retries: int = 1,
+        shares_cache_days: int = 30,
         shares_failure_budget: int = 15, price: pd.DataFrame | None = None,
 )-> tuple[pd.DataFrame, pd.DataFrame]:
     """Download share counts and derive market capitalization.
@@ -527,6 +535,7 @@ def acquire_market_cap(
         shares_wait: Seconds between individual share requests. There is no
             batch endpoint for share counts, so this leg makes one request per
             ticker and is the first thing Yahoo throttles.
+        shares_max_retries: Attempts per ticker for the share-count endpoint.
         shares_cache_days: Age at which a cached share series is refetched.
         shares_failure_budget: Consecutive share failures tolerated before the
             share leg gives up for this run.
@@ -560,8 +569,8 @@ def acquire_market_cap(
     os.makedirs(task_dir, exist_ok=True)
 
     if price is None:
-        # 只有全部批次都命中旧格式 checkpoint(auto_adjust=True, 无 Adj Close)时才走到
-        # 这里。新流程下调用方那一次 auto_adjust=False 已经带回未复权价。
+        # This fallback runs only when every batch hit a legacy auto-adjusted
+        # checkpoint without Adj Close. New downloads already include raw closes.
         px_batches = []
         for i in range(0, len(tickers), batch_size):
             data = download_batch_with_retry(
@@ -592,22 +601,23 @@ def acquire_market_cap(
         raw = load_shares_cache(checkpoint_dir, t, max_age_days=shares_cache_days)
         if raw is None:
             if consecutive_failures >= shares_failure_budget:
-                # 连续失败到这个程度基本就是限流了。继续把剩下几百票挨个裸打
-                # 只会加深限流且全都拿不到, 不如整条腿停在这里, 留 NaN 等下次跑。
+                # A long failure streak strongly indicates throttling. Stop this
+                # leg instead of worsening the limit across hundreds of tickers;
+                # retain NaN values and retry them on a later run.
                 print(f'{consecutive_failures} consecutive share failures; '
                       'assuming rate limit, skipping the rest this run')
                 break
             raw = _download_shares(
-                t, shares_start_date or start_date, max_retries, wait
+                t, shares_start_date or start_date, shares_max_retries, wait
             )
-            # 股本端点比价格端点更容易触发限流, 每票之间强制间隔
+            # The share endpoint throttles more readily than prices; pace tickers.
             time.sleep(shares_wait)
             if raw is None:
                 consecutive_failures += 1
                 continue
             consecutive_failures = 0
             save_shares_cache(checkpoint_dir, t, raw)
-        # 对齐放在读取之后, 所以缓存本身与日期窗口无关, 可以跨运行复用
+        # Align after reading so the cache remains window-independent and reusable.
         shares[t] = raw.reindex(price.index, method='ffill')
     shares = pd.DataFrame(shares).reindex(columns = price.columns)
     market_cap = price* shares

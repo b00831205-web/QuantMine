@@ -212,7 +212,11 @@ def diff_universe(
     diff.pending.sort()
     diff.closed.sort()
 
-    if max_change is not None and diff.change_count > max_change:
+    # An empty table is initial seeding, not a one-day rebalance. Applying the
+    # daily-change guard there makes every fresh deployment impossible to
+    # bootstrap because all ~503 constituents necessarily look newly added.
+    # Once any open baseline exists, keep the guard fully enforced.
+    if open_spells and max_change is not None and diff.change_count > max_change:
         raise UniverseSanityError(
             f"{as_of} implies {diff.change_count} membership changes "
             f"({len(diff.opened)} added, {len(diff.closed)} removed), above the "

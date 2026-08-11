@@ -8,11 +8,22 @@
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
   font-weight: 700;
   font-size: var(--fs-lg);
   letter-spacing: 0.04em;
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
   color: var(--text-primary);
+}
+
+.brandLogo {
+  display: block;
+  width: auto;
+  height: 30px;
+  object-fit: contain;
+  flex: none;
 }
 
 .list {

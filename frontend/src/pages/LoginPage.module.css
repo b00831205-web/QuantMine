@@ -19,6 +19,20 @@
   box-shadow: var(--shadow-md);
 }
 
+.brandLockup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.brandLogo {
+  display: block;
+  width: auto;
+  height: 88px;
+  object-fit: contain;
+}
+
 .brand {
   font-size: var(--fs-xxl);
   font-weight: 600;

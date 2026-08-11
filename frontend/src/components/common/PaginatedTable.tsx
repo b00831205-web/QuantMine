@@ -6,7 +6,7 @@ export interface Column<T> {
   key: string;
   header: string;
   render: (row: T) => React.ReactNode;
-  align?: 'left' | 'center' |'right';
+  align?: 'left' | 'center' | 'right';
   width?: number | string;
 }
 
@@ -16,8 +16,8 @@ interface Props<T> {
   onPageChange?: (page: number) => void;
   rowKey: (row: T) => string;
   emptyHint?: string;
-  onRowClick?:(row: T) =>void;
-  onRowDoubleClick?:(row: T) =>void;
+  onRowClick?: (row: T) => void;
+  onRowDoubleClick?: (row: T) => void;
   // 显式 | undefined：exactOptionalPropertyTypes 下调用方会条件式传入 undefined
   selectedRowKey?: string | undefined;
 }
@@ -56,6 +56,7 @@ export function PaginatedTable<T>({
               <tr
                 key={key}
                 className={isSelected ? styles.selected : undefined}
+                aria-selected={isSelected}
                 onClick={() => onRowClick?.(row)}
                 onDoubleClick={() => onRowDoubleClick?.(row)}
               >

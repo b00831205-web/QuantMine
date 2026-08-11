@@ -271,13 +271,20 @@ export const AIConfigPage = () => {
         </div>
         <AsyncBoundary
           state={configState}
-          isEmpty={(d) => d.providers.length === 0}
-          emptyTitle={t('aiConfig.providersEmptyTitle')}
-          emptyHint={t('aiConfig.providersEmptyHint')}
         >
           {() =>
             draft ? (
               <>
+                {draft.providers.length === 0 ? (
+                  <div className={styles.providerEmpty}>
+                    <div className={styles.providerEmptyTitle}>
+                      {t('aiConfig.providersEmptyTitle')}
+                    </div>
+                    <div className={styles.providerEmptyHint}>
+                      {t('aiConfig.providersEmptyHint')}
+                    </div>
+                  </div>
+                ) : null}
                 <div className={styles.providerGrid}>
                   {draft.providers.map((p) => {
                     const active = editingId === p.providerId;

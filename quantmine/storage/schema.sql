@@ -1,23 +1,29 @@
--- quantmine 应用库的唯一建表真相源。
+-- Single source of truth for the QuantMine application database schema.
 --
--- 全文幂等（IF NOT EXISTS），初始化脚本每次都可原样重放：新库一次建全，老库只补
--- 缺失对象。不含 GRANT——最小权限角色由 docker/postgres/init.sh 与 scripts/setup.py
--- 统一授权（含 ALTER DEFAULT PRIVILEGES，覆盖未来新表）。
+-- The file is idempotent through IF NOT EXISTS and may be replayed unchanged:
+-- a fresh database is built in one pass and an existing database gains missing
+-- objects. GRANT statements are intentionally excluded; docker/postgres/init.sh
+-- and scripts/setup.py apply least-privilege grants and ALTER DEFAULT PRIVILEGES.
 --
--- 需以超级用户执行（CREATE EXTENSION）。
+-- Run as a superuser because CREATE EXTENSION requires elevated privileges.
 --
--- ⚠️ 只能"加表"，不能"改表"。CREATE TABLE IF NOT EXISTS 在表已存在时跳过整条语句，
--- 不比对列——所以往已有表里加列、改类型、改 CHECK/UNIQUE/默认值，改这个文件对已有库
--- 完全无效，而且静默无效（不报错）。
+-- WARNING: This can add tables but cannot alter existing tables. CREATE TABLE
+-- IF NOT EXISTS skips the entire statement when the table exists and does not
+-- compare columns. Editing a column, type, constraint, or default here has no
+-- effect on an existing database and fails silently.
 --
--- 给已有表加列的正确做法：
---   1. 先备份：WSL 里 pg_dump "$url" -Fc -f /mnt/e/pgbackup/quantmine_$(date +%F).dump
---   2. 以表 owner 身份手动执行 ALTER TABLE ... ADD COLUMN IF NOT EXISTS（应用角色
---      quantmine_web 只有 DML 权限，会报 must be owner of table）
---   3. 同步改本文件，保证新库建出来一致
--- 不要为此重建数据库：market_bars 有约 165 万行、AI 对话历史无法再生。
--- 等这件事开始反复发生，就引入 schema_migrations 记账表（见 docs/superpowers/specs/
--- 2026-08-09-operational-reliability-design.md 里被标记 SUPERSEDED 的那一节）。
+-- To add a column to an existing table:
+--   1. Back up first in WSL:
+--      pg_dump "$url" -Fc -f /mnt/e/pgbackup/quantmine_$(date +%F).dump
+--   2. As the table owner, run ALTER TABLE ... ADD COLUMN IF NOT EXISTS.
+--      The quantmine_web role has DML privileges only and will report
+--      "must be owner of table".
+--   3. Update this file so fresh databases receive the same schema.
+-- Do not rebuild the database for this: market_bars has roughly 1.65 million
+-- rows and AI conversation history cannot be regenerated. If schema changes
+-- become routine, introduce a schema_migrations ledger as described in the
+-- SUPERSEDED section of docs/superpowers/specs/
+-- 2026-08-09-operational-reliability-design.md.
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -230,7 +236,7 @@ CREATE TABLE IF NOT EXISTS backtest_artifacts (
     )
 );
 
--- Carhart 四因子归因结果（报告 03 节数据源）。
+-- Carhart four-factor attribution results used by report section 03.
 CREATE TABLE IF NOT EXISTS attribution_results (
     id SERIAL PRIMARY KEY,
     run_id INT NOT NULL REFERENCES research_runs(run_id),
@@ -307,13 +313,17 @@ CREATE TABLE IF NOT EXISTS report_history (
     test_id VARCHAR,
     lang VARCHAR(2) NOT NULL,
     ai BOOLEAN NOT NULL DEFAULT FALSE,
+    artifact_type VARCHAR(8) NOT NULL DEFAULT 'pdf'
+        CHECK (artifact_type IN ('pdf', 'xlsx')),
+    artifact_path VARCHAR,
+    artifact_size BIGINT CHECK (artifact_size IS NULL OR artifact_size >= 0),
     status VARCHAR NOT NULL DEFAULT 'ready' CHECK (status IN ('ready', 'failed')),
     created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS ai_conversations (
     id SERIAL PRIMARY KEY,
-    title VARCHAR NOT NULL DEFAULT '新对话',
+    title VARCHAR NOT NULL DEFAULT 'New chat',
     model_id VARCHAR,
     research_run_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -332,7 +342,7 @@ CREATE TABLE IF NOT EXISTS ai_messages (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
--- 历史消息向量索引（embedding 固定 1024 维，对应 bge-m3）。
+-- Historical-message vector index; bge-m3 embeddings use 1,024 dimensions.
 CREATE TABLE IF NOT EXISTS ai_message_embeddings (
     id BIGSERIAL PRIMARY KEY,
     conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
@@ -346,7 +356,7 @@ CREATE TABLE IF NOT EXISTS ai_message_embeddings (
 CREATE INDEX IF NOT EXISTS idx_ai_message_embeddings_conversation
     ON ai_message_embeddings(conversation_id);
 
--- 对话附件：原文落盘，文本抽取结果随行存储供模型引用。
+-- Conversation attachments: persist originals and extracted text for model use.
 CREATE TABLE IF NOT EXISTS ai_attachments (
     id BIGSERIAL PRIMARY KEY,
     conversation_id INT NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
@@ -372,8 +382,9 @@ CREATE TABLE IF NOT EXISTS ai_config (
     capabilities JSONB NOT NULL DEFAULT '{"read_research": true, "read_market": true, "read_reports": true, "query_database": true, "use_chat_history": true, "rag_corpus": false}'::jsonb
 );
 
--- 登录鉴权用户表。密码只存哈希，格式为带方案前缀的自描述串
--- （bcrypt$... / scrypt$...），校验时按前缀分派，便于将来无缝升级哈希方案。
+-- Authentication users. Passwords are stored only as self-describing hashes
+-- prefixed with their scheme (bcrypt$... / scrypt$...), allowing verification
+-- dispatch and future hash-scheme upgrades without a breaking migration.
 CREATE TABLE IF NOT EXISTS auth_users (
     id SERIAL PRIMARY KEY,
     username VARCHAR NOT NULL UNIQUE,

@@ -1,70 +1,122 @@
 # QUANTMINE Web API
 
-阶段 0 仅产出 FastAPI 最小壳：
+The Web API is a FastAPI application that serves authentication, market data,
+research results, backtests, reports, AI workflows, rebalances, data inspection,
+Airflow workflow controls, and—when built for service mode—the React application.
 
-- `GET /api/v1/health`
-- `GET /api/v1/market/series`（handler 留 `TODO(USER_LEARNING)`）
-- 统一错误中间件（422 / 4xx / 5xx → 统一 ApiError）
-- 全局 trace-id 中间件（成功响应与错误响应都携带 `x-trace-id`）
-- CORS（开发态允许 5173）
+## Quick Start
 
-## 安装与运行
-
-> 所有命令均在 `webapi/` 目录下执行。
+From the repository root:
 
 ```bash
 cd webapi
+uv sync
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-# 安装依赖（仅 webapi + 测试相关 extras）
-uv sync --extra webapi --extra test-webapi
+Open:
 
-# 启动开发服务（默认 8000 端口）
-uv run uvicorn app.main:app --reload --port 8000
+- API documentation: <http://localhost:8000/docs>
+- Health check: <http://localhost:8000/api/v1/health>
 
-# 跑测试
+The API expects the PostgreSQL connection variables created by
+`scripts/setup.py`. For the complete frontend/API/Airflow stack, use `uv run dev`
+from the repository root.
+
+## Environment
+
+Important variables include:
+
+| Variable | Purpose |
+|---|---|
+| `QUANTMINE_DATABASE_URL` | Web application database connection |
+| `QUANT_AIRFLOW_PG_DSN` | Read access to Airflow metadata |
+| `QUANT_AUTH_SECRET` | Session-cookie signing secret |
+| `QUANT_AIRFLOW_BIN` | Airflow CLI used for workflow mutations |
+| `QUANT_AIRFLOW_PYTHON` | Python used for task-level state operations |
+| `AIRFLOW_HOME` | Airflow configuration and runtime directory |
+| `QUANT_CORS_ORIGINS` | Comma-separated development origins |
+
+Never commit real values. Native setup writes the root `.env`; Docker injects
+the same settings from `.env.docker`.
+
+## API Domains
+
+All routes are aggregated in `app/api/__init__.py` under `/api/v1`.
+
+| Domain | Responsibilities |
+|---|---|
+| health | shallow process health |
+| auth | login, logout, current user and password management |
+| market | price/volume series and latest-market views |
+| research | runs, factor tests, IC, backtests and report data |
+| reports | report history and generated artifacts |
+| workflows | DAG list, graph, grid, runs, trigger, pause and task actions |
+| rebalances | point-in-time portfolio rebalance views |
+| data | controlled database inspection |
+| ai | providers, conversations, attachments, RAG and analysis |
+| services | allowlisted systemd autostart controls |
+
+Authentication routes and `/health` are public. Other product routes share the
+`require_user` dependency.
+
+## Structure
+
+```text
+webapi/
+├── app/
+│   ├── ai/                  model providers, attachments and RAG
+│   ├── api/v1/              domain routers and query layers
+│   ├── reports/             report data, charts and rendering
+│   ├── static/              generated frontend bundle in service mode
+│   ├── errors.py            trace IDs and normalized errors
+│   ├── main.py              FastAPI factory and static serving
+│   └── security.py          password hashing and session tokens
+├── tests/                   API and storage tests
+├── pyproject.toml
+└── uv.lock
+```
+
+Add a new domain by exposing an `APIRouter` below `app/api/v1/<domain>/` and
+including it in `app/api/__init__.py`. Put database access in a small domain
+query module instead of embedding SQL in route handlers.
+
+## Airflow Integration
+
+Read operations query the shared Airflow PostgreSQL metadata database. Mutating
+operations use the Airflow CLI instead of writing metadata tables directly:
+
+- pause/unpause and trigger use `airflow dags ...`;
+- clear/mark-success/mark-failed use a small Airflow ORM helper;
+- DAG and task identifiers are validated before execution;
+- systemd service names are resolved through a fixed allowlist.
+
+The Docker Web API image includes a separate, lockfile-backed root virtualenv
+for the Airflow CLI. The lightweight local Web API virtualenv remains isolated.
+
+## Static Frontend Mode
+
+When `app/static/index.html` exists, FastAPI serves the production frontend and
+API from the same origin:
+
+```bash
+cd ../frontend
+npm ci && npm run build
+cd ..
+mkdir -p webapi/app/static
+cp -r frontend/dist/. webapi/app/static/
+```
+
+API paths still return API errors; unmatched non-API paths fall back to the SPA
+entry point.
+
+## Testing
+
+```bash
+cd webapi
 uv run pytest -q
 ```
 
-可访问的端点：
-
-- `GET http://localhost:8000/api/v1/health` → `{"status":"ok"}`
-- `GET http://localhost:8000/api/v1/market/series?symbols=AAPL&startDate=2024-01-01&endDate=2024-06-01`
-  → 缺参时 422；handler 体未实现时会返回 500（受 TODO 限制）
-- `GET http://localhost:8000/docs` → 自动生成的 Swagger UI
-
-## 与前端的契约
-
-见 `../docs/api/openapi.yaml`。任何字段变更必须先改契约，再改实现。
-
-## 目录组织
-
-```
-webapi/
-├── pyproject.toml
-├── app/
-│   ├── main.py                  # create_app() + 中间件装配
-│   ├── errors.py                # TraceIdMiddleware + 统一错误响应
-│   ├── schemas.py               # Pydantic 模型（mirror OpenAPI）
-│   └── api/
-│       ├── __init__.py          # 唯一聚合点（api_router）
-│       └── v1/
-│           ├── health.py
-│           └── market/series.py # 唯一保留 TODO(USER_LEARNING) 的端点
-└── tests/
-    ├── conftest.py              # client fixture
-    ├── test_health.py
-    ├── test_errors.py
-    └── test_trace_id.py
-```
-
-新增业务域时：在 `app/api/v1/<domain>/` 下新增模块并暴露 `router`，
-然后在 `app/api/__init__.py` 中 `include_router` 即可。
-
-## 阶段 0 学习配额
-
-仅 1 处：
-
-- `app/api/v1/market/series.py` 中 `GET /market/series` handler 函数体
-  - 输入：symbols、startDate、endDate、frequency、normalize
-  - 输出：`SeriesResponse`
-  - 约束：参数校验、服务调用占位、统一错误格式
+The current baseline is 37 passing tests. The canonical contract is
+[`../docs/api/openapi.yaml`](../docs/api/openapi.yaml); update the contract,
+implementation, client types, and tests together when a response shape changes.

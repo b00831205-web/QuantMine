@@ -1,7 +1,7 @@
 # --- market data & run artifacts (never committed: size + data licensing) ---
 /data/
-tmp/
-analysis/
+/tmp/
+/analysis/
 output.txt
 run.log
 *.parquet
@@ -9,8 +9,8 @@ run.log
 *.xlsx
 
 # --- airflow runtime (airflow.cfg contains secret keys; db/logs are local state) ---
-airflow/
-.airflow/
+/airflow/
+/.airflow/
 *.db
 *.db-shm
 *.db-wal
@@ -34,7 +34,10 @@ build/
 htmlcov/
 
 # --- local scratch / superseded scripts ---
-scripts/
+# Deployment/account-management scripts are release files. Keep only the two
+# historical ad-hoc diagnostics local.
+/scripts/test.py
+/scripts/test_dhp_bug.py
 
 # --- generated dashboards (frontend being rebuilt) ---
 factor_analysis_dashboard.html
@@ -60,8 +63,10 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.docker.example
 # setup.py / create_user.py / reset_password.py 生成的明文登录凭据
 .initial-credentials.json
+/config.yaml
 
 # --- build artifacts ---
 # 前端构建产物, 由 `npm run build` + 拷贝生成, 不入库

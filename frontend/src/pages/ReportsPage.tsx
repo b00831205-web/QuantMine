@@ -14,22 +14,26 @@
  * FINISH：unreviewed and undocumented is unfinished；本次以类型/测试/构建与人工视觉复核收口。
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/common/PageHeader';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
 import { HttpError } from '@/api/http';
-import { fetchResearchOptions, fetchFactorResults, fetchBacktestSummaries } from '@/api/client';
+import { fetchBacktestSummaries, fetchFactorResults, fetchResearchOptions } from '@/api/client';
 import type { AsyncState } from '@/types/api';
 import type { ResearchFilterOptions } from '@/types/research';
 import type { ReportLang } from '@/types/report';
-import { buildReportPdfUrl, buildReportXlsxUrl } from '@/api/client/report';
+import {
+  buildReportHistoryFileUrl,
+  buildReportPdfUrl,
+  buildReportXlsxUrl,
+} from '@/api/client/report';
 import type { ReportQuery } from '@/types/report';
 import { fetchReportHistory } from '@/api/client/report';
 import type { ReportHistoryItem, ReportHistoryPage } from '@/types/report';
 import i18n from '@/i18n';
-import { Download, FileSpreadsheet, Printer, RefreshCcw } from 'lucide-react';
+import { Download, FilePlus2, FileSpreadsheet, Printer, RefreshCcw } from 'lucide-react';
 import { PaginatedTable } from '@/components/common/PaginatedTable';
 import type { Column } from '@/components/common/PaginatedTable';
 import styles from './ReportsPage.module.css';
@@ -58,6 +62,12 @@ const HISTORY_COLUMNS: Column<ReportHistoryItem>[] = [
     header: i18n.t('reports.col.lang'),
     align: 'center',
     render: (r) => <span className={styles.monoCell}>{r.lang.toUpperCase()}</span>,
+  },
+  {
+    key: 'artifactType',
+    header: i18n.t('reports.col.type'),
+    align: 'center',
+    render: (r) => <span className={styles.monoCell}>{r.artifactType.toUpperCase()}</span>,
   },
   {
     key: 'ai',
@@ -113,13 +123,16 @@ export const ReportsPage = () => {
   const [optionsState, setOptionsState] = useState<AsyncState<ResearchFilterOptions>>({
     status: 'idle',
   });
-  const [pdfLoaded, setPdfLoaded] = useState(false);
   const [historyState, setHistoryState] = useState<AsyncState<ReportHistoryPage>>({
     status: 'idle',
   });
   const [historyPage, setHistoryPage] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [forceRefresh, setForceRefresh] = useState(0);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [generationError, setGenerationError] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
   const [dataPresence, setDataPresence] = useState<DataPresence>('idle');
   const options = optionsState.status === 'success' ? optionsState.data : null;
 
@@ -127,38 +140,111 @@ export const ReportsPage = () => {
   const testId = readTestId(searchParams);
   const lang = readLang(searchParams);
   const ai = readAi(searchParams);
+  const runIdRef = useRef(runId);
+  runIdRef.current = runId;
 
-  const buildQuery = (): ReportQuery | null =>
+  const selectedReport =
+    historyState.status === 'success'
+      ? (historyState.data.items.find((report) => report.reportId === selectedReportId) ?? null)
+      : null;
+  const selectedFileUrl =
+    selectedReport?.status === 'ready' &&
+    selectedReport.artifactAvailable &&
+    selectedReport.artifactType === 'pdf'
+      ? buildReportHistoryFileUrl(selectedReport.reportId, true)
+      : null;
+
+  const historyReportQuery = (report: ReportHistoryItem): ReportQuery => ({
+    runId: report.runId,
+    lang: report.lang,
+    ai: report.ai,
+    ...(report.testId ? { testId: report.testId } : {}),
+  });
+
+  const currentQuery: ReportQuery | null =
     runId === null ? null : { runId, lang, ai, ...(testId ? { testId } : {}) };
 
+  const handleGenerate = async (): Promise<void> => {
+    if (!currentQuery || dataPresence !== 'hasData' || generating) return;
+    setGenerating(true);
+    setGenerationError(false);
+    try {
+      const response = await fetch(buildReportPdfUrl({ ...currentQuery, refresh: true }, true), {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error(`report generation returned ${response.status}`);
+      await response.arrayBuffer();
+      setSelectedReportId(null);
+      setHistoryPage(1);
+      setRefreshKey((key) => key + 1);
+    } catch {
+      setGenerationError(true);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const handleDownloadPdf = (): void => {
-    const q = buildQuery();
-    if (q) window.open(buildReportPdfUrl(q, false), '_blank');
+    if (selectedReport?.artifactType === 'pdf' && selectedReport.artifactAvailable) {
+      window.open(buildReportHistoryFileUrl(selectedReport.reportId), '_blank');
+    }
   };
 
   const handlePrint = (): void => {
-    const q = buildQuery();
-    if (q) window.open(buildReportPdfUrl(q, true), '_blank');
+    if (selectedReport?.artifactType === 'pdf' && selectedReport.artifactAvailable) {
+      window.open(buildReportHistoryFileUrl(selectedReport.reportId, true), '_blank');
+    }
   };
 
   const handleDownloadExcel = (): void => {
-    const q = buildQuery();
-    if (q) window.open(buildReportXlsxUrl(q), '_blank');
+    if (!selectedReport?.artifactAvailable) return;
+    if (selectedReport.artifactType === 'xlsx') {
+      window.open(buildReportHistoryFileUrl(selectedReport.reportId), '_blank');
+    } else if (selectedReport.dataAvailable) {
+      window.open(buildReportXlsxUrl(historyReportQuery(selectedReport)), '_blank');
+    }
   };
 
-  const pdfUrl =
-    runId === null
-      ? null
-      : buildReportPdfUrl(
-          { runId, lang, ai, refresh: forceRefresh > 0, ...(testId ? { testId } : {}) },
+  const handleRegenerate = async (): Promise<void> => {
+    if (!selectedReport?.dataAvailable || regenerating) return;
+    setRegenerating(true);
+    try {
+      const response = await fetch(
+        buildReportPdfUrl(
+          {
+            ...historyReportQuery(selectedReport),
+            // Run/test identify the selected report's source data. Language and
+            // AI are live preview controls and must use what the user just chose.
+            lang,
+            ai,
+            refresh: true,
+          },
           true,
-        ) + (forceRefresh > 0 ? `&t=${forceRefresh}` : '');
+        ),
+        { credentials: 'include' },
+      );
+      if (!response.ok) throw new Error(`report regeneration returned ${response.status}`);
+      await response.arrayBuffer();
+      setSelectedReportId(null);
+      setHistoryPage(1);
+      setRefreshKey((key) => key + 1);
+    } catch {
+      setPreviewError(true);
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
-  useEffect(() => {
-    setPdfLoaded(false);
-  }, [pdfUrl]);
+  const handleHistoryDownload = (report: ReportHistoryItem): void => {
+    if (!report.dataAvailable) return;
+    window.open(
+      buildReportPdfUrl({ ...historyReportQuery(report), refresh: true }, false),
+      '_blank',
+    );
+  };
 
-  /* 运行数据存在性检查：IC 与回测都为空时不生成报告 */
+  useEffect(() => setPreviewError(false), [selectedFileUrl]);
+
   useEffect(() => {
     if (runId === null) {
       setDataPresence('idle');
@@ -170,17 +256,18 @@ export const ReportsPage = () => {
       { runId, page: 1, pageSize: 1, ...(testId ? { testId } : {}) },
       controller.signal,
     )
-      .then((d) => d.total)
+      .then((data) => data.total)
       .catch(() => 0);
-    const btTotal = fetchBacktestSummaries(
+    const backtestTotal = fetchBacktestSummaries(
       { runId, page: 1, pageSize: 1, ...(testId ? { testId } : {}) },
       controller.signal,
     )
-      .then((d) => d.total)
+      .then((data) => data.total)
       .catch(() => 0);
-    Promise.all([factorTotal, btTotal]).then(([factors, backtests]) => {
-      if (controller.signal.aborted) return;
-      setDataPresence(factors > 0 || backtests > 0 ? 'hasData' : 'noData');
+    Promise.all([factorTotal, backtestTotal]).then(([factors, backtests]) => {
+      if (!controller.signal.aborted) {
+        setDataPresence(factors > 0 || backtests > 0 ? 'hasData' : 'noData');
+      }
     });
     return () => controller.abort();
   }, [runId, testId]);
@@ -206,6 +293,12 @@ export const ReportsPage = () => {
     setSearchParams(params, { replace: true });
   };
 
+  const updateReportSettings = (next: Parameters<typeof updateSearch>[0]): void => {
+    setGenerationError(false);
+    setPreviewError(false);
+    updateSearch(next);
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     setOptionsState({ status: 'loading' });
@@ -213,7 +306,7 @@ export const ReportsPage = () => {
       .then((data) => {
         if (!controller.signal.aborted) {
           setOptionsState({ status: 'success', data });
-          if (runId === null && data.defaultRunId) {
+          if (runIdRef.current === null && data.defaultRunId !== null) {
             updateSearch({ runId: data.defaultRunId });
           }
         }
@@ -239,11 +332,25 @@ export const ReportsPage = () => {
   }, []);
 
   useEffect(() => {
+    if (runId === null) {
+      setHistoryState({ status: 'idle' });
+      setSelectedReportId(null);
+      return;
+    }
     const controller = new AbortController();
     setHistoryState({ status: 'loading' });
-    fetchReportHistory(historyPage, 10, controller.signal)
+    fetchReportHistory(runId, historyPage, 10, controller.signal)
       .then((data) => {
-        if (!controller.signal.aborted) setHistoryState({ status: 'success', data });
+        if (controller.signal.aborted) return;
+        setHistoryState({ status: 'success', data });
+        const nextReport =
+          data.items.find(
+            (report) =>
+              report.status === 'ready' &&
+              report.artifactAvailable &&
+              report.artifactType === 'pdf',
+          ) ?? data.items[0];
+        setSelectedReportId(nextReport?.reportId ?? null);
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -262,7 +369,7 @@ export const ReportsPage = () => {
         });
       });
     return () => controller.abort();
-  }, [historyPage, refreshKey]);
+  }, [runId, historyPage, refreshKey]);
 
   useEffect(() => {
     if (runId === null) {
@@ -270,7 +377,6 @@ export const ReportsPage = () => {
       return;
     }
     const controller = new AbortController();
-    setOptionsState({ status: 'loading' });
     fetchResearchOptions(runId, controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) {
@@ -300,14 +406,36 @@ export const ReportsPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId]);
 
-  /* 高亮与当前预览上下文匹配的历史行 */
-  const historySelectedKey =
-    runId === null || historyState.status !== 'success'
-      ? undefined
-      : historyState.data.items.find(
-          (r) =>
-            r.runId === runId && (r.testId ?? null) === testId && r.lang === lang && r.ai === ai,
-        )?.reportId;
+  const handleSelectReport = (report: ReportHistoryItem): void => {
+    setSelectedReportId(report.reportId);
+    setPreviewError(false);
+  };
+
+  const historyColumns: Column<ReportHistoryItem>[] = [
+    ...HISTORY_COLUMNS,
+    {
+      key: 'download',
+      header: t('reports.col.actions'),
+      align: 'right',
+      render: (report) => (
+        <button
+          type="button"
+          className={styles.iconBtn}
+          disabled={!report.dataAvailable}
+          title={
+            report.dataAvailable ? t('reports.downloadHistory') : t('reports.historyDataMissing')
+          }
+          aria-label={`${t('reports.downloadHistory')} ${report.reportId}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            handleHistoryDownload(report);
+          }}
+        >
+          <Download size={13} strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      ),
+    },
+  ];
 
   return (
     <div className={styles.page}>
@@ -336,7 +464,9 @@ export const ReportsPage = () => {
             value={runId === null ? '' : String(runId)}
             onChange={(e) => {
               const value = e.target.value;
-              updateSearch({ runId: value === '' ? null : Number(value), testId: null });
+              setHistoryPage(1);
+              setSelectedReportId(null);
+              updateReportSettings({ runId: value === '' ? null : Number(value), testId: null });
             }}
           >
             <option value="">{t('reports.selectRun')}</option>
@@ -352,7 +482,7 @@ export const ReportsPage = () => {
           <select
             id="report-test"
             value={testId ?? ''}
-            onChange={(e) => updateSearch({ testId: e.target.value || null })}
+            onChange={(e) => updateReportSettings({ testId: e.target.value || null })}
           >
             <option value="">{t('common.all')}</option>
             {options?.testIds.map((tid) => (
@@ -367,12 +497,23 @@ export const ReportsPage = () => {
           <select
             id="report-lang"
             value={lang}
-            onChange={(e) => updateSearch({ lang: e.target.value === 'en' ? 'en' : 'zh' })}
+            onChange={(e) => updateReportSettings({ lang: e.target.value === 'en' ? 'en' : 'zh' })}
           >
             <option value="zh">{t('reports.langZh')}</option>
             <option value="en">{t('reports.langEn')}</option>
           </select>
         </div>
+        <button
+          id="generate-report-button"
+          type="button"
+          className={styles.generateBtn}
+          disabled={dataPresence !== 'hasData' || generating}
+          title={dataPresence === 'noData' ? t('reports.noDataForRun') : undefined}
+          onClick={() => void handleGenerate()}
+        >
+          <FilePlus2 size={14} strokeWidth={1.75} aria-hidden="true" />
+          {generating ? t('reports.generatingReport') : t('reports.generateReport')}
+        </button>
       </div>
 
       {/* 报告预览（主证据） */}
@@ -381,20 +522,23 @@ export const ReportsPage = () => {
           <h2>{t('reports.previewTitle')}</h2>
           <div className={styles.headActions}>
             <button
+              id="report-ai-toggle"
               type="button"
               className={ai ? `${styles.aiChip} ${styles.aiChipOn}` : styles.aiChip}
               aria-pressed={ai}
-              onClick={() => updateSearch({ ai: !ai })}
+              title={t('reports.aiToggleHint')}
+              onClick={() => updateReportSettings({ ai: !ai })}
             >
               <span className={styles.chipDot} aria-hidden="true" />
               {t('reports.aiLabel')}
             </button>
             <button
+              id="report-regenerate-button"
               type="button"
               className={styles.iconBtn}
               title={t('reports.forceRefresh')}
-              disabled={runId === null || dataPresence !== 'hasData'}
-              onClick={() => setForceRefresh((k) => k + 1)}
+              disabled={!selectedReport?.dataAvailable || regenerating}
+              onClick={() => void handleRegenerate()}
             >
               <RefreshCcw size={13} strokeWidth={1.75} aria-hidden="true" />
             </button>
@@ -402,7 +546,12 @@ export const ReportsPage = () => {
               type="button"
               className={styles.iconBtn}
               title={t('reports.downloadPdf')}
-              disabled={runId === null || dataPresence !== 'hasData'}
+              disabled={
+                !selectedReport ||
+                selectedReport.status !== 'ready' ||
+                !selectedReport.artifactAvailable ||
+                selectedReport.artifactType !== 'pdf'
+              }
               onClick={handleDownloadPdf}
             >
               <Download size={13} strokeWidth={1.75} aria-hidden="true" />
@@ -411,7 +560,12 @@ export const ReportsPage = () => {
               type="button"
               className={styles.iconBtn}
               title={t('reports.print')}
-              disabled={runId === null || dataPresence !== 'hasData'}
+              disabled={
+                !selectedReport ||
+                selectedReport.status !== 'ready' ||
+                !selectedReport.artifactAvailable ||
+                selectedReport.artifactType !== 'pdf'
+              }
               onClick={handlePrint}
             >
               <Printer size={13} strokeWidth={1.75} aria-hidden="true" />
@@ -420,7 +574,12 @@ export const ReportsPage = () => {
               type="button"
               className={styles.iconBtn}
               title={t('reports.downloadExcel')}
-              disabled={runId === null || dataPresence !== 'hasData'}
+              disabled={
+                !selectedReport ||
+                selectedReport.status !== 'ready' ||
+                !selectedReport.artifactAvailable ||
+                (selectedReport.artifactType !== 'xlsx' && !selectedReport.dataAvailable)
+              }
               onClick={handleDownloadExcel}
             >
               <FileSpreadsheet size={13} strokeWidth={1.75} aria-hidden="true" />
@@ -430,23 +589,26 @@ export const ReportsPage = () => {
 
         {runId === null ? (
           <div className={styles.emptyPreview}>{t('reports.selectRunFirst')}</div>
-        ) : dataPresence === 'checking' ? (
+        ) : historyState.status === 'loading' ? (
           <div className={styles.emptyPreview} role="status">
-            {t('reports.checking')}
+            {t('common.loading')}
           </div>
-        ) : dataPresence === 'noData' ? (
-          <div className={styles.emptyPreview}>{t('reports.noDataForRun')}</div>
+        ) : generationError ? (
+          <div className={styles.emptyPreview}>{t('reports.generateFailed')}</div>
+        ) : !selectedReport ? (
+          <div className={styles.emptyPreview}>{t('reports.noReportsForRun')}</div>
+        ) : previewError ? (
+          <div className={styles.emptyPreview}>{t('reports.previewLoadFailed')}</div>
+        ) : selectedReport.status !== 'ready' || !selectedReport.artifactAvailable ? (
+          <div className={styles.emptyPreview}>{t('reports.artifactMissing')}</div>
+        ) : selectedReport.artifactType !== 'pdf' ? (
+          <div className={styles.emptyPreview}>{t('reports.previewUnsupported')}</div>
         ) : (
           <div className={styles.preview}>
-            {!pdfLoaded ? (
-              <div className={styles.previewLoading} role="status">
-                {t('reports.generating')}
-              </div>
-            ) : null}
             <iframe
-              key={pdfUrl}
-              src={pdfUrl ?? undefined}
-              onLoad={() => setPdfLoaded(true)}
+              key={selectedFileUrl}
+              src={selectedFileUrl ?? undefined}
+              onError={() => setPreviewError(true)}
               title={t('reports.previewTitle')}
               className={styles.previewFrame}
             />
@@ -478,18 +640,11 @@ export const ReportsPage = () => {
         >
           {(data) => (
             <PaginatedTable
-              columns={HISTORY_COLUMNS}
+              columns={historyColumns}
               page={data}
               rowKey={(row) => row.reportId}
-              onRowClick={(row) =>
-                updateSearch({
-                  runId: row.runId,
-                  testId: row.testId ?? null,
-                  lang: row.lang,
-                  ai: row.ai,
-                })
-              }
-              selectedRowKey={historySelectedKey}
+              onRowClick={handleSelectReport}
+              selectedRowKey={selectedReportId ?? undefined}
               onPageChange={setHistoryPage}
               emptyHint={t('reports.noHistory')}
             />

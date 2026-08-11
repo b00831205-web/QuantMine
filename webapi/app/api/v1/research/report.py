@@ -15,7 +15,7 @@ from sqlalchemy.engine import Engine
 from ....dependencies import get_request_engine
 from ....reports import assemble_context, html_to_pdf, render_html, resolve_lang
 from .results import research_run_exists
-from ..reports.db import insert_report_history
+from ..reports.db import finalize_report_history, insert_report_history
 
 from ....reports.chart_data import (
     build_backtest_appendices,
@@ -25,6 +25,7 @@ from ....reports.chart_data import (
     build_report_charts,
 )
 from ....reports.cache import get_cached_pdf, save_cached_pdf
+from ....reports.artifacts import save_report_artifact
 router = APIRouter()
 
 
@@ -57,11 +58,14 @@ def get_research_report_pdf(
 
         if ai:
             from ....ai.report_analysis import generate_report_analysis
-            context['ai'] = generate_report_analysis(
-                engine,
-                lang = language,
-                context = context
-            )
+            try:
+                context['ai'] = generate_report_analysis(
+                    engine,
+                    lang = language,
+                    context = context
+                )
+            except RuntimeError as error:
+                raise HTTPException(status_code=502, detail=str(error)) from error
         html = render_html(context)
 
         try:
@@ -71,16 +75,35 @@ def get_research_report_pdf(
 
         save_cached_pdf(pdf_bytes, run_id, test_id, language, ai)
 
-    filename = f"report_{test_id or run_id}_{language}.pdf"
-    disposition = "inline" if inline else "attachment"
-    insert_report_history(
+    report_id = insert_report_history(
         engine,
         run_id=run_id,
         test_id=test_id,
         lang=language,
         ai=ai,
+        artifact_type="pdf",
     )
+    try:
+        artifact_path, artifact_size = save_report_artifact(pdf_bytes, report_id, "pdf")
+        finalize_report_history(
+            engine,
+            report_id,
+            artifact_path=artifact_path,
+            artifact_size=artifact_size,
+            status="ready",
+        )
+    except Exception:
+        finalize_report_history(
+            engine,
+            report_id,
+            artifact_path=None,
+            artifact_size=None,
+            status="failed",
+        )
+        raise
 
+    filename = f"report_{test_id or run_id}_{language}.pdf"
+    disposition = "inline" if inline else "attachment"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

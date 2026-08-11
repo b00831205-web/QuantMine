@@ -21,9 +21,9 @@ def _call_llm(config: dict, *, system: str, prompt: str)-> str|None:
     api_key_env = (provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY'
     api_key = os.environ.get(api_key_env)
     if not model_id or not provider or not api_key:
-        import sys
-        print("[report-ai] model/key not configured, skipping AI analysis", file=sys.stderr)
-        return None
+        raise RuntimeError(
+            "AI report analysis is not configured: select a default model and verify its API key"
+        )
     try:
         reply = complete_chat(
             system_prompt = system,
@@ -36,9 +36,7 @@ def _call_llm(config: dict, *, system: str, prompt: str)-> str|None:
         )
         return (reply.get('content') or '').strip() or None
     except Exception as exc:
-        import sys
-        print(f"[report-ai] LLM call failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-        return None
+        raise RuntimeError(f"AI report analysis failed: {exc}") from exc
 
 def _parse_ai_json(text: str)-> dict|None:
     cleaned = text.strip()

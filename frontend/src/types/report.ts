@@ -19,6 +19,10 @@ export interface ReportHistoryItem {
   testId?: string;
   lang: ReportLang;
   ai: boolean;
+  artifactType: 'pdf' | 'xlsx';
+  artifactAvailable: boolean;
+  artifactSize: number | null;
+  dataAvailable: boolean;
   createdAt: string;
   status: 'ready' | 'failed';
 }

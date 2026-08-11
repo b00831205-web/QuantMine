@@ -7,6 +7,7 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -26,15 +27,22 @@ services:
       timeout: 5s
       retries: 30
     ports:
-      - "5432:5432"   # 便于宿主机 psql / 外部 Airflow 连接；不需要可删
+      - "127.0.0.1:5432:5432"   # 只供本机调试，不向局域网暴露数据库
 
   webapi:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/webapi/Dockerfile
     environment:
       QUANTMINE_DATABASE_URL: postgresql+psycopg2://quantmine_web:${QUANTMINE_WEB_PASSWORD}@postgres:5432/quantmine
       QUANT_AIRFLOW_PG_DSN: postgresql://airflow:${AIRFLOW_DB_PASSWORD}@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+      AIRFLOW__CORE__DAGS_FOLDER: /app/pipelines
+      AIRFLOW_HOME: /app/airflow
+      QUANT_AIRFLOW_BIN: /app/.venv/bin/airflow
+      QUANT_AIRFLOW_PYTHON: /app/.venv/bin/python
       QUANT_AUTH_SECRET: ${QUANT_AUTH_SECRET}
       QUANTMINE_ADMIN_USER: ${QUANTMINE_ADMIN_USER}
       QUANTMINE_ADMIN_PASSWORD: ${QUANTMINE_ADMIN_PASSWORD}
@@ -45,15 +53,17 @@ services:
         condition: service_healthy
 
   frontend:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/frontend/Dockerfile
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     depends_on:
       - webapi
 
   airflow:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: docker/airflow/Dockerfile
@@ -63,13 +73,20 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__DAGS_FOLDER: /app/pipelines
+      QUANT_PROJECT_ROOT: /app
+      QUANT_PYTHON_BIN: python
+      QUANT_CONFIG_PATH: config.example.yaml
+      QUANTMINE_DATABASE_URL: postgresql+psycopg2://quantmine_pipeline:${QUANTMINE_PIPELINE_PASSWORD}@postgres:5432/quantmine
+      QUANTMINE_PIPELINE_DATABASE_URL: postgresql+psycopg2://quantmine_pipeline:${QUANTMINE_PIPELINE_PASSWORD}@postgres:5432/quantmine
     volumes:
-      - ./pipelines:/opt/airflow/dags
-      - ./:/opt/project
+      - ./pipelines:/app/pipelines:ro
+      - ./config.example.yaml:/app/config.example.yaml:ro
+      - ./data:/app/data
+      - ./tmp:/app/tmp
       - airflow-logs:/opt/airflow/logs
     ports:
-      - "8081:8080"   # Airflow 自带 UI（可选；应用有自己的 Workflows 页）
+      - "127.0.0.1:8081:8080"   # Airflow 自带 UI，仅绑定本机
     depends_on:
       postgres:
         condition: service_healthy

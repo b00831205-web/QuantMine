@@ -123,7 +123,7 @@ def _truncate_title(text: str, max_len: int) -> str:
     """Flatten text into a one-line short title: strip newlines, take the first max_len chars, add ellipsis when truncated."""
     single_line = ' '.join(text.split())
     if not single_line:
-        return '新对话'
+        return 'New chat'
     return single_line if len(single_line) <= max_len else single_line[:max_len] + '…'
 
 def _message_content(message: dict, supports_images: bool) -> str | list:

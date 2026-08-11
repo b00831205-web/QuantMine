@@ -18,6 +18,7 @@ import {
 import type { AsyncState } from '@/types/api';
 import type { AIConversation, AIMessage, AIConfirmRequest } from '@/types/ai';
 import i18n from '@/i18n';
+import { localizeConversationTitle } from '@/utils/conversationTitle';
 
 /* ────────────────────────── 通用异步小 hook ────────────────────────── */
 function useAsync<T>(loader: (signal: AbortSignal) => Promise<T>, deps: unknown[]): AsyncState<T> {
@@ -595,7 +596,7 @@ export const AIWorkbenchPage = () => {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {c.title}
+                        {localizeConversationTitle(c.title, t('aiPanel.newConversation'))}
                       </span>
                     </button>
                     <button
@@ -643,8 +644,11 @@ export const AIWorkbenchPage = () => {
             <span style={{ fontWeight: 600 }}>
               {activeId
                 ? conversationsState.status === 'success'
-                  ? (conversationsState.data.find((c) => c.conversationId === activeId)?.title ??
-                    t('aiPanel.conversation'))
+                  ? localizeConversationTitle(
+                      conversationsState.data.find((c) => c.conversationId === activeId)?.title ??
+                        t('aiPanel.conversation'),
+                      t('aiPanel.newConversation'),
+                    )
                   : t('aiPanel.conversation')
                 : t('aiPanel.newConversation')}
             </span>

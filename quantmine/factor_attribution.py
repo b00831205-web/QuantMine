@@ -27,23 +27,26 @@ def fetch_french_factors_daily(
     *,
     cache_path: str | Path | None = None,
 ) -> pd.DataFrame | None:
-    """获取日频 Fama-French 三因子 + 动量，返回小数收益的宽表。
+    """Fetch daily Fama-French three-factor and momentum decimal returns.
 
-    数据源：Ken French Data Library（经 ``pandas_datareader``，直接拿到干净的
-    DataFrame，不用解析 CSV 的头尾垃圾行）。联网拉取成功后写 parquet 缓存；
-    联网失败时回退到缓存。两者都拿不到则返回 ``None``（调用方据此优雅跳过归因，
-    报告保持“未入库”而不是崩溃）。
+    ``pandas_datareader`` loads clean frames from the Ken French Data Library,
+    avoiding the header and footer noise in the raw CSV files. A successful
+    download is cached as Parquet. If the live request fails, the cache is used;
+    if neither source is available, return ``None`` so callers can skip
+    attribution without failing the report.
 
     Args:
-        start_date / end_date: 拉取区间（任何 pandas 可解析的日期）。
-        cache_path: parquet 缓存文件路径；``None`` 时不缓存。
+        start_date / end_date: Download range in any pandas-compatible format.
+        cache_path: Parquet cache path; ``None`` disables caching.
 
     Returns:
-        以日期为索引、列为 ``Mkt-RF/SMB/HML/RF/Mom``（小数）的 DataFrame，或 ``None``。
+        A date-indexed DataFrame with decimal-return columns
+        ``Mkt-RF/SMB/HML/RF/Mom``, or ``None``.
 
     Notes:
-        A股阶段：Ken French 为纯美股因子，届时替换本函数为中国版因子源即可，
-        下游 ``carhart_attribution`` 与落库结构保持不变。
+        Ken French factors cover US equities. Supporting China A-shares requires
+        replacing this data source while preserving ``carhart_attribution`` and
+        the persistence contract.
     """
     cache = Path(cache_path) if cache_path else None
     try:

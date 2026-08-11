@@ -34,6 +34,14 @@ export const SideNav = () => {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const getServiceLabel = (service: ServiceState): string =>
+    t(`nav.services.${service.name}.label`, { defaultValue: service.label });
+
+  const getServiceDescription = (service: ServiceState): string =>
+    t(`nav.services.${service.name}.description`, {
+      defaultValue: service.description,
+    });
+
   useEffect(() => {
     const controller = new AbortController();
     fetchServices(controller.signal)
@@ -54,7 +62,7 @@ export const SideNav = () => {
     if (!service.installed || busy) return;
     // 这个服务就是当前进程：关掉自启后下次开机需要手动启动才能打开本页面
     if (service.isSelf && service.autostart === true) {
-      if (!window.confirm(t('nav.autostartConfirm', { label: service.label }))) return;
+      if (!window.confirm(t('nav.autostartConfirm', { label: getServiceLabel(service) }))) return;
     }
     setBusy(service.name);
     setError(null);
@@ -75,7 +83,15 @@ export const SideNav = () => {
 
   return (
     <aside className={styles.nav}>
-      <div className={styles.brand}>QUANTMINE</div>
+      <div className={styles.brand}>
+        <img
+          className={styles.brandLogo}
+          src="/brand/quantmine-blue.png"
+          alt=""
+          aria-hidden="true"
+        />
+        <span>QUANTMINE</span>
+      </div>
       <nav className={styles.list}>
         {core.map((item) => (
           <NavLink
@@ -102,34 +118,39 @@ export const SideNav = () => {
       {services && services.length > 0 ? (
         <div className={styles.autostartBlock}>
           <div className={styles.autostartHeading}>{t('nav.autostart')}</div>
-          {services.map((service) => (
-            <div key={service.name} className={styles.autostartRow}>
-              <span className={styles.autostartLabel} title={service.description}>
-                {service.label}
-              </span>
-              {service.installed ? (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={service.autostart === true}
-                  aria-label={`${t('nav.autostart')} — ${service.label}`}
-                  disabled={busy !== null}
-                  className={
-                    service.autostart === true
-                      ? `${styles.autoSwitch} ${styles.autoSwitchOn}`
-                      : styles.autoSwitch
-                  }
-                  onClick={() => void handleToggleAutostart(service)}
-                >
-                  <span className={styles.autoThumb} />
-                </button>
-              ) : (
-                <span className={styles.autostartMissing} title={t('nav.autostartNotInstalled')}>
-                  {t('nav.autostartNotInstalled')}
+          {services.map((service) => {
+            const label = getServiceLabel(service);
+            const description = getServiceDescription(service);
+
+            return (
+              <div key={service.name} className={styles.autostartRow}>
+                <span className={styles.autostartLabel} title={description}>
+                  {label}
                 </span>
-              )}
-            </div>
-          ))}
+                {service.installed ? (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={service.autostart === true}
+                    aria-label={`${t('nav.autostart')} — ${label}`}
+                    disabled={busy !== null}
+                    className={
+                      service.autostart === true
+                        ? `${styles.autoSwitch} ${styles.autoSwitchOn}`
+                        : styles.autoSwitch
+                    }
+                    onClick={() => void handleToggleAutostart(service)}
+                  >
+                    <span className={styles.autoThumb} />
+                  </button>
+                ) : (
+                  <span className={styles.autostartMissing} title={t('nav.autostartNotInstalled')}>
+                    {t('nav.autostartNotInstalled')}
+                  </span>
+                )}
+              </div>
+            );
+          })}
           {error ? (
             <p className={styles.autostartError} role="alert">
               {error}

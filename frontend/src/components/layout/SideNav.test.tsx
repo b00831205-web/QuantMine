@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import i18n from '@/i18n';
 
 const clientMocks = vi.hoisted(() => ({
   fetchServices: vi.fn(),
@@ -55,9 +56,10 @@ const clickToggle = async (el: HTMLElement) => {
   });
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   vi.spyOn(window, 'confirm').mockReturnValue(true);
+  await i18n.changeLanguage('zh');
 });
 
 describe('SideNav 开机自启开关', () => {
@@ -165,6 +167,27 @@ describe('SideNav 开机自启开关', () => {
     await renderNav();
 
     await waitFor(() => expect(screen.getAllByRole('switch')).toHaveLength(2));
+  });
+
+  it('英文模式下翻译服务名称与说明，不显示后端的中文硬编码', async () => {
+    await i18n.changeLanguage('en');
+    clientMocks.fetchServices.mockResolvedValue([webService]);
+    clientMocks.setServiceAutostart.mockResolvedValue({ ...webService, autostart: false });
+    await renderNav();
+
+    const label = await screen.findByText('Web service');
+    expect(label).toHaveAttribute(
+      'title',
+      'Serves the API and frontend. If autostart is disabled, you must start it manually after the next boot to open this page.',
+    );
+    expect(screen.queryByText('Web 服务')).not.toBeInTheDocument();
+    const toggle = await screen.findByRole('switch');
+    expect(toggle).toHaveAccessibleName('Autostart — Web service');
+
+    await clickToggle(toggle);
+    expect(window.confirm).toHaveBeenCalledWith(
+      'Disabling boot autostart for "Web service" means you must start it manually after the next boot. Disable anyway?',
+    );
   });
 
   it('isSelf 排在最后，不做列表里最顺手点到的那个', async () => {

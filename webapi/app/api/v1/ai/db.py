@@ -4,7 +4,13 @@ from sqlalchemy.dialects.postgresql import insert
 
 from sqlalchemy.engine import Engine
 
-DEFAULT_TITLE = '新对话'
+DEFAULT_TITLE = 'New chat'
+LEGACY_DEFAULT_TITLES = frozenset({DEFAULT_TITLE, '新对话'})
+
+
+def is_default_conversation_title(title: str) -> bool:
+    """Recognize both the current language-neutral default and legacy rows."""
+    return title in LEGACY_DEFAULT_TITLES
 
 DEFAULT_CAPABILITIES = {
     'read_research': True,
@@ -89,7 +95,7 @@ def update_conversation_title(engine: Engine, conversation_id: int, title: str) 
     statement = (
         update(table)
         .where(table.c.id == conversation_id)
-        .where(table.c.title == DEFAULT_TITLE)
+        .where(table.c.title.in_(LEGACY_DEFAULT_TITLES))
         .values(title = title)
     )
     with engine.begin() as connection:
@@ -208,12 +214,30 @@ def get_config(engine: Engine) -> dict:
         return _default_config()
     return _config_row(row)
 
+
+def resolve_default_model(config: dict) -> str:
+    """Keep the default model valid when a provider has usable models.
+
+    A single-option HTML select does not emit a change event merely because it
+    visually displays its first option. Persisting the first available model
+    here keeps all API clients, not only the current frontend, consistent.
+    """
+    models = [
+        model
+        for provider in config.get('providers', [])
+        for model in provider.get('models', [])
+        if model
+    ]
+    requested = config.get('defaultModel') or ''
+    return requested if requested in models else (models[0] if models else '')
+
+
 def save_config(engine: Engine, config: dict) -> dict:
     table = Table('ai_config', MetaData(), autoload_with=engine)
     values = {
         'id': 1,
         'providers': config.get('providers', []),
-        'default_model': config.get('defaultModel'),
+        'default_model': resolve_default_model(config),
         'system_prompt': config.get('systemPrompt',''),
         'temperature': config.get('temperature', 0.7),
         'capabilities': config.get('capabilities') or dict(DEFAULT_CAPABILITIES),

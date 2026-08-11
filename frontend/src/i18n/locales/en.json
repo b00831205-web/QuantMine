@@ -7,10 +7,28 @@
     "data": "Database Explorer",
     "reports": "PDF Reports",
     "ai": "AI Workbench",
-    "aiConfig": "AI Settings",
+    "aiConfig": "AI Config",
     "autostart": "Autostart",
     "autostartConfirm": "Disabling boot autostart for \"{{label}}\" means you must start it manually after the next boot. Disable anyway?",
-    "autostartNotInstalled": "Not installed"
+    "autostartNotInstalled": "Not installed",
+    "services": {
+      "quantmine-api": {
+        "label": "Web service",
+        "description": "Serves the API and frontend. If autostart is disabled, you must start it manually after the next boot to open this page."
+      },
+      "quantmine-airflow-scheduler": {
+        "label": "Airflow scheduler",
+        "description": "Triggers the daily data pipeline on schedule. Disabling it stops automatic data runs."
+      },
+      "quantmine-airflow-apiserver": {
+        "label": "Airflow API service",
+        "description": "Provides Airflow's UI and REST API."
+      },
+      "quantmine-airflow-dag-processor": {
+        "label": "Airflow DAG processor",
+        "description": "Parses DAG files. Airflow 3.x runs this as a separate process; without it, the scheduler cannot detect DAG changes."
+      }
+    }
   },
   "common": {
     "all": "All",
@@ -372,10 +390,21 @@
     "print": "Print",
     "downloadExcel": "Download Excel",
     "download": "Download",
+    "generateReport": "Generate report",
+    "generatingReport": "Generating…",
+    "generateFailed": "The report could not be generated",
+    "downloadHistory": "Regenerate and download this report",
+    "historyDataMissing": "Source data for this report is no longer available",
     "aiToggleHint": "Whether the report includes AI analysis text",
     "selectRunFirst": "Select a Research Run first",
     "checking": "Checking run data…",
     "noDataForRun": "No data for this run",
+    "noReportsForRun": "This Research Run has no report history",
+    "selectHistoryReport": "Select a report from history to preview it",
+    "artifactMissing": "No preview data is available for the selected report",
+    "previewUnsupported": "The selected file cannot be previewed here",
+    "previewLoadFailed": "The selected report could not be loaded",
+    "regenerateFailed": "The selected report could not be regenerated",
     "generating": "Generating report...",
     "ready": "Ready",
     "failed": "Failed",
@@ -385,7 +414,9 @@
       "testId": "Test ID",
       "lang": "Language",
       "createdAt": "Generated At",
-      "status": "Status"
+      "status": "Status",
+      "type": "File",
+      "actions": "Actions"
     }
   },
   "data": {
@@ -425,7 +456,50 @@
     "adjustQuery": "Adjust the query conditions and run again",
     "sqlPlaceholder": "SELECT ... (SELECT only, max 100 rows)",
     "execute": "Run",
-    "typeSqlToRun": "Type a SELECT statement and run it"
+    "typeSqlToRun": "Type a SELECT statement and run it",
+    "catalog": {
+      "resources": {
+        "market_latest": "Latest market snapshot",
+        "market_bars": "Daily market bars",
+        "research_runs": "Research runs",
+        "test_results": "Factor test results",
+        "backtest_results": "Quantile backtest returns",
+        "backtest_metrics": "Backtest metrics"
+      },
+      "fields": {
+        "common": {
+          "ticker": "Ticker symbol",
+          "trade_date": "Trade date",
+          "close": "Closing price",
+          "volume": "Trading volume",
+          "run_id": "Run ID",
+          "run_timestamp": "Run time",
+          "git_commit": "Code revision",
+          "variant_name": "Variant",
+          "test_id": "Test ID",
+          "factor_name": "Factor",
+          "period": "Holding period",
+          "test_method": "Test method",
+          "sample_scope": "Sample scope",
+          "ic_mean": "Mean IC",
+          "ic_std": "IC standard deviation",
+          "ir": "Information ratio",
+          "n": "Sample size",
+          "t_stat": "t-statistic",
+          "p_value": "p-value",
+          "significant": "Statistically significant",
+          "bh_significant": "Significant after BH correction",
+          "backtest_id": "Backtest ID",
+          "quantile_rank": "Quantile group (0 = long-short)",
+          "return_value": "Return",
+          "metric_name": "Metric name",
+          "metric_value": "Metric value"
+        },
+        "backtest_results": {
+          "trade_date": "Rebalance date"
+        }
+      }
+    }
   },
   "workflowDetail": {
     "triggered": "Triggered, refresh to see the run",
@@ -482,18 +556,18 @@
     }
   },
   "aiConfig": {
-    "title": "AI Settings",
+    "title": "AI Config",
     "subtitle": "Dify-style centralized configuration (simplified) · admin only",
     "providersCard": "Model Providers",
     "providersEmptyTitle": "No providers",
-    "providersEmptyHint": "Check /api/v1/ai/config for data",
+    "providersEmptyHint": "Add a provider to connect an OpenAI-compatible model API.",
     "configured": "Configured ✓",
     "notConfigured": "Not configured",
     "modelAgentCard": "Default Model & Agent",
     "baseUrl": "Base URL",
     "apiKeyEnvHint": "The key stays in the environment variable and is never sent back",
     "skillCount": "{{count}} installed",
-    "addProvider": "+ Add custom provider",
+    "addProvider": "Add custom provider",
     "editing": "Editing: {{name}}",
     "providerName": "Provider name",
     "providerNamePlaceholder": "Custom provider name",

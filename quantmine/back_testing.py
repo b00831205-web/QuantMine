@@ -92,7 +92,7 @@ def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,
     if isinstance(constituents, pd.DataFrame):
         constituents = MembershipTableSource(constituents)
 
-    if weight_fn is None:               # 默认等权; 等权也是注册表里的一个方法
+    if weight_fn is None:               # Equal weighting is the default and is also registry-backed.
         weight_fn = equal_weight
 
     all_result={}
@@ -186,7 +186,7 @@ def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost
         rebalance-day anchor, each window's first daily return is lost and the
         cost deduction lands on a NaN (i.e. costs are silently never charged).
     """
-    if weight_fn is None:               # 默认等权; 与 quantile_backtest 一致
+    if weight_fn is None:               # Match quantile_backtest's equal-weight default.
         weight_fn = equal_weight
     quantile_columns = [f"Q{i}" for i in range(1, parts + 1)]
     output_columns = [*quantile_columns, "long_short"]
@@ -211,8 +211,9 @@ def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost
         for q in quantile_columns:
             tickers_in_group = list(curr[q])
             group_price = close_data.loc[window_dates, tickers_in_group]
-            # 权重按调仓日固定(买入持有到下次调仓); 每日在有数据的票上重新归一,
-            # 这样等权时 == 原 .mean(axis=1)(同样跳过 NaN), 数值不变。
+        # Hold rebalance-date weights until the next rebalance and renormalize
+        # over tickers with data each day. For equal weights this preserves the
+        # original .mean(axis=1) behavior, including its NaN handling.
             weights = weight_fn(tickers_in_group, curr_date, market_cap)
             daily_ret = group_price.pct_change().iloc[1:]
             w = weights.reindex(daily_ret.columns)

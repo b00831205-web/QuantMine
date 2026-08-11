@@ -39,7 +39,15 @@ export const LoginPage = () => {
   return (
     <div className={styles.page}>
       <form className={styles.card} onSubmit={handleSubmit}>
-        <div className={styles.brand}>QUANTMINE</div>
+        <div className={styles.brandLockup}>
+          <img
+            className={styles.brandLogo}
+            src="/brand/quantmine-blue.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <div className={styles.brand}>QUANTMINE</div>
+        </div>
         <div className={styles.subtitle}>{t('login.subtitle')}</div>
 
         <label className={styles.field}>

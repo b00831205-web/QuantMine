@@ -91,6 +91,23 @@
 }
 
 /* —— 供应商卡片 —— */
+.providerEmpty {
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) 0;
+}
+
+.providerEmptyTitle {
+  color: var(--text-primary);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.providerEmptyHint {
+  margin-top: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
 .providerGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

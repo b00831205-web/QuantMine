@@ -1,43 +1,94 @@
 # QUANTMINE Frontend
 
-阶段 0 脚手架。覆盖：React 18 + TypeScript 严格模式 + Vite + React Router + ECharts + Vitest。
+The QUANTMINE frontend is a React 18 and TypeScript application built with Vite.
+It provides market monitoring, factor research, backtest exploration, reports,
+AI-assisted analysis, data inspection, and Airflow workflow operations.
 
-## 命令
+## Quick Start
+
+Run the Web API on port 8000 first, then:
 
 ```bash
-npm install
-npm run dev          # http://localhost:5173
-npm run typecheck    # tsc --noEmit
-npm run lint
-npm run test         # vitest run
+cd frontend
+npm ci
+npm run dev
+```
+
+Open <http://localhost:5173>. The Vite development server proxies API requests
+to the FastAPI service. Port 5173 is strict: if it is occupied, Vite exits
+instead of silently switching to 5175 or 5176. The logon/production frontend is
+served separately by FastAPI at <http://localhost:8000>.
+
+## Commands
+
+```bash
+npm run dev          # Vite development server on 5173
+npm test             # Vitest suite
+npm run typecheck    # TypeScript project check
+npm run lint         # ESLint with zero warnings allowed
+npm run build        # production bundle in dist/
+npm run preview      # preview the production bundle
+```
+
+Use `npm ci`, not `npm install`, for reproducible CI and release builds.
+
+## Structure
+
+```text
+frontend/
+├── public/                  static public assets and MSW worker
+├── src/
+│   ├── api/                 HTTP wrapper and typed domain clients
+│   ├── components/
+│   │   ├── ai/              AI workbench components
+│   │   ├── chart/           reusable ECharts visualizations
+│   │   ├── common/          loading, error, table and card primitives
+│   │   └── layout/          app shell, navigation and top bar
+│   ├── i18n/                English/Chinese localization
+│   ├── pages/               route-level product screens
+│   ├── styles/              tokens and global styles
+│   ├── types/               shared TypeScript contracts
+│   ├── main.tsx             application entry point
+│   └── router.tsx           route definitions
+├── package.json
+└── vite.config.ts
+```
+
+## API and Authentication
+
+All product APIs live under `/api/v1`. Authentication uses an HTTP-only session
+cookie; browser requests must keep credentials enabled. Error responses share a
+normalized envelope and include `x-trace-id` for diagnostics.
+
+The authoritative API contract and error map are:
+
+- [`../docs/api/openapi.yaml`](../docs/api/openapi.yaml)
+- [`../docs/api/ERROR_MAP.md`](../docs/api/ERROR_MAP.md)
+
+The Workflows screen reads DAG metadata through FastAPI and sends pause, trigger,
+clear, mark-success, and mark-failed operations through the same API. It never
+connects directly to Airflow from the browser.
+
+## Development Conventions
+
+- Keep server state in page/domain hooks rather than global UI components.
+- Put endpoint-specific code under `src/api/client/`.
+- Reuse common loading and error states through `AsyncBoundary`.
+- Add user-facing strings to both locales.
+- Add a test for navigation, request mapping, and meaningful UI state changes.
+- Do not commit `node_modules/`, `dist/`, coverage, or local environment files.
+
+Earlier design handoff and implementation notes remain under `../docs/frontend/`.
+They are historical design references; the running application and tests are the
+source of truth when they differ.
+
+## Verification
+
+```bash
+npm test
+npm run typecheck
 npm run build
 ```
 
-## 目录
-
-```
-src/
-├── main.tsx, router.tsx
-├── styles/         # 全局 CSS 与设计 token
-├── types/          # 公共类型（api/market/rebalance/...）
-├── api/
-│   ├── http.ts     # fetch 封装 + 错误归一化（含 TODO）
-│   └── client/     # 端点客户端（含 TODO）
-├── components/
-│   ├── layout/     # AppShell、SideNav、TopBar
-│   ├── common/     # AsyncBoundary、Card、PaginatedTable 等
-│   ├── chart/      # SeriesChart（含归一化 TODO）
-│   └── ai/         # AIQuickPanel
-└── pages/          # 8 个页面骨架
-```
-
-## 阶段 0 学习配额（TODO USER_LEARNING）
-
-本阶段刻意留空 6 处供你练习，详见 `docs/frontend/STAGE_0_CHECKLIST.md`：
-
-1. `src/api/http.ts` — `http()` 与 `toUserMessage()` 函数体
-2. `src/api/client/market.ts` — `fetchSeries()` 函数体
-3. `src/pages/MarketOverviewPage.tsx` — `useEffect` 数据拉取
-4. `src/components/chart/normalize.ts` — `normalizeToBase100()`
-5. 父子组件 props 传递（在 `MarketOverviewPage` 中体现）
-6. 错误消息映射（在 `http.ts` 中体现）
+The current baseline is 38 passing frontend tests. Build output includes a known
+large-chunk warning; code splitting is a future optimization, not a build error.

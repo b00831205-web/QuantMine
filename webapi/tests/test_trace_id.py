@@ -1,4 +1,4 @@
-"""验证 trace-id 中间件行为：成功响应同样携带 x-trace-id。"""
+"""Verify trace-id middleware behavior: successful responses also carry x-trace-id."""
 
 from __future__ import annotations
 

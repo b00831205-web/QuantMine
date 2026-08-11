@@ -10,7 +10,25 @@
     "aiConfig": "AI 配置",
     "autostart": "开机自启",
     "autostartConfirm": "关闭「{{label}}」的开机自启后，下次开机需要手动启动才能打开本页面。确定要关闭吗？",
-    "autostartNotInstalled": "未安装"
+    "autostartNotInstalled": "未安装",
+    "services": {
+      "quantmine-api": {
+        "label": "Web 服务",
+        "description": "提供 API 与前端页面。关掉开机自启后，下次开机需要手动启动才能打开本页面。"
+      },
+      "quantmine-airflow-scheduler": {
+        "label": "Airflow 调度器",
+        "description": "按计划触发每日数据管道。关掉后不再自动跑数据。"
+      },
+      "quantmine-airflow-apiserver": {
+        "label": "Airflow API 服务",
+        "description": "提供 Airflow 自身的 UI 与 REST 接口。"
+      },
+      "quantmine-airflow-dag-processor": {
+        "label": "Airflow DAG 解析器",
+        "description": "解析 DAG 文件；Airflow 3.x 起为独立进程，缺少它时调度器无法发现 DAG 变更。"
+      }
+    }
   },
   "common": {
     "all": "全部",
@@ -372,10 +390,21 @@
     "print": "打印",
     "downloadExcel": "下载 Excel",
     "download": "下载",
+    "generateReport": "生成报告",
+    "generatingReport": "生成中…",
+    "generateFailed": "报告生成失败",
+    "downloadHistory": "重新生成并下载这份报告",
+    "historyDataMissing": "这份报告的源数据已不可用",
     "aiToggleHint": "控制该报告是否包含 AI 分析文本",
     "selectRunFirst": "请先选择 Research Run",
     "checking": "正在检查运行数据…",
     "noDataForRun": "该运行无数据",
+    "noReportsForRun": "这个 Research Run 暂无报告历史",
+    "selectHistoryReport": "请从报告历史中选择一份报告进行预览",
+    "artifactMissing": "所选报告暂无可预览数据",
+    "previewUnsupported": "所选文件无法在此处预览",
+    "previewLoadFailed": "无法加载所选报告",
+    "regenerateFailed": "无法重新生成所选报告",
     "generating": "报告生成中...",
     "ready": "完成",
     "failed": "失败",
@@ -385,7 +414,9 @@
       "testId": "Test ID",
       "lang": "语言",
       "createdAt": "生成时间",
-      "status": "状态"
+      "status": "状态",
+      "type": "文件",
+      "actions": "操作"
     }
   },
   "data": {
@@ -425,7 +456,50 @@
     "adjustQuery": "调整查询条件后执行",
     "sqlPlaceholder": "SELECT ...（仅允许 SELECT，最多 100 行）",
     "execute": "执行",
-    "typeSqlToRun": "输入 SELECT 语句后执行"
+    "typeSqlToRun": "输入 SELECT 语句后执行",
+    "catalog": {
+      "resources": {
+        "market_latest": "行情最新快照",
+        "market_bars": "行情日线",
+        "research_runs": "研究批次",
+        "test_results": "因子检验结果",
+        "backtest_results": "分位回测收益",
+        "backtest_metrics": "回测指标"
+      },
+      "fields": {
+        "common": {
+          "ticker": "股票代码",
+          "trade_date": "交易日",
+          "close": "收盘价",
+          "volume": "成交量",
+          "run_id": "批次 ID",
+          "run_timestamp": "运行时间",
+          "git_commit": "代码版本",
+          "variant_name": "变体",
+          "test_id": "检验 ID",
+          "factor_name": "因子",
+          "period": "持有期",
+          "test_method": "检验方法",
+          "sample_scope": "样本范围",
+          "ic_mean": "IC 均值",
+          "ic_std": "IC 标准差",
+          "ir": "IR",
+          "n": "样本量",
+          "t_stat": "t 值",
+          "p_value": "p 值",
+          "significant": "是否显著",
+          "bh_significant": "BH 校正后显著",
+          "backtest_id": "回测 ID",
+          "quantile_rank": "分组（0=多空）",
+          "return_value": "收益",
+          "metric_name": "指标名",
+          "metric_value": "指标值"
+        },
+        "backtest_results": {
+          "trade_date": "调仓日"
+        }
+      }
+    }
   },
   "workflowDetail": {
     "triggered": "已触发，稍后刷新查看运行",
@@ -486,14 +560,14 @@
     "subtitle": "类 Dify 的集中配置页（简化版）· 仅管理员可修改",
     "providersCard": "模型供应商",
     "providersEmptyTitle": "暂无供应商",
-    "providersEmptyHint": "确认 /api/v1/ai/config 有数据",
+    "providersEmptyHint": "添加供应商以连接兼容 OpenAI 协议的模型 API。",
     "configured": "已配置 ✓",
     "notConfigured": "未配置",
     "modelAgentCard": "默认模型与 Agent",
     "baseUrl": "Base URL",
     "apiKeyEnvHint": "Key 本身只放环境变量，不回传后端",
     "skillCount": "{{count}} 个已安装",
-    "addProvider": "+ 添加自定义供应商",
+    "addProvider": "添加自定义供应商",
     "editing": "编辑：{{name}}",
     "providerName": "供应商名称",
     "providerNamePlaceholder": "自定义供应商名称",

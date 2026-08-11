@@ -288,7 +288,7 @@ def write_dataframe_artifact(
     target_dir = Path(artifact_dir)/str(run_id)/backtest_id
     target_dir.mkdir(parents = True, exist_ok = True)
 
-    safe_artifact_type = artifact_type.replace('/',"_") #防止未来输入含“/”的名称
+    safe_artifact_type = artifact_type.replace('/', "_")  # Keep future names path-safe.
     safe_artifact_key = artifact_key.replace('/',"_")
     path = target_dir/f'{safe_artifact_type}__{safe_artifact_key}.parquet'
     dataframe.to_parquet(path)
@@ -442,7 +442,7 @@ def save_backtest_workflow_results(
                 }
             )
 
-            #持仓(ticker_history)以前算了就丢, 现在落成长表 parquet 供详情页读取
+    # Persist ticker_history as long-form Parquet for the detail page.
             holdings_history = job_result.get('ticker_history', {}).get((factor_name, period))
             if holdings_history:
                 holdings_df = build_ticker_history_rows(holdings_history)
@@ -485,7 +485,7 @@ def build_sanity_metric_rows(
     backtest_id: str,
     test_id: str,
 ) -> pd.DataFrame:
-    """把 sanity summary 展开成 backtest_metrics 行（quantile_rank=0）。"""
+    """Expand a sanity summary into backtest_metrics rows at quantile rank 0."""
     if summary.empty:
         return pd.DataFrame(
             columns=[

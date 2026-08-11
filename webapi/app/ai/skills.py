@@ -32,14 +32,14 @@ def discover_skills()->list[dict]:
             skills.append({
                 'name': manifest.get('name', skill_dir.name),
                 'displayName': manifest.get('displayName', skill_dir.name),
-                'discription': manifest.get('description', ''),
+                'description': manifest.get('description', ''),
                 'parameters': manifest.get('parameters',{})
             })
         except Exception as exc:
             print(f'[skills] load {skill_dir.name} failed {exc}')
     return skills
 
-def skill_definitions(skills: list[dict], enabled_names: str[str])->list[dict]:
+def skill_definitions(skills: list[dict], enabled_names: set[str])->list[dict]:
     tools = []
     for skill in skills:
         if skill['name'] not in enabled_names:
@@ -49,7 +49,7 @@ def skill_definitions(skills: list[dict], enabled_names: str[str])->list[dict]:
             'function':{
                 'name': skill['name'],
                 'description': skill.get('description', ''),
-                'prarmeters': skill.get('parameters')
+                'parameters': skill.get('parameters')
                 or {'type': 'object', 'properties': {}}
             },
         })

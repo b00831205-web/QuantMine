@@ -15,7 +15,6 @@ from ....ai.attachments import get_attachment, load_attachment_records, save_att
 
 from ....dependencies import get_request_engine
 from .db import(
-    DEFAULT_TITLE,
     create_conversation,
     create_message,
     find_tool_call,
@@ -24,6 +23,7 @@ from .db import(
     list_conversations,
     list_messages,
     list_models,
+    is_default_conversation_title,
     save_config as persist_config,
     update_conversation_title,
     update_tool_call_status,
@@ -373,7 +373,7 @@ def post_message(
     capabilities = effective_capabilities(config)
 
     # First message (conversation still has the default title) -> summarize title in the background without blocking this reply
-    if conversation['title'] == DEFAULT_TITLE:
+    if is_default_conversation_title(conversation['title']):
         background_tasks.add_task(_generate_title, engine, cid, config, body.content)
 
     if capabilities.get('rag_corpus', False):
@@ -435,9 +435,11 @@ def get_ai_config(engine: Engine = Depends(get_request_engine)):
     config = _mark_configured(fetch_config(engine))
     discovered = discover_skills()
     enabled_map = {
-        skill.get('name'): bool(skill.get('enabled')) for skill in config.get('skills') or []
+        skill.get('name'): bool(skill.get('enabled'))
+        for skill in config.get('skills') or []
+        if isinstance(skill, dict) and skill.get('name')
     }
-    config['skill'] = [{
+    config['skills'] = [{
         **skill, 'enabled': bool(enabled_map.get(skill['name'], False))
     } for skill in discovered]
     return config

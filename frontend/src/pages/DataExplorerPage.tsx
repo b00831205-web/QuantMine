@@ -28,6 +28,7 @@ import type { AsyncState } from '@/types/api';
 import type { Catalog, DataResource, DataPage } from '@/types/data';
 import type { QueryResult, StructuredCondition } from '@/types/data';
 import { QueryResultTable } from '@/components/common/QueryResultTable';
+import { getCatalogFieldDescription, getCatalogResourceLabel } from '@/utils/dataCatalogI18n';
 import i18n from '@/i18n';
 import CodeMirror from '@uiw/react-codemirror';
 import { sql } from '@codemirror/lang-sql';
@@ -335,7 +336,7 @@ export const DataExplorerPage = () => {
               >
                 {catalog.map((c) => (
                   <option key={c.resource} value={c.resource}>
-                    {c.label}
+                    {getCatalogResourceLabel(t, c)}
                   </option>
                 ))}
               </select>
@@ -422,7 +423,11 @@ export const DataExplorerPage = () => {
                       <span className={styles.refTag}>{t('data.filterable')}</span>
                     ) : null}
                   </div>
-                  {f.description ? <div className={styles.refDesc}>{f.description}</div> : null}
+                  {f.description ? (
+                    <div className={styles.refDesc}>
+                      {getCatalogFieldDescription(t, current.resource, f)}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -469,7 +474,7 @@ export const DataExplorerPage = () => {
                     >
                       {catalog.map((c) => (
                         <option key={c.resource} value={c.resource}>
-                          {c.label}
+                          {getCatalogResourceLabel(t, c)}
                         </option>
                       ))}
                     </select>

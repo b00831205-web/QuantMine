@@ -69,9 +69,10 @@ if ($Remove) {
 
 # 只需把发行版唤醒；systemd 接手后续。输出重定向到日志，否则 wsl.exe 本身的失败
 # （发行版损坏、被 --shutdown 等）不会留下任何痕迹。
-# GetFullPath 而非 Join-Path：后者会留下 "deploy\..\airflow" 这段未解析的路径，
-# 虽然能用，但写进生成的 .cmd 和日志里很难读。
-$logDir = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\airflow"))
+# 唤醒日志放在 Windows 本地应用目录，不依赖项目盘是否可访问。否则日志重定向
+# 本身失败时，cmd.exe 甚至不会执行后面的 wsl.exe。
+$logDir = Join-Path $env:LOCALAPPDATA "QuantMine"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $log = Join-Path $logDir "wsl-boot.log"
 
 if ($StartupFolder) {

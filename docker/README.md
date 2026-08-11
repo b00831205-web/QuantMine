@@ -1,70 +1,108 @@
-# Docker 一键部署
+# QUANTMINE Docker Deployment
 
-面向个人自托管：`docker compose up` 即得可登录、可用的完整应用。无需手动装
-Postgres / 建角色 / 跑迁移 / 配 Airflow。
+The Compose stack provides PostgreSQL/pgvector, FastAPI, the React/Nginx
+frontend, and Airflow 3 standalone for local or single-user self-hosting.
 
-## 快速开始
+## Quick Start
 
-```bash
-cp .env.docker.example .env      # 改掉里面的密码和密钥（至少改一遍）
-docker compose up -d
-```
-
-打开 <http://localhost:8080> 登录。账号是 `.env` 里的 `QUANTMINE_ADMIN_USER`（默认
-`admin`）；`QUANTMINE_ADMIN_PASSWORD` 留空时密码随机生成，只在容器日志里打印一次：
+Run from the repository root:
 
 ```bash
-docker compose logs webapi | grep -A6 登录凭据
+python scripts/create_docker_env.py
+docker compose --env-file .env.docker up -d --build
+docker compose --env-file .env.docker ps
 ```
 
-容器里也会写一份 `/app/.initial-credentials.json`，但它随容器销毁，所以日志才是
-可靠渠道。
+Open <http://localhost:8080> and use the admin credentials stored in
+`.env.docker`. Airflow's native UI is available at <http://localhost:8081>.
 
-忘了密码就重置——库里存的是不可逆哈希，查不出原密码：
+The environment generator creates URL-safe database passwords, an application
+session secret, an admin password, and a valid Fernet key. Container startup
+rejects missing values and the `REPLACE_ME` template placeholder.
 
-```bash
-docker compose exec webapi python /app/scripts/reset_password.py admin
-```
+## Services
 
-生成随机密钥：
-
-```bash
-python -c "import secrets;print(secrets.token_hex(32))"                       # QUANT_AUTH_SECRET
-python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"  # AIRFLOW_FERNET_KEY
-```
-
-## 服务与端口
-
-| 服务 | 说明 | 端口 |
+| Service | Role | Host binding |
 |---|---|---|
-| `frontend` | Nginx 托管前端 + 反代 `/api` → webapi（同源，Cookie 可用） | 8080 |
-| `webapi` | FastAPI 后端 | 内部 8000 |
-| `postgres` | Postgres 16 + pgvector；首次启动自动建角色/库/扩展、应用 schema 与迁移、授权 | 5432 |
-| `airflow` | Airflow 3.x standalone（调度 + 执行数据管线） | 8081（自带 UI，可选） |
+| `frontend` | Nginx static frontend and `/api` reverse proxy | `127.0.0.1:8080` |
+| `webapi` | FastAPI and Airflow workflow CLI | internal `8000` |
+| `postgres` | PostgreSQL 16 + pgvector; schema and roles on first boot | `127.0.0.1:5432` |
+| `airflow` | Airflow scheduler, API server, DAG processor and executor | `127.0.0.1:8081` |
 
-首次 `up` 会构建镜像并初始化数据库，需要几分钟；之后启动很快。
+All services use `restart: unless-stopped`. Host port bindings are loopback-only
+by default; do not change them to public bindings without authentication, TLS,
+and network controls.
 
-## 只跑核心（不含 Airflow）
+## Data and Mounts
 
-不需要数据管线时，省掉最重的 Airflow：
+- `pgdata` stores PostgreSQL data.
+- `airflow-logs` stores Airflow logs.
+- `./pipelines` is mounted read-only at `/app/pipelines`.
+- `./config.example.yaml` is mounted read-only for the default research config.
+- `./data` and `./tmp` preserve market data and checkpoints on the host.
+
+The entire repository is not mounted into any container. Local `.env` files,
+credentials, Airflow configuration, virtualenvs, caches, and databases are
+excluded from the build context by `.dockerignore`.
+
+## Workflow Execution
+
+The Web API image contains two virtualenvs:
+
+- `/app/webapi/.venv` runs FastAPI;
+- `/app/.venv` supplies the Airflow CLI from the committed root `uv.lock`.
+
+Both Web API and Airflow connect to the same Airflow metadata database. The
+Workflows page can therefore browse DAGs and perform pause, trigger, clear, and
+task-state actions without Docker socket access.
+
+Pipeline tasks run with container Python and write through the
+`quantmine_pipeline` database role. The Web API role can read research data and
+write only application-state tables.
+
+## Operations
 
 ```bash
-docker compose up -d postgres webapi frontend
+# Follow application and scheduler logs
+docker compose --env-file .env.docker logs -f webapi airflow
+
+# Reset the application admin password
+docker compose --env-file .env.docker exec webapi \
+  python /app/scripts/reset_password.py admin
+
+# Stop while preserving volumes
+docker compose --env-file .env.docker down
+
+# Destructive: stop and delete PostgreSQL/Airflow volumes
+docker compose --env-file .env.docker down -v
 ```
 
-登录、研究、报告、AI、数据速查页均正常；仅 Workflows 页无数据。
-
-## 已知限制
-
-- **Workflows 页的浏览**（DAG 列表/详情/图/时长）开箱可用（webapi 直接读 Airflow 元数据库）。
-- **触发/暂停等写操作**依赖 Airflow CLI，当前 webapi 容器内未装 Airflow 二进制，这些按钮可能不生效。首次跑起来后如需要可再联系调整（改走 Airflow REST API 或在 webapi 镜像内装 CLI）。
-- 新库是**空的**：研究/报告页需要先通过数据管线灌入行情与因子数据后才有内容。
-
-## 常用命令
+To run the product without Airflow:
 
 ```bash
-docker compose logs -f webapi        # 看后端日志
-docker compose down                  # 停止（保留数据卷）
-docker compose down -v               # 停止并删除数据（含数据库！慎用）
-docker compose build --no-cache webapi   # 改了后端依赖后重建
+docker compose --env-file .env.docker up -d postgres webapi frontend
 ```
+
+Login, market, research, report, AI, and data pages remain available, but the
+Workflows screen has no active scheduler.
+
+## Verification
+
+```bash
+docker compose --env-file .env.docker config --quiet
+docker compose --env-file .env.docker build
+docker compose --env-file .env.docker up -d
+docker compose --env-file .env.docker ps
+
+curl http://localhost:8080/api/v1/health
+curl http://localhost:8081/api/v2/monitor/health
+```
+
+A new database is intentionally empty. Sign in to the product, open Workflows,
+and trigger `quant_factor_mining` before expecting research/report content.
+Yahoo rate limits may reduce historical share coverage; price checkpoints and
+the share circuit breaker prevent a full rerun from hanging indefinitely.
+
+This Compose file is a single-machine deployment, not a production Airflow
+cluster. Public deployment requires a TLS reverse proxy, secure cookies, proper
+secret management, backups, monitoring, and restricted Airflow access.

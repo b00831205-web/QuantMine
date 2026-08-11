@@ -51,6 +51,15 @@ def test_unseen_ticker_opens_a_spell_dated_today():
     assert diff.change_count == 1
 
 
+def test_empty_database_allows_initial_full_universe_seed():
+    observed = {f"T{i}" for i in range(503)}
+
+    diff = diff_universe([], observed, AS_OF, max_change=15)
+
+    assert len(diff.opened) == 503
+    assert diff.closed == []
+
+
 def test_single_absence_is_pending_not_closed():
     """A ticker missing from one scrape stays investable: it is almost always a
     scrape problem, and closing the spell would hide it from every backtest."""

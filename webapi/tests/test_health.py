@@ -13,7 +13,7 @@ def test_health_returns_ok_and_trace_id(client: TestClient) -> None:
 
 
 def test_trace_id_is_propagated_when_caller_provides_one(client: TestClient) -> None:
-    """上游已传入 x-trace-id 时必须沿用，而不是另起一个。"""
+    """An x-trace-id supplied upstream must be reused, not replaced with a new one."""
     incoming = "deadbeefcafebabe1234567890abcdef"
     resp = client.get("/api/v1/health", headers={"x-trace-id": incoming})
     assert resp.status_code == 200
