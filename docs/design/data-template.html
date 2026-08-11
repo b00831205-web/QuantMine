@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUANTMINE · Database Explorer — Design Template</title>
+<!--
+  Design contract — Database Explorer (Evidence Ledger)
+  THESIS: the result table is the primary evidence; resource, filters, and
+          field reference recede into one toolbar and a quiet reference
+          strip, and the query modes share the same table language.
+  OWN-WORLD: matte navy-black surfaces, tonal layering, cobalt only for
+          selection, focus, and the one primary action; mono tabular numbers
+          for every machine value.
+  STORY: the researcher picks a resource, filters rows, scans the dense
+          result table, exports CSV, then switches to Query to build a
+          structured condition or run a SELECT.
+  FIRST VIEWPORT: page title, browse/query tabs, one toolbar, one bordered
+          result panel with dense table, then the field reference strip.
+  FORM: Evidence Ledger, same world as Market / Rebalance / Research.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with
+          the finish review, the verdict, and DESIGN.md.
+  Mock data only — for design review, not live values.
+-->
+<style>
+  :root {
+    --bg-app: #0e1116;
+    --surface: #161a22;
+    --surface-2: #1d2230;
+    --elevated: #232a3a;
+    --border-subtle: #2a3142;
+    --border-strong: #3a4258;
+    --text-primary: #e6e8ee;
+    --text-secondary: #9aa3b8;
+    --text-muted: #6b7388;
+    --accent: #4f8cff;
+    --accent-hover: #6ea0ff;
+    --positive: #4ec98a;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .content {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* ---- Page header ---- */
+  .page-header {
+    margin-bottom: 12px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  /* ---- View divider ---- */
+  .view-divider {
+    margin: 8px 0 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-subtle);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  /* ---- Segmented tabs ---- */
+  .tabs {
+    display: inline-flex;
+    gap: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+    margin-bottom: 16px;
+  }
+  .tab {
+    height: 26px;
+    padding: 0 16px;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .tab:hover {
+    color: var(--text-primary);
+  }
+  .tab.active {
+    color: var(--text-primary);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .tab:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* ---- Browse toolbar ---- */
+  .toolbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px;
+    margin-bottom: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .filter label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .filter select,
+  .filter input {
+    height: 28px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    padding: 0 8px;
+    outline: none;
+  }
+  .filter select:focus,
+  .filter input:focus {
+    border-color: var(--accent);
+  }
+  .filter.resource {
+    min-width: 220px;
+  }
+  .filter.cond {
+    width: 130px;
+  }
+  .toolbar .spacer {
+    flex: 1;
+  }
+  .count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    align-self: center;
+    white-space: nowrap;
+  }
+
+  /* ---- Buttons ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .btn-primary {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  .btn-secondary {
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+  }
+  .btn-secondary:hover {
+    background: var(--elevated);
+    border-color: var(--border-strong);
+  }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+  }
+  .btn-ghost:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  /* ---- Result panel ---- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 24px;
+    margin-bottom: 16px;
+  }
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0 12px;
+  }
+  .panel-head h2 {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .panel-head .meta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  th, td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-2);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+  tbody tr:hover {
+    background: var(--surface-2);
+  }
+  .date-cell {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+  }
+  .sym {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .num {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+  }
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .pager {
+    display: flex;
+    gap: 8px;
+  }
+  .pager button {
+    padding: 4px 12px;
+    background: var(--surface-2);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pager button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ---- Field reference strip ---- */
+  .ref {
+    padding: 14px 24px 4px;
+  }
+  .ref .ref-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .ref-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px 24px;
+  }
+  .ref-item .row1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ref-item .fname {
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .ref-item .ftype {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+  .ref-item .tag {
+    font-size: 10px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    padding: 0 7px;
+  }
+  .ref-item .fdesc {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+
+  /* ---- Query mode ---- */
+  .mode-tabs {
+    display: inline-flex;
+    gap: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+  }
+  .query-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .q-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .q-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .field-chips {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .chip.on {
+    color: var(--text-primary);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .condition-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .condition-row select,
+  .condition-row input {
+    height: 28px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 0 8px;
+    outline: none;
+  }
+  .condition-row .field {
+    width: 170px;
+  }
+  .condition-row .op {
+    width: 90px;
+  }
+  .condition-row .value {
+    width: 140px;
+  }
+  .del-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .del-btn:hover {
+    color: var(--negative);
+    border-color: var(--negative);
+  }
+  .sql-area {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: #0b0e13;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+  }
+  .sql-area:focus-within {
+    border-color: var(--accent);
+  }
+  .sql-prompt {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--positive);
+    user-select: none;
+    flex: none;
+  }
+  .sql-editor {
+    flex: 1;
+    min-width: 0;
+    min-height: 110px;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    resize: vertical;
+    caret-color: var(--accent);
+  }
+  .sql-sample {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+  }
+  .sql-sample .kw {
+    color: #56b6ff;
+    font-weight: 600;
+  }
+  .sql-sample .fn {
+    color: #6ea0ff;
+  }
+  .sql-sample .st {
+    color: #4ec98a;
+  }
+  .sql-sample .nm {
+    color: #f0b35e;
+  }
+  .sql-sample .cmt {
+    color: #6b7388;
+    font-style: italic;
+  }
+  .sql-sample .op {
+    color: #9aa3b8;
+  }
+
+  .footnote {
+    margin-top: 16px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 900px) {
+    .ref-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 640px) {
+    .content {
+      padding: 16px;
+    }
+    .panel {
+      padding: 12px 14px;
+    }
+    .ref-grid {
+      grid-template-columns: 1fr;
+    }
+    .condition-row .field,
+    .condition-row .op,
+    .condition-row .value {
+      width: 100%;
+    }
+    .footer {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <header class="page-header">
+      <h1>数据库速查</h1>
+      <p>白名单业务对象 · 服务端筛选/分页 · CSV 导出</p>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="数据页模式">
+      <button class="tab active" type="button" role="tab" aria-selected="true">白名单浏览</button>
+      <button class="tab" type="button" role="tab" aria-selected="false">Query 查询</button>
+    </div>
+
+    <!-- 浏览视图 -->
+    <main>
+      <div class="toolbar">
+        <div class="filter resource">
+          <label for="resource">资源</label>
+          <select id="resource">
+            <option selected>market_bars · 行情K线</option>
+            <option>index_membership · 指数成分</option>
+            <option>test_results · 因子检验</option>
+            <option>backtest_metrics · 回测指标</option>
+            <option>research_runs · 研究批次</option>
+          </select>
+        </div>
+        <div class="filter cond">
+          <label for="f-symbol">Symbol</label>
+          <input id="f-symbol" type="text" value="AAPL">
+        </div>
+        <div class="filter cond">
+          <label for="f-date">日期</label>
+          <input id="f-date" type="date" value="2026-08-06">
+        </div>
+        <button class="btn btn-secondary" type="button">应用</button>
+        <div class="spacer"></div>
+        <span class="count">共 1,204,933 行 · 第 1 / 120,494 页</span>
+        <button class="btn btn-ghost" type="button">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1.5v6m0 0 2.5-2.5M6 7.5 3.5 5M2 10.5h8" stroke="currentColor" stroke-width="1.3"/></svg>
+          导出 CSV
+        </button>
+      </div>
+
+      <section class="panel" aria-label="结果">
+        <div class="panel-head">
+          <h2>结果</h2>
+          <span class="meta">market_bars · 筛选已应用</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>日期</th>
+                <th>Symbol</th>
+                <th class="num">Open</th>
+                <th class="num">High</th>
+                <th class="num">Low</th>
+                <th class="num">Close</th>
+                <th class="num">Volume</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="date-cell">2026-08-06</td>
+                <td class="sym">AAPL</td>
+                <td class="num">225.40</td>
+                <td class="num">228.12</td>
+                <td class="num">223.88</td>
+                <td class="num">226.91</td>
+                <td class="num">48,210,300</td>
+              </tr>
+              <tr>
+                <td class="date-cell">2026-08-06</td>
+                <td class="sym">MSFT</td>
+                <td class="num">438.20</td>
+                <td class="num">442.85</td>
+                <td class="num">436.10</td>
+                <td class="num">441.60</td>
+                <td class="num">21,944,200</td>
+              </tr>
+              <tr>
+                <td class="date-cell">2026-08-05</td>
+                <td class="sym">AAPL</td>
+                <td class="num">224.05</td>
+                <td class="num">226.70</td>
+                <td class="num">222.10</td>
+                <td class="num">225.32</td>
+                <td class="num">52,007,800</td>
+              </tr>
+              <tr>
+                <td class="date-cell">2026-08-05</td>
+                <td class="sym">MSFT</td>
+                <td class="num">435.90</td>
+                <td class="num">439.55</td>
+                <td class="num">433.20</td>
+                <td class="num">437.84</td>
+                <td class="num">19,882,600</td>
+              </tr>
+              <tr>
+                <td class="date-cell">2026-08-04</td>
+                <td class="sym">AAPL</td>
+                <td class="num">222.80</td>
+                <td class="num">225.95</td>
+                <td class="num">221.40</td>
+                <td class="num">223.87</td>
+                <td class="num">45,661,900</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="footer">
+          <span>共 1,204,933 条 · 第 1 / 120,494 页</span>
+          <div class="pager">
+            <button type="button" disabled>上一页</button>
+            <button type="button">下一页</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 字段参考（次级、安静） -->
+      <section class="ref" aria-label="字段说明">
+        <div class="ref-title">字段说明 · market_bars</div>
+        <div class="ref-grid">
+          <div class="ref-item">
+            <div class="row1"><span class="fname">date</span><span class="ftype">date</span><span class="tag">可筛选</span></div>
+            <div class="fdesc">交易日</div>
+          </div>
+          <div class="ref-item">
+            <div class="row1"><span class="fname">symbol</span><span class="ftype">text</span><span class="tag">可筛选</span></div>
+            <div class="fdesc">证券代码</div>
+          </div>
+          <div class="ref-item">
+            <div class="row1"><span class="fname">open</span><span class="ftype">number</span></div>
+            <div class="fdesc">开盘价</div>
+          </div>
+          <div class="ref-item">
+            <div class="row1"><span class="fname">high</span><span class="ftype">number</span></div>
+            <div class="fdesc">最高价</div>
+          </div>
+          <div class="ref-item">
+            <div class="row1"><span class="fname">low</span><span class="ftype">number</span></div>
+            <div class="fdesc">最低价</div>
+          </div>
+          <div class="ref-item">
+            <div class="row1"><span class="fname">close</span><span class="ftype">number</span></div>
+            <div class="fdesc">收盘价</div>
+          </div>
+          <div class="ref-item">
+            <div class="row1"><span class="fname">volume</span><span class="ftype">number</span></div>
+            <div class="fdesc">成交量</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- 查询视图（第二个 tab 的状态，示意） -->
+    <div class="view-divider">—— Query 查询（第二个 tab） ——</div>
+    <main>
+      <div class="mode-tabs" role="tablist" aria-label="查询模式">
+        <button class="tab active" type="button" role="tab" aria-selected="true">结构化</button>
+        <button class="tab" type="button" role="tab" aria-selected="false">SQL</button>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Query 查询</h2>
+          <span class="meta">最多返回 100 行</span>
+        </div>
+        <div class="query-form">
+          <div class="q-block">
+            <div class="filter resource">
+              <label for="q-resource">资源</label>
+              <select id="q-resource">
+                <option selected>market_bars · 行情K线</option>
+                <option>test_results · 因子检验</option>
+              </select>
+            </div>
+          </div>
+          <div class="q-block">
+            <span class="q-label">字段（不选默认全部）</span>
+            <div class="field-chips">
+              <span class="chip on">date</span>
+              <span class="chip on">symbol</span>
+              <span class="chip on">close</span>
+              <span class="chip">open</span>
+              <span class="chip">high</span>
+              <span class="chip">low</span>
+              <span class="chip">volume</span>
+            </div>
+          </div>
+          <div class="q-block">
+            <span class="q-label">条件</span>
+            <div class="condition-row">
+              <select class="field"><option>symbol</option></select>
+              <select class="op"><option>=</option><option>≠</option><option>&gt;</option><option>&lt;</option><option>包含</option></select>
+              <input class="value" type="text" value="AAPL">
+              <button class="del-btn" type="button" aria-label="删除">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.2"/></svg>
+              </button>
+            </div>
+            <div class="condition-row">
+              <select class="field"><option>close</option></select>
+              <select class="op"><option>&gt;</option></select>
+              <input class="value" type="text" value="180">
+              <button class="del-btn" type="button" aria-label="删除">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.2"/></svg>
+              </button>
+            </div>
+            <button class="btn btn-secondary" type="button">＋ 添加条件</button>
+          </div>
+          <div>
+            <button class="btn btn-primary" type="button">执行查询</button>
+          </div>
+        </div>
+
+        <div class="view-divider">—— SQL 模式（bash 风格输入框） ——</div>
+        <div class="query-form">
+          <div class="sql-area">
+            <span class="sql-prompt" aria-hidden="true">postgres=&gt;</span>
+            <pre class="sql-sample"><span class="cmt">-- 语法高亮示意：真实编辑器为可编辑 CodeMirror</span>
+<span class="kw">SELECT</span> symbol, close <span class="kw">FROM</span> market_bars
+<span class="kw">WHERE</span> symbol <span class="op">=</span> <span class="st">'AAPL'</span>
+  <span class="kw">AND</span> close <span class="op">&gt;</span> <span class="nm">180</span>
+<span class="kw">ORDER BY</span> date <span class="kw">DESC</span> <span class="kw">LIMIT</span> <span class="nm">100</span>;</pre>
+          </div>
+          <div>
+            <button class="btn btn-primary" type="button">执行</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-label="查询结果">
+        <div class="panel-head">
+          <h2>结果</h2>
+          <span class="meta">2 行</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>日期</th><th>Symbol</th><th class="num">Close</th></tr>
+            </thead>
+            <tbody>
+              <tr><td class="date-cell">2026-08-06</td><td class="sym">AAPL</td><td class="num">226.91</td></tr>
+              <tr><td class="date-cell">2026-08-05</td><td class="sym">AAPL</td><td class="num">225.32</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <p class="footnote">For research and educational purposes only. Not investment advice. Past performance does not guarantee future results.</p>
+  </div>
+</body>
+</html>

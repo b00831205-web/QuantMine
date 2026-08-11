@@ -5,7 +5,7 @@ Quick start:
 
     data = qm.MarketData(close=close_df, volume=volume_df)
 
-    @qm.factor_register("my_factor")
+    @qm.factor_registry("my_factor")
     def my_factor(close, tickers):
         return -close[tickers].pct_change(5)
 
@@ -45,7 +45,7 @@ from .datareader import (
     MembershipTableSource,
 )
 from .factor_register import (
-    factor_register,
+    factor_registry,
     build_param_pool,
     calculate_all_factors,
     FACTOR_REGISTRY,
@@ -63,7 +63,6 @@ from .ic_calculator import (
     orthogonal_analysis,
     orthogonalize,
     time_series_stationary_test,
-    train_test_analysis,
 )
 from .back_testing import (
     quantile_backtest,
@@ -74,6 +73,7 @@ from .back_testing import (
     performance_summary,
     monotonicity_test,
     back_test_senity_test,
+    back_test_sanity_test
 )
 from .factor_attribution import load_french_factors, carhart_attribution
 from .load_config import load_configs
@@ -82,16 +82,16 @@ __all__ = [
     "MarketData", "DataSource", "ParquetSource", "CSVSource", "ExcelSource",
     "YFinanceSource", "ConstituentsSource", "StaticUniverse",
     "MembershipTableSource",
-    "factor_register", "build_param_pool", "calculate_all_factors",
+    "factor_registry", "build_param_pool", "calculate_all_factors",
     "FACTOR_REGISTRY",
     "forward_return", "data_standarization", "CS_Information_Correlation",
     "TM_Information_correlation", "summary", "resample_summary",
     "newey_west_summary", "multiple_testing", "orthogonal_analysis",
-    "orthogonalize", "time_series_stationary_test", "train_test_analysis",
+    "orthogonalize", "time_series_stationary_test",
     "quantile_backtest", "expand_to_daily_returns",
     "expand_all_to_daily_returns", "calculate_turnover",
     "apply_transcation_cost", "performance_summary", "monotonicity_test",
-    "back_test_senity_test",
+    "back_test_sanity_test", "back_test_senity_test",
     "load_french_factors", "carhart_attribution",
     "load_configs",
 ]

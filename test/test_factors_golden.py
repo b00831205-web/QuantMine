@@ -62,7 +62,8 @@ class TestFactorsGoldenValues:
     """One test case per factor so a failure points straight at the culprit."""
 
     @pytest.fixture(scope="class")
-    def computed_factors(self):
+    @classmethod
+    def computed_factors(cls):
         import quantmine.factor_mining  # noqa: F401  importing triggers decorator registration
         from quantmine.factor_register import calculate_all_factors, build_param_pool
         from quantmine.datareader import MarketData
@@ -77,7 +78,8 @@ class TestFactorsGoldenValues:
         return factors
 
     @pytest.fixture(scope="class")
-    def old_factors(self):
+    @classmethod
+    def old_factors(cls):
         return pd.read_parquet(OLD_FACTORS_PATH)
 
     @pytest.mark.parametrize("factor_name", list(NAME_MAPPING.keys()))

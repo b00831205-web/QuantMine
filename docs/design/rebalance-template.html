@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUANTMINE · Rebalance Returns — Design Template</title>
+<!--
+  Design contract — Rebalance Returns (Evidence Ledger)
+  THESIS: the selected rebalance's return curve is the primary evidence;
+          filters and record browsing recede into a second ledger panel.
+  OWN-WORLD: matte navy-black surfaces, tonal layering, cobalt only for
+          interaction and selection, mono for every machine value.
+  STORY: the researcher picks a rebalance from the record ledger, then the
+          curve and top-contribution rail update to that period.
+  FIRST VIEWPORT: page title, one bordered curve panel (head + chart +
+          metrics ledger), then a records panel with filter toolbar and a
+          table/rail split below the fold.
+  FORM: Evidence Ledger, the same composition as the approved Market
+          Overview template.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with
+          the finish review, the verdict, and DESIGN.md.
+  Mock data only — for design review, not live values.
+-->
+<style>
+  :root {
+    --bg-app: #0e1116;
+    --surface: #161a22;
+    --surface-2: #1d2230;
+    --elevated: #232a3a;
+    --border-subtle: #2a3142;
+    --border-strong: #3a4258;
+    --text-primary: #e6e8ee;
+    --text-secondary: #9aa3b8;
+    --text-muted: #6b7388;
+    --accent: #4f8cff;
+    --positive: #4ec98a;
+    --info: #56b6ff;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .content {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* ---- Page header ---- */
+  .page-header {
+    margin-bottom: 12px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  /* ---- Primary evidence panel: current-period curve ---- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 24px 0;
+  }
+
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0 12px;
+  }
+  .panel-head h2 {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .panel-meta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .panel-meta .sep {
+    color: var(--border-strong);
+    margin: 0 8px;
+  }
+
+  .chart-wrap {
+    margin: 4px 0 0;
+    padding-bottom: 8px;
+  }
+  .chart svg {
+    display: block;
+    width: 100%;
+    height: 300px;
+  }
+  .legend {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .legend .swatch {
+    display: inline-block;
+    width: 18px;
+    height: 2px;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  /* ---- Metrics ledger ---- */
+  .ledger {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr;
+    border-top: 1px solid var(--border-subtle);
+    margin-top: 8px;
+  }
+  .ledger-cell {
+    padding: 18px 20px 20px;
+    border-left: 1px solid var(--border-subtle);
+    min-width: 0;
+  }
+  .ledger-cell:first-child {
+    border-left: none;
+    padding-left: 0;
+  }
+  .ledger-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .ledger-value {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .ledger-cell.primary .ledger-value {
+    font-size: 28px;
+  }
+  .ledger-note {
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* ---- Secondary panel: records ledger ---- */
+  .records {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 24px;
+    margin-top: 16px;
+  }
+
+  .records-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0 12px;
+  }
+  .records-head h2 {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .records-head .count {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Filter toolbar ---- */
+  .filter-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    align-items: end;
+    padding: 12px 0;
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .filter label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .filter input,
+  .filter select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    padding: 4px 8px;
+    outline: none;
+  }
+  .filter input:focus,
+  .filter select:focus {
+    border-color: var(--accent);
+  }
+  .date-with-clear {
+    display: flex;
+    gap: 4px;
+  }
+  .date-with-clear input {
+    flex: 1;
+    min-width: 0;
+  }
+  .clear-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    flex: none;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .clear-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+  .clear-btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* ---- Records split: table + contribution rail ---- */
+  .split {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    align-items: start;
+  }
+  .list-col {
+    min-width: 0;
+    padding-right: 20px;
+  }
+  .rail {
+    min-width: 0;
+    border-left: 1px solid var(--border-subtle);
+    padding-left: 20px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  th,
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-2);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+  tbody tr:hover {
+    background: var(--surface-2);
+  }
+  tbody tr.selected {
+    background: var(--surface-2);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  tbody tr.selected td {
+    color: var(--text-primary);
+  }
+  .num {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+  }
+  .decision {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .date-cell {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+  }
+  .text-cell {
+    color: var(--text-secondary);
+  }
+  .q-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+  tbody tr.selected .q-badge {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+  .rail-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0 10px;
+  }
+  .rail-head h3 {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .rail-head .hint {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .rail th,
+  .rail td {
+    padding: 7px 10px;
+  }
+  .rank {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    width: 2em;
+  }
+  .ticker {
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+  }
+  .contrib {
+    text-align: right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  .rail-note {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .rail-note .link {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .rail-note .link:hover {
+    color: var(--accent-hover, #6ea0ff);
+  }
+  .rail-note .link:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+
+  /* ---- Pagination ---- */
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .pager {
+    display: flex;
+    gap: 8px;
+  }
+  .pager button {
+    padding: 4px 12px;
+    background: var(--surface-2);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pager button:hover {
+    border-color: var(--border-strong);
+  }
+  .pager button:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .pager button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .footnote {
+    margin-top: 16px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 900px) {
+    .filter-bar {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .split {
+      grid-template-columns: 1fr;
+    }
+    .list-col {
+      padding-right: 0;
+    }
+    .rail {
+      border-left: none;
+      border-top: 1px solid var(--border-subtle);
+      padding-left: 0;
+      padding-top: 12px;
+      margin-top: 12px;
+    }
+    .ledger {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .ledger-cell:nth-child(4) {
+      border-left: none;
+    }
+  }
+  @media (max-width: 640px) {
+    .content {
+      padding: 16px;
+    }
+    .panel,
+    .records {
+      padding: 12px 14px;
+    }
+    .filter-bar {
+      grid-template-columns: 1fr;
+    }
+    .ledger {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .ledger-cell {
+      border-left: none;
+      border-top: 1px solid var(--border-subtle);
+      padding: 14px 0;
+    }
+    .ledger-cell:first-child {
+      grid-column: 1 / -1;
+      border-top: none;
+    }
+    .footer {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <header class="page-header">
+      <h1>调仓收益</h1>
+      <p>正式策略组合的当前与历史调仓表现 · 自由查看，不展示正式调仓建议</p>
+    </header>
+
+    <!-- 主证据面板：本期收益曲线 -->
+    <main class="panel">
+      <div class="panel-head">
+        <h2>本期收益曲线</h2>
+        <span class="panel-meta">调仓日 2026-08-06<span class="sep">·</span>vwap-v1<span class="sep">·</span>Q1<span class="sep">·</span>20d</span>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="chart">
+          <svg viewBox="0 0 760 300" preserveAspectRatio="xMidYMid meet" role="img" aria-label="归一化净值曲线：组合与 SPY，mock 数据">
+            <g stroke="#2a3142" stroke-width="1">
+              <line x1="48" y1="45" x2="744" y2="45"/>
+              <line x1="48" y1="105" x2="744" y2="105"/>
+              <line x1="48" y1="165" x2="744" y2="165"/>
+              <line x1="48" y1="225" x2="744" y2="225"/>
+              <line x1="48" y1="285" x2="744" y2="285"/>
+            </g>
+            <g fill="#3a4258" font-family="JetBrains Mono, monospace" font-size="9" text-anchor="end">
+              <text x="40" y="49">104</text>
+              <text x="40" y="109">103</text>
+              <text x="40" y="169">102</text>
+              <text x="40" y="229">101</text>
+              <text x="40" y="289">100</text>
+            </g>
+            <g fill="#3a4258" font-family="JetBrains Mono, monospace" font-size="9" text-anchor="middle">
+              <text x="70" y="296">07-10</text>
+              <text x="154" y="296">07-14</text>
+              <text x="238" y="296">07-17</text>
+              <text x="322" y="296">07-21</text>
+              <text x="406" y="296">07-24</text>
+              <text x="490" y="296">07-28</text>
+              <text x="574" y="296">07-31</text>
+              <text x="658" y="296">08-04</text>
+              <text x="730" y="296">08-06</text>
+            </g>
+            <path d="M48 250 L132 246 L216 240 L300 235 L384 229 L468 224 L552 216 L636 211 L720 205" fill="none" stroke="#9aa3b8" stroke-width="1.6"/>
+            <path d="M48 252 L132 244 L216 248 L300 228 L384 218 L468 206 L552 196 L636 184 L720 176" fill="none" stroke="#4f8cff" stroke-width="1.8"/>
+          </svg>
+        </div>
+        <div class="legend">
+          <span><span class="swatch" style="background:#4f8cff"></span>组合</span>
+          <span><span class="swatch" style="background:#9aa3b8"></span>SPY 基准</span>
+        </div>
+      </div>
+
+      <div class="ledger">
+        <div class="ledger-cell primary">
+          <div class="ledger-label">净收益</div>
+          <div class="ledger-value">+4.82%</div>
+          <div class="ledger-note">持有期 20 个交易日 · 归一化基期 100</div>
+        </div>
+        <div class="ledger-cell">
+          <div class="ledger-label">SPY 同期</div>
+          <div class="ledger-value">+2.96%</div>
+          <div class="ledger-note">同期 S&amp;P 500 基准</div>
+        </div>
+        <div class="ledger-cell">
+          <div class="ledger-label">超额收益</div>
+          <div class="ledger-value">+1.86%</div>
+          <div class="ledger-note">净收益 − SPY</div>
+        </div>
+        <div class="ledger-cell">
+          <div class="ledger-label">换手率</div>
+          <div class="ledger-value">38.4%</div>
+          <div class="ledger-note">单边平均换手</div>
+        </div>
+        <div class="ledger-cell">
+          <div class="ledger-label">持仓数</div>
+          <div class="ledger-value">78</div>
+          <div class="ledger-note">Q1 组合 · 距下次调仓 7 天</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 调仓记录面板：筛选 + 列表 + 贡献栏 -->
+    <section class="records">
+      <div class="records-head">
+        <h2>调仓记录</h2>
+        <span class="count">共 236 期 · 最近 2026-08-06</span>
+      </div>
+
+      <div class="filter-bar">
+        <div class="filter">
+          <label for="date-filter">调仓日期</label>
+          <div class="date-with-clear">
+            <input id="date-filter" type="date" value="2026-08-06" aria-label="调仓日期搜索">
+            <button class="clear-btn" type="button" title="清除" aria-label="清除日期">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.2"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="filter">
+          <label for="job-filter">Backtest Job</label>
+          <select id="job-filter">
+            <option>全部</option>
+            <option>momentum-daily</option>
+            <option>value-weekly</option>
+          </select>
+        </div>
+        <div class="filter">
+          <label for="variant-filter">Variant</label>
+          <select id="variant-filter">
+            <option>全部</option>
+            <option selected>vwap-v1</option>
+            <option>close-v1</option>
+          </select>
+        </div>
+        <div class="filter">
+          <label for="factor-filter">Factor</label>
+          <select id="factor-filter">
+            <option>全部</option>
+            <option selected>momentum</option>
+            <option>value</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="list-col">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>调仓日期</th>
+                  <th>变体</th>
+                  <th class="num">持有期</th>
+                  <th>分位</th>
+                  <th class="num">净收益</th>
+                  <th class="num">SPY</th>
+                  <th class="num">超额</th>
+                  <th class="num">换手率</th>
+                  <th class="num">持仓数</th>
+                  <th class="num">距下次(天)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="selected">
+                  <td class="date-cell">2026-08-06</td>
+                  <td class="text-cell">vwap-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q1</span></td>
+                  <td class="num decision">+4.82%</td>
+                  <td class="num">+2.96%</td>
+                  <td class="num decision">+1.86%</td>
+                  <td class="num">38.4%</td>
+                  <td class="num">78</td>
+                  <td class="num">7</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2026-07-09</td>
+                  <td class="text-cell">vwap-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q1</span></td>
+                  <td class="num decision">+3.15%</td>
+                  <td class="num">+1.84%</td>
+                  <td class="num decision">+1.31%</td>
+                  <td class="num">41.2%</td>
+                  <td class="num">76</td>
+                  <td class="num">6</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2026-06-10</td>
+                  <td class="text-cell">close-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q1</span></td>
+                  <td class="num decision">+2.48%</td>
+                  <td class="num">+1.62%</td>
+                  <td class="num decision">+0.86%</td>
+                  <td class="num">35.7%</td>
+                  <td class="num">82</td>
+                  <td class="num">5</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2026-05-13</td>
+                  <td class="text-cell">close-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q2</span></td>
+                  <td class="num decision">+1.96%</td>
+                  <td class="num">+2.31%</td>
+                  <td class="num decision">-0.35%</td>
+                  <td class="num">33.9%</td>
+                  <td class="num">81</td>
+                  <td class="num">8</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2026-04-15</td>
+                  <td class="text-cell">vwap-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q3</span></td>
+                  <td class="num decision">+1.12%</td>
+                  <td class="num">+2.05%</td>
+                  <td class="num decision">-0.93%</td>
+                  <td class="num">36.4%</td>
+                  <td class="num">80</td>
+                  <td class="num">4</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2026-03-18</td>
+                  <td class="text-cell">vwap-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q4</span></td>
+                  <td class="num decision">+0.48%</td>
+                  <td class="num">+1.37%</td>
+                  <td class="num decision">-0.89%</td>
+                  <td class="num">37.8%</td>
+                  <td class="num">79</td>
+                  <td class="num">6</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2026-02-18</td>
+                  <td class="text-cell">vwap-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q5</span></td>
+                  <td class="num decision">-0.72%</td>
+                  <td class="num">+1.21%</td>
+                  <td class="num decision">-1.93%</td>
+                  <td class="num">40.5%</td>
+                  <td class="num">77</td>
+                  <td class="num">7</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2026-01-21</td>
+                  <td class="text-cell">vwap-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">LS</span></td>
+                  <td class="num decision">+2.67%</td>
+                  <td class="num">+1.48%</td>
+                  <td class="num decision">+1.19%</td>
+                  <td class="num">52.3%</td>
+                  <td class="num">—</td>
+                  <td class="num">5</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2025-12-23</td>
+                  <td class="text-cell">close-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q1</span></td>
+                  <td class="num decision">+3.38%</td>
+                  <td class="num">+2.42%</td>
+                  <td class="num decision">+0.96%</td>
+                  <td class="num">34.6%</td>
+                  <td class="num">83</td>
+                  <td class="num">6</td>
+                </tr>
+                <tr>
+                  <td class="date-cell">2025-11-25</td>
+                  <td class="text-cell">close-v1</td>
+                  <td class="num">20d</td>
+                  <td><span class="q-badge">Q2</span></td>
+                  <td class="num decision">+1.87%</td>
+                  <td class="num">+2.18%</td>
+                  <td class="num decision">-0.31%</td>
+                  <td class="num">35.1%</td>
+                  <td class="num">82</td>
+                  <td class="num">4</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="footer">
+            <span>共 236 条 · 第 1 / 12 页</span>
+            <div class="pager">
+              <button type="button" disabled>上一页</button>
+              <button type="button">下一页</button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="rail">
+          <div class="rail-head">
+            <h3>前 20 只股票收益</h3>
+            <span class="hint">按本期贡献排序</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Ticker</th>
+                <th>分位</th>
+                <th class="num">收益</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="rank">1</td><td class="ticker">AAPL</td><td><span class="q-badge">Q1</span></td><td class="contrib">+1.42%</td></tr>
+              <tr><td class="rank">2</td><td class="ticker">MSFT</td><td><span class="q-badge">Q1</span></td><td class="contrib">+1.18%</td></tr>
+              <tr><td class="rank">3</td><td class="ticker">NVDA</td><td><span class="q-badge">Q1</span></td><td class="contrib">+0.97%</td></tr>
+              <tr><td class="rank">4</td><td class="ticker">GOOGL</td><td><span class="q-badge">Q1</span></td><td class="contrib">+0.84%</td></tr>
+              <tr><td class="rank">5</td><td class="ticker">AMZN</td><td><span class="q-badge">Q1</span></td><td class="contrib">+0.71%</td></tr>
+              <tr><td class="rank">6</td><td class="ticker">META</td><td><span class="q-badge">Q1</span></td><td class="contrib">+0.65%</td></tr>
+              <tr><td class="rank">7</td><td class="ticker">AVGO</td><td><span class="q-badge">Q1</span></td><td class="contrib">+0.58%</td></tr>
+              <tr><td class="rank">8</td><td class="ticker">TSLA</td><td><span class="q-badge">Q1</span></td><td class="contrib">+0.44%</td></tr>
+              <tr><td class="rank">9</td><td class="ticker">BRK.B</td><td><span class="q-badge">Q1</span></td><td class="contrib">+0.39%</td></tr>
+              <tr><td class="rank">10</td><td class="ticker">JPM</td><td><span class="q-badge">Q1</span></td><td class="contrib">+0.35%</td></tr>
+            </tbody>
+          </table>
+          <div class="rail-note">前 20 / 共 78 只持仓 · <button class="link" type="button">查看完整持仓 →</button></div>
+        </aside>
+      </div>
+    </section>
+
+    <p class="footnote">For research and educational purposes only. Not investment advice. Past performance does not guarantee future results.</p>
+  </div>
+</body>
+</html>

@@ -1,200 +1,607 @@
-# quantmine
+# QUANTMINE
 
-An equity factor research library built around one principle: **statistical
-honesty**. Every step that commonly inflates backtest results — survivorship
-bias, overlapping-return autocorrelation, multiple testing, look-ahead in
-orthogonalization, unrealistic transaction costs — is explicitly addressed,
-and conclusions are reported with their uncertainty, not just their point
-estimates.
+<p align="center">
+  <img src="frontend/public/brand/quantmine-blue.png" alt="QUANTMINE logo" width="112" />
+</p>
 
-The repo doubles as a full S&P 500 research case study: the library
-(`quantmine/`), the daily Airflow pipeline (`pipelines/`), and the findings
-below were produced by the same code you can `pip install`.
+QUANTMINE is a full-stack US equity factor-research platform. It combines a
+React application, FastAPI, Airflow 3, PostgreSQL/pgvector, and an importable
+Python research library in one reproducible workflow.
 
-## Install
+The research layer is built around statistical honesty: point-in-time index
+membership, train/test isolation, Newey-West standard errors, multiple-testing
+control, expanding-window orthogonalization, turnover-based costs, and Carhart
+attribution are first-class parts of the pipeline rather than afterthoughts.
 
-```bash
-pip install quantmine          # library only
-pip install "quantmine[data]"  # + yfinance download stack
-```
+## Features
 
-For development (repo checkout, Python ≥ 3.13, [uv](https://docs.astral.sh/uv/)):
+- **End-to-end factor research** — acquire and clean market data, calculate
+  factors, run IC tests, build quantile portfolios, account for turnover costs,
+  and perform Carhart attribution in one Airflow DAG.
+- **Bias-aware methodology** — point-in-time S&P 500 membership, embargoed
+  train/test windows, Newey-West inference, Bonferroni/BH corrections, and
+  expanding-window transformations reduce common backtest overstatement.
+- **Full-stack workflow control** — inspect DAGs, trigger runs, pause schedules,
+  and operate task state from the React application through FastAPI.
+- **Durable storage and resumable ingestion** — PostgreSQL/pgvector stores
+  research results while disk checkpoints make large market-data downloads
+  restartable and measurable.
+- **Two deployment paths** — use one-command WSL development for iteration or a
+  four-service Docker Compose stack for reproducible local self-hosting.
 
-```bash
-uv sync
-python -m pytest test
-```
+## Quick Start — Run in 3 Minutes
 
-## Quick start
+### Prerequisites
 
-Bring your own price data — any wide DataFrame (index = trading days,
-columns = tickers) works; nothing is hard-wired to yfinance or the S&P 500:
-
-```python
-import pandas as pd
-import quantmine as qm
-
-# 1) Wrap your data (or use qm.ParquetSource / qm.YFinanceSource)
-data = qm.MarketData(close=close_df, volume=volume_df)
-
-# 2) Register a custom factor — built-in factors register automatically
-@qm.factor_register("my_reversal")
-def my_reversal(close: pd.DataFrame, tickers: list) -> pd.DataFrame:
-    return -close[tickers].pct_change(5)
-
-# 3) Compute all registered factors (dependencies resolve automatically)
-pool = qm.build_param_pool(data, day=5, halflife=10, period=20)
-failed, factors = qm.calculate_all_factors(pool)
-
-# 4) Cross-sectional IC with Newey-West t-stats and multiple-testing control
-fwd = qm.forward_return(data.close, periods=[1, 5, 20])
-cs_ic = qm.CS_Information_Correlation(factors, fwd, output_path="cs_ic.parquet")
-report = qm.multiple_testing(qm.newey_west_summary(cs_ic))
-
-# 5) Quantile backtest on a point-in-time universe, turnover-based costs
-universe = qm.MembershipTableSource(membership_df)   # or qm.StaticUniverse([...])
-results, history = qm.quantile_backtest(universe, factors, ["my_reversal"], fwd)
-daily = qm.expand_all_to_daily_returns(history, data.close)
-
-# 6) Carhart four-factor attribution of the long-short returns (daily, HAC)
-french = qm.load_french_factors("ff3_daily.csv", "momentum_daily.csv")
-model = qm.carhart_attribution(daily[("my_reversal", 20)]["long_short"], french)
-```
-
-### Extension points
-
-| Protocol / hook | Purpose | Ships with |
-|---|---|---|
-| `DataSource.load(...) -> MarketData` | plug in any price/volume source | `ParquetSource`, `CSVSource`, `ExcelSource`, `YFinanceSource` |
-| `ConstituentsSource.get_constituents(date) -> set` | point-in-time universe from any provider | `MembershipTableSource` (interval table), `StaticUniverse` |
-| `@factor_register(name)` | add factors; params injected by name, factor-on-factor dependencies resolved | 8 built-in factors |
-| `config.example.yaml` | every pipeline parameter as validated dataclasses via `qm.load_configs` | defaults documented in-file |
-
-## Headline result (S&P 500 case study)
-
-The 20-day average volume factor (`TwentyDayAvgVol`) is the only candidate
-that survives the full testing gauntlet:
-
-| Stage | Result |
+| Tool | Version / requirement |
 |---|---|
-| Train IC (2015–2023, Newey-West) | t = 3.78 (20d holding), passes Bonferroni & Benjamini-Hochberg across all 18 factor × horizon tests |
-| Out-of-sample quintiles (2024–2026) | Monotonic (Spearman 0.9); long-short gross ~14 %/yr (Sharpe ~1.5), ~1.4 Sharpe net of turnover-based costs |
-| Carhart 4-factor attribution (daily, HAC, net of costs) | Market beta 0.24 (significant), large-cap tilt (SMB −0.13); momentum & value loadings insignificant |
-| Net alpha | ~10 %/yr net of costs (t = 1.78, p ≈ 0.07, n = 603 daily obs) — economically meaningful, **marginally short of the 5 % significance bar** on 2.4 years of out-of-sample data |
+| Git | 2.40+ recommended |
+| Docker | Docker Desktop or Engine with Compose v2 |
+| Python | 3.10+ for the Docker secret generator; 3.13 for native development |
+| Node.js | 20+ for native frontend development |
+| uv | Current release for native Python environments |
+| WSL | WSL2 Ubuntu with systemd for the native Windows workflow |
+| PostgreSQL | 16 + pgvector for native development; bundled by Docker |
 
-The honest conclusion: the factor's IC is robustly significant in-sample under
-conservative testing; its out-of-sample net alpha is economically meaningful
-but does not clear conventional significance. Live verification over a longer
-window is required — and that is exactly what a research report should say.
-(A low-power period-level regression, n ≈ 30, says nothing either way —
-p ≈ 0.38 with a confidence interval wide enough to hold any conclusion. Test
-power and test bookkeeping move the verdict as much as the signal does.)
+### Docker (recommended)
 
-The remaining seven candidate factors (momentum, short-term reversal,
-volatility, downside volatility, volume-price correlation, …) fail the
-corrected significance tests. Documenting *why* they fail is part of the
-point.
+```bash
+# 1. Clone the repository
+git clone https://github.com/b00831205-web/QuantMine.git
+cd QuantMine
 
-## Methodology highlights
+# 2. Generate private local configuration
+python scripts/create_docker_env.py
 
-- **Survivorship-bias correction** — the universe is rebuilt from historical
-  S&P 500 membership (764 tickers over 2015–2026); 569 were recoverable via
-  yfinance, and the residual gap is disclosed rather than hidden.
-- **Point-in-time universe** — each backtest cross-section only contains
-  stocks that were actually index members on that date.
-- **Newey-West IC tests** — daily ICs on overlapping k-day forward returns are
-  autocorrelated; plain `t = IR·√n` overstates significance several-fold. NW
-  (Bartlett kernel, lag = 2(k−1)) uses all daily observations while correcting
-  the standard error. A down-sampled IID test is kept as a robustness control.
-- **Multiple-testing control** — Bonferroni and Benjamini-Hochberg across all
-  factor × holding-period combinations.
-- **Train/test split with embargo** — factors are selected and the
-  orthogonalization is fit on 2015–2023 only; a gap of one month before the
-  test window prevents overlapping forward returns from leaking across the
-  split.
-- **Expanding-window orthogonalization** — correlated factors are residualized
-  with betas estimated on data available up to each date (no full-sample
-  look-ahead).
-- **Turnover-based transaction costs** — costs are charged on actual
-  membership turnover per rebalance, not on a flat 100 %-turnover assumption.
-- **Sanity checks** — factor displacement and cross-sectional shuffling tests
-  confirm the backtest machinery itself is not the source of the returns.
-- **Tested** — the research chain is covered by a unit + golden-value test
-  suite (`test/`), including hand-computed backtest fixtures, determinism
-  checks, and point-in-time universe edge cases.
+# 3. Build and start all services
+docker compose --env-file .env.docker up -d --build
+
+# 4. Confirm container state
+docker compose --env-file .env.docker ps
+```
+
+Open <http://localhost:8080> and sign in with
+`QUANTMINE_ADMIN_USER` / `QUANTMINE_ADMIN_PASSWORD` from `.env.docker`.
+Airflow's own UI is available at <http://localhost:8081>.
+
+The generated `.env.docker` contains secrets. It is excluded from Git and from
+the Docker build context. Never paste it into issues or commit it.
+
+### WSL development
+
+There are two intentionally separate frontend modes:
+
+| Mode | Frontend URL | Purpose |
+|---|---|---|
+| WSL logon service (default for this machine) | <http://localhost:8000> | FastAPI serves the built React app; no Vite process is required |
+| Manual development | <http://localhost:5173> | Vite with hot reload; it proxies `/api` to port 8000 |
+
+Ports 5175 and 5176 are not used. Vite is configured with a strict port and
+will fail clearly if 5173 is occupied instead of silently opening another port.
+
+```bash
+# 1. Clone and enter the project inside WSL
+git clone https://github.com/b00831205-web/QuantMine.git
+cd QuantMine
+
+# Research library, data adapters, tests, database support, and Airflow
+uv sync --extra data --extra db --group dev --group pipeline
+
+# Isolated Web API environment
+cd webapi && uv sync && cd ..
+
+# Frontend dependencies
+cd frontend && npm ci && cd ..
+
+# Create roles/databases, apply schema, initialize Airflow, create an admin
+webapi/.venv/bin/python scripts/setup.py
+
+# Start frontend + API + Airflow together
+uv run dev
+```
+
+Development endpoints:
+
+| Service | URL |
+|---|---|
+| Frontend | <http://localhost:5173> |
+| API docs | <http://localhost:8000/docs> |
+| API health | <http://localhost:8000/api/v1/health> |
+| Airflow | <http://localhost:8080> |
+
+The initial admin password is printed once and stored in the Git-ignored
+`.initial-credentials.json`. Change it after signing in and delete the file.
+Run `dev` inside WSL; a Windows shell cannot execute the Linux virtualenv.
+
+## Project Structure
+
+<p align="center">
+  <img src="docs/assets/quantmine-system-architecture.png" alt="QUANTMINE system architecture" width="1200" />
+</p>
+
+The overview separates the control plane from the data plane: the browser calls
+the React application and FastAPI, FastAPI controls Airflow, and DAG tasks run
+the research engine against external market data, resumable Parquet checkpoints,
+and PostgreSQL/pgvector.
+
+The repository map below remains Mermaid source so the directory-level view can
+evolve alongside the codebase without regenerating the architecture artwork.
+
+```mermaid
+flowchart TB
+    ROOT["quant-factor-mining/"]
+
+    ROOT --> CORE["quantmine/<br/>research library, data acquisition,<br/>storage adapters, schema"]
+    ROOT --> PIPE["pipelines/<br/>Airflow DAG and task entry points"]
+    ROOT --> API["webapi/<br/>FastAPI, auth, workflows,<br/>AI and report APIs"]
+    ROOT --> WEB["frontend/<br/>React, TypeScript, Vite,<br/>ECharts dashboard"]
+    ROOT --> DEPLOY["deploy/<br/>WSL systemd units and<br/>Windows logon bootstrap"]
+    ROOT --> DOCKER["docker/<br/>frontend, API, Airflow,<br/>Postgres images"]
+    ROOT --> SCRIPTS["scripts/<br/>setup, credentials, backup,<br/>and data imports"]
+    ROOT --> TESTS["test/<br/>unit, integration and<br/>golden-value regression tests"]
+    ROOT --> DOCS["docs/<br/>API contract, design notes,<br/>specifications and handoff"]
+
+    WEB -->|"/api/v1"| API
+    API --> DB[("PostgreSQL<br/>quantmine + airflow")]
+    API -->|"Airflow CLI"| PIPE
+    PIPE --> CORE
+    PIPE --> DB
+    CORE --> CACHE[("data/ + tmp/<br/>local data and checkpoints")]
+```
+
+### Runtime data flow
+
+```mermaid
+flowchart LR
+    UI["React UI"] --> API["FastAPI"]
+    API --> META[("Airflow metadata")]
+    API -->|"trigger / pause / task actions"| AF["Airflow 3"]
+    AF --> DAG["quant_factor_mining"]
+    DAG --> U["Universe refresh"]
+    U --> D["Price and share download"]
+    D --> C["Clean and merge"]
+    C --> F["Factor calculation"]
+    F --> IC["IC research"]
+    IC --> BT["Backtest"]
+    BT --> AT["Carhart attribution"]
+    D --> DB[("PostgreSQL")]
+    IC --> DB
+    BT --> DB
+    AT --> DB
+    DB --> API
+```
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, TypeScript, Vite, React Router, ECharts, Vitest |
+| API | FastAPI, Pydantic, SQLAlchemy, psycopg2, bcrypt, WeasyPrint |
+| Workflow | Apache Airflow 3, BashOperator, LocalExecutor |
+| Research | Python 3.13, pandas, NumPy, SciPy, statsmodels, PyArrow |
+| Data | yfinance, pandas-datareader, curl-cffi, Beautiful Soup |
+| Storage | PostgreSQL 16, pgvector, Parquet checkpoints |
+| Delivery | Docker Compose, Nginx, WSL2, systemd user services |
+
+## Current Verified Baseline
+
+The latest clean-database end-to-end run covered schema creation, default-admin
+login, all three development services, UI-to-Airflow triggering, pipeline
+execution, database consistency, Linux market-data ingestion, and a cache rerun.
+
+| Check | Result |
+|---|---|
+| One-command WSL development stack | Frontend 5173, API 8000, Airflow 8080 reachable |
+| Cross-service orchestration | UI triggered `quant_factor_mining`; all 8 tasks succeeded |
+| Database contract | 20 tables, 179 columns, key fields and views consistent |
+| Market data | Approximately 1.65M daily rows; no duplicate keys |
+| Price checkpoint rerun | 27/27 batches hit cache |
+| WSL service startup | target and four user services enabled and healthy |
+| Tests | core 165 passed; API 50 passed; frontend 49 passed |
 
 ## Pipeline
 
-```
-yfinance (batch download, retry, blacklist, checkpoints)
-        │  quantmine/data_acquisition.py · pipelines/task_1.py
-        ▼
-cleaning & merge (ffill, dedup)          Airflow DAG: pipelines/DAG_pipeline.py
-        │  pipelines/task_2.py
-        ▼
-factor computation (registry-driven, vectorized pandas)
-        │  quantmine/factor_mining.py · pipelines/task_3.py
-        ▼
-IC testing: cross-sectional & time-series IC, NW t, BH/Bonferroni,
-train/test split, orthogonalization        quantmine/ic_calculator.py
-        ▼
-quintile backtest: PIT universe, monotonicity, turnover costs,
-displacement/shuffle sanity tests          quantmine/back_testing.py
-        ▼
-Carhart 4-factor attribution (daily, HAC)  quantmine/factor_attribution.py
+The Airflow DAG executes:
+
+```text
+universe refresh
+  -> price/share download
+  -> clean and merge
+  -> factor calculation
+  -> IC calculation
+      -> save market bars
+      -> quantile backtest
+          -> Carhart attribution
 ```
 
-Repository layout:
+Manual and scheduled runs share the same task commands. Airflow 3 manual runs
+derive the pipeline date from `dag_run.run_after`, which is available even when
+the legacy `ds` template is absent.
 
+Example individual tasks:
+
+```bash
+.venv/bin/python pipelines/task_0_universe.py --date 2026-08-11 --batch manual
+.venv/bin/python pipelines/task_1.py --date 2026-08-11 --batch manual
+.venv/bin/python pipelines/task_2.py --date 2026-08-11 --batch manual
 ```
-quantmine/          research library (importable package)
-pipelines/            Airflow DAG + daily CLI tasks
-test/                 pytest suite (unit + golden-value)
-config.example.yaml   all pipeline parameters, documented defaults
+
+Research configuration starts from `config.example.yaml`; see
+[Research configuration](#research-configuration) for the sections it documents
+and how to create a local override.
+
+## Data and Rate-Limit Behavior
+
+- Market data, Parquet files, database files, logs, and checkpoints are not
+  distributed with the repository.
+- Price batches are checkpointed under `tmp/checkpoint`; an identical rerun
+  loads successful batches from disk.
+- Historical share-count requests have their own retry budget because the Yahoo
+  share endpoint is substantially more rate-limit-prone than price downloads.
+- Repeated share failures trip a fast circuit breaker instead of blocking the
+  entire DAG for tens of minutes.
+- The long-term provider design is separate price and point-in-time share
+  sources, for example Tiingo/Polygon prices with SEC EDGAR bulk fundamentals.
+
+## Database Model and Security Boundary
+
+`quantmine/storage/schema.sql` is the single source of truth for the business
+schema. Fresh native and Docker deployments both apply this file.
+
+Three database roles are used:
+
+- `quantmine_web`: reads research data and writes only application-state tables
+  such as auth, AI conversations, attachments, and report history.
+- `quantmine_pipeline`: reads and writes research, universe, factor, and market
+  data.
+- `airflow`: owns the Airflow metadata database.
+
+The point-in-time `index_membership` table stores membership intervals. A fresh
+empty database may seed the complete universe; after a baseline exists, the
+daily-change guard prevents an implausibly large scrape diff from being applied.
+
+## Configuration
+
+### Environment files
+
+Native setup writes secrets and connection strings to the ignored root `.env`.
+Docker uses the separately generated `.env.docker`. The committed
+`.env.docker.example` is a variable reference only; `REPLACE_ME` values are
+rejected at container startup.
+
+| Variable | Purpose |
+|---|---|
+| `QUANTMINE_DATABASE_URL` | Web API connection to the business database |
+| `QUANTMINE_PIPELINE_DATABASE_URL` | Pipeline writer connection |
+| `QUANT_AIRFLOW_PG_DSN` | Web API read connection to Airflow metadata |
+| `QUANT_AUTH_SECRET` | Application session signing secret |
+| `QUANTMINE_ADMIN_USER` | Initial application administrator |
+| `QUANTMINE_ADMIN_PASSWORD` | Initial administrator password |
+| `QUANT_AIRFLOW_BIN` | Airflow CLI used by workflow mutation endpoints |
+| `QUANT_AIRFLOW_PYTHON` | Python used for task-state operations |
+| `QUANT_PROJECT_ROOT` | Project path seen by Airflow tasks |
+| `QUANT_PYTHON_BIN` | Python interpreter used by DAG task commands |
+| `OPENAI_API_KEY` | Default API key for OpenAI-compatible AI providers |
+| `DEEPSEEK_API_KEY` | Recommended dedicated API key variable for DeepSeek |
+| `SILICONFLOW_API_KEY` | Default API key for the embedding provider |
+| `http_proxy` / `https_proxy` | Optional upstream proxy for WSL market data |
+
+### AI API configuration
+
+AI Config stores provider metadata in the database, but it deliberately does
+not store or return the secret API key. Put the real key in the ignored root
+`.env` file first:
+
+```dotenv
+DEEPSEEK_API_KEY=replace_with_your_deepseek_api_key
 ```
 
-## Reproducing the case study
+Then open **AI Config**, add or edit the provider, and use these DeepSeek
+values:
 
-**Market data is not included** (Yahoo Finance terms of service do not permit
-redistribution). To reproduce:
+| Field | Value |
+|---|---|
+| Provider name | `DeepSeek` (the display name is arbitrary) |
+| API Key env var | `DEEPSEEK_API_KEY` |
+| Base URL | `https://api.deepseek.com` |
+| Models | `deepseek-v4-flash, deepseek-v4-pro` |
+| Default Model | Select one of the saved models |
 
-1. Historical S&P 500 membership: provide a CSV with `ticker`, `start_date`,
-   `end_date` columns and point `SP500_MEMBERSHIP_CSV` at it.
-2. Prices/volumes: `python pipelines/task_1.py --date <ds> --batch manual`
-   downloads in batches with checkpointing, then `pipelines/task_2.py` cleans
-   and merges.
-3. Fama-French factors: download the daily FF3 and momentum CSVs from the
-   [Ken French Data Library](https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html)
-   into `tmp/ff3/`.
-4. Run the research chain: `python pipelines/task_3.py ...` for factors, then
-   the IC → backtest → attribution steps as in the quick start (or
-   `python -m quantmine.ic_calculator` for the packaged train/test workflow).
+The current DeepSeek OpenAI-compatible endpoint and model identifiers are
+documented in the [official DeepSeek API documentation](https://api-docs.deepseek.com/quick_start/pricing).
+After saving the page, restart `quantmine-api` so the running process reloads
+`.env`, then refresh the browser.
 
-For the Airflow DAG, set `QUANT_PROJECT_ROOT` and `QUANT_PYTHON_BIN` (see
-`DAG_pipeline.py` docstring) and copy `airflow.cfg.example` keys into your own
-config — never commit a real `airflow.cfg`.
+Common pitfalls:
 
-## Known limitations
+- **API Key env var is a variable name, not the key itself.** Enter
+  `DEEPSEEK_API_KEY` in the page and put `DEEPSEEK_API_KEY=sk-...` in `.env`.
+- The `.env` file must be in the repository root, beside this README. A
+  PowerShell-only value such as `$env:DEEPSEEK_API_KEY=...` is not inherited by
+  the persistent WSL systemd service.
+- Do not commit `.env`, paste the key into AI Config, or expect the frontend to
+  display an existing key. The browser only receives a configured/not-configured
+  state.
+- Use the provider's API base URL, not a full request URL. Do not append
+  `/chat/completions`. For the current DeepSeek API, use
+  `https://api.deepseek.com` rather than adding `/v1`.
+- Model identifiers must be exact. For example, `deepseek-v4flash` is invalid;
+  use `deepseek-v4-flash`. The top-right model selector only lists models saved
+  in provider configuration.
+- Select a **Default Model** and click **Save**. A provider card can appear
+  configured while the application still has no usable default model.
+- `Configured` only proves that the named environment variable is present. It
+  does not validate the key, account balance, model access, or rate limit.
+  Typical upstream responses are `401` for an invalid key, `402` for no balance,
+  `400`/`422` for a wrong model or request, and `429` for rate limiting.
+- If AI report generation fails, check the API service status and log before
+  retrying. The report endpoint returns an error instead of silently generating
+  a data-only report when AI analysis was requested but unavailable.
 
-- ~195 of 764 historical members could not be recovered from yfinance (mostly
-  true delistings/acquisitions), so a residual survivorship bias remains and
-  likely flatters the results slightly.
-- The out-of-sample window (2024–2026) covers a single market regime.
-- The long-short portfolio carries a significant 0.24 market beta; a
-  beta-hedged variant is on the roadmap.
-- Transaction cost model is a flat per-turnover rate; no market-impact or
-  borrow-cost modeling.
+### Research configuration
 
-## Roadmap
+`config.example.yaml` documents every optional research section:
 
-- [ ] Migrate storage from parquet files to PostgreSQL/DuckDB
-- [ ] REST API + MCP server exposing the research chain as agent-callable tools
-- [ ] RAG-based automated research reports (ChromaDB + LLM)
-- [ ] Extend the Airflow DAG to cover IC testing → backtest → reporting
-- [ ] Rebuild the analytics dashboard (frontend rewrite in progress)
-- [ ] Scale the data layer (full US market) with PySpark
-- [ ] Beta-hedged long-short variant; GARCH volatility targeting
+- `data_acquisition`: checkpoints, retry budget, and wait behavior;
+- `momentum` and `forward_return`: factor and holding horizons;
+- `newey_west`, `orthogonalize`, and `time_series_stationary_test`:
+  statistical controls;
+- `ic_research`: variants, processors, selectors, and tests;
+- `backtest`: portfolio jobs, costs, and sensitivity settings;
+- `carhart_attribution`: HAC lag configuration.
 
-## License
+Copy it to the ignored local file before changing defaults:
 
-MIT
+```bash
+cp config.example.yaml config.yaml
+```
+
+## Python Library
+
+```bash
+pip install quantmine
+pip install "quantmine[data,db]"
+```
+
+```python
+import quantmine as qm
+
+data = qm.MarketData(close=close_df, volume=volume_df)
+pool = qm.build_param_pool(data, day=5, halflife=10, period=20)
+failed, factors = qm.calculate_all_factors(pool)
+
+forward = qm.forward_return(data.close, periods=[1, 5, 20])
+ic = qm.CS_Information_Correlation(factors, forward, output_path="cs_ic.parquet")
+report = qm.multiple_testing(qm.newey_west_summary(ic))
+```
+
+Extension points include `DataSource`, `ConstituentsSource`, factor registration,
+parameter injection, factor-on-factor dependencies, selectors, and configurable
+IC/backtest variants.
+
+## WSL Services and Logon Startup
+
+The persistent WSL services use virtual environments under
+`~/.local/share/quantmine/venvs`, on Ubuntu's native filesystem. Do not put a
+Linux service environment in the repository on `/mnt/c` or `/mnt/e`: Windows
+tools and WSL mount recovery can otherwise damage its executables and symlinks.
+
+From Windows PowerShell, the normal install/update command is:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\update-service.ps1
+```
+
+It builds the frontend, deploys it behind FastAPI, refreshes the isolated Ubuntu
+environments, restarts the services, and verifies <http://localhost:8000>.
+For an offline refresh using the existing uv cache, add `-Offline`.
+The service environments install locked dependencies only; application code is
+loaded directly from the checkout, so updating source never requires rebuilding
+the project as a wheel.
+
+### Restart commands
+
+Run these commands from Windows PowerShell. Always specify `Ubuntu`; otherwise
+`wsl.exe` may open `docker-desktop`, where the expected shell and QuantMine
+services do not exist.
+
+Restart only the API and production frontend server after changing `.env`, AI
+configuration, or backend Python code:
+
+```powershell
+wsl.exe -d Ubuntu -- sh -lc "systemctl --user restart quantmine-api"
+wsl.exe -d Ubuntu -- sh -lc "systemctl --user --no-pager status quantmine-api"
+```
+
+Restart the complete QuantMine stack, including Airflow:
+
+```powershell
+wsl.exe -d Ubuntu -- sh -lc "systemctl --user restart quantmine.target"
+wsl.exe -d Ubuntu -- sh -lc "systemctl --user --no-pager status quantmine.target quantmine-api quantmine-airflow-apiserver quantmine-airflow-scheduler quantmine-airflow-dag-processor"
+```
+
+After frontend source or dependency changes, a service restart alone is not
+enough because port 8000 serves the built frontend. Build, deploy, restart, and
+verify everything with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\update-service.ps1
+```
+
+Useful health and log checks:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/api/v1/health
+Get-Content .\airflow\service-quantmine-api.log -Tail 100
+```
+
+If WSL reports that the distribution disk was mounted read-only, do not reinstall
+the project or its environments. Stop WSL first with `wsl.exe --shutdown`, repair
+the Ubuntu VHD mount, and only then restart the services. A read-only filesystem
+cannot be repaired by repeatedly restarting `quantmine-api`.
+
+The equivalent manual WSL commands are:
+
+```bash
+bash deploy/sync-runtime-envs.sh
+bash deploy/install-services.sh --dry-run
+bash deploy/install-services.sh
+```
+
+Installed units:
+
+- `quantmine-api`
+- `quantmine-airflow-apiserver`
+- `quantmine-airflow-scheduler`
+- `quantmine-airflow-dag-processor`
+- `quantmine.target`
+
+Windows must still wake WSL after user logon. From PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\register-startup-task.ps1 -StartupFolder
+```
+
+The startup task explicitly launches the `Ubuntu` distribution; it does not use
+the current WSL default (which may be `docker-desktop`). After logon, open
+<http://localhost:8000>. Port 5173 is only present while a developer manually
+runs the Vite development server. Its wake-up log is stored at
+`%LOCALAPPDATA%\QuantMine\wsl-boot.log`, so startup does not depend on the
+repository drive being writable.
+
+An elevated PowerShell can run the script without `-StartupFolder` to register a
+scheduled task. Both modes run after a user logs in; neither is an unattended
+Windows system service. WSL user services remain alive through systemd linger.
+
+```bash
+bash deploy/install-services.sh --status
+systemctl --user --failed
+curl http://localhost:8000/api/v1/health
+curl http://localhost:8080/api/v2/monitor/health
+```
+
+The project does not install an Airflow Triggerer because all current DAG tasks
+use regular `BashOperator`s.
+
+## Development and Testing
+
+```bash
+# Core deterministic suite
+.venv/bin/python -m pytest test
+
+# Web API
+webapi/.venv/bin/python -m pytest webapi/tests
+
+# Frontend
+cd frontend
+npm test
+npm run typecheck
+npm run build
+```
+
+Frontend linting and formatting are available through ESLint and Prettier:
+
+```bash
+cd frontend
+npm run lint
+npm run format
+```
+
+The Python codebase currently relies on tests, type-aware APIs, and
+`git diff --check`; no repository-wide Black/Ruff formatter or enforced coverage
+threshold is configured yet. Introduce those tools in `pyproject.toml` and lock
+them before making formatting or coverage a CI gate.
+
+Tests marked `network` are excluded from the deterministic default suite because
+they depend on live Yahoo behavior. Run them explicitly when validating an
+upstream integration:
+
+```bash
+.venv/bin/python -m pytest -o addopts= -m network test
+```
+
+Golden-value tests skip when their licensed/local reference files are absent.
+Changes to factor calculation should run the factor and IC golden tests; changes
+to registry or dependency resolution should also run the registry and
+`calculate_all_factors` tests.
+
+## Release Hygiene
+
+Before committing or publishing:
+
+```bash
+git status --short
+git diff --check
+git check-ignore -v .env.docker .initial-credentials.json airflow/airflow.cfg data tmp
+docker compose --env-file .env.docker config --quiet
+```
+
+Never commit `.env*` files except explicit templates, generated credentials,
+real Airflow configuration, database files, market data, caches, logs, or build
+artifacts. `.dockerignore` independently prevents those files from being sent to
+the Docker daemon.
+
+## Detailed Documentation
+
+The repository intentionally has four README files:
+
+1. This file — architecture, complete setup, pipeline, operations, and testing.
+2. [`frontend/README.md`](frontend/README.md) — frontend development and structure.
+3. [`webapi/README.md`](webapi/README.md) — API development and endpoint domains.
+4. [`docker/README.md`](docker/README.md) — container-specific operations.
+
+Detailed contracts and design material remain under `docs/` without additional
+README entry points.
+
+Key references:
+
+- [OpenAPI contract](docs/api/openapi.yaml)
+- [API error map](docs/api/ERROR_MAP.md)
+- [Frontend design handoff](docs/frontend/FRONTEND_DESIGN_HANDOFF.md)
+- [Frontend implementation checklist](docs/frontend/STAGE_0_CHECKLIST.md)
+- [Operational reliability design](docs/superpowers/specs/2026-08-09-operational-reliability-design.md)
+- [Operational reliability implementation plan](docs/superpowers/plans/2026-08-09-operational-reliability.md)
+- [Docker operations](docker/README.md)
+- [Web API internals](webapi/README.md)
+
+## Contributing
+
+Issues and pull requests are welcome. Keep changes focused and include evidence
+that the affected layer still works:
+
+1. Create a feature branch from the current default branch.
+2. Update code, tests, and the relevant README/API contract together.
+3. Run the deterministic Python, Web API, and frontend checks listed above.
+4. Do not include market data, generated credentials, `.env` files, caches, or
+   build output in the commit.
+5. Open a pull request describing behavior, risk, migration impact, and test
+   results. Mark live-provider tests separately from deterministic tests.
+
+For statistical changes, explain possible look-ahead, survivorship, multiple
+testing, turnover, or data-revision effects rather than reporting only a metric
+improvement.
+
+## Known Limitations
+
+- Yahoo historical share coverage is incomplete and remains rate-limit-prone.
+- Historical delistings and acquisitions still leave residual survivorship bias.
+- The authorization model targets single-user self-hosting; add role-based
+  controls before enabling multiple untrusted users.
+- Docker uses Airflow standalone and is not a multi-node production cluster.
+- The cost model does not yet include market impact or borrow fees.
+
+## License and Acknowledgments
+
+Released under the [MIT License](LICENSE).
+
+QUANTMINE builds on the work of the open-source communities behind
+[Apache Airflow](https://airflow.apache.org/),
+[FastAPI](https://fastapi.tiangolo.com/),
+[React](https://react.dev/),
+[PostgreSQL](https://www.postgresql.org/),
+[pgvector](https://github.com/pgvector/pgvector),
+[pandas](https://pandas.pydata.org/),
+[statsmodels](https://www.statsmodels.org/), and
+[yfinance](https://github.com/ranaroussi/yfinance). Market and fundamental data
+remain subject to their original providers' terms and must not be redistributed
+through this repository.

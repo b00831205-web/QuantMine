@@ -12,15 +12,34 @@ dependencies = [
     "statsmodels>=0.14",
     "pyarrow>=24.0",
     "pyyaml>=6.0",
+    "fastapi>=0.136.3",
 ]
+
+[project.scripts]
+dev = "quantmine.dev:main"
 
 [project.optional-dependencies]
 data = ["yfinance>=1.4", "beautifulsoup4>=4.14", "pandas-datareader>=0.11", "curl-cffi>=0.15"]
 viz = ["plotly>=6.8"]
+db = ["sqlalchemy>=2.0", "psycopg2-binary>=2.9.12"]
 
 [dependency-groups]
-dev = ["pytest>=9.1", "ipykernel>=7.2", "jupyter>=1.1"]
-pipeline = ["apache-airflow>=3.2"]
+# yfinance/pandas-datareader 对库使用者是可选的（见 optional-dependencies.data），
+# 但 quantmine.data_acquisition 在模块顶层 import 它们，因此本仓库的测试与
+# pipelines 缺了就无法导入。放进 dev 组，保证 `uv sync` 不会把它们清掉。
+dev = [
+    "pytest>=9.1",
+    "ipykernel>=7.2",
+    "jupyter>=1.1",
+    "sqlalchemy>=2.0",
+    "yfinance>=1.4",
+    "pandas-datareader>=0.11",
+]
+# asyncpg 是 Airflow 3.x 连 Postgres 元数据库的硬依赖：除同步引擎外它还会建一个
+# 异步引擎，psycopg2 顶不上。缺了它 scheduler / api-server / dag-processor 三个进程
+# 全部起不来，而 systemctl status 只显示 exit-code=1，真因（ModuleNotFoundError:
+# No module named 'asyncpg'）只在进程自己的日志里。
+pipeline = ["apache-airflow>=3.2", "asyncpg>=0.30"]
 
 [build-system]
 requires = ["hatchling"]
@@ -29,5 +48,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["quantmine"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"quantmine/storage/schema.sql" = "quantmine/storage/schema.sql"
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
+addopts = "-m 'not network'"
+markers = [
+    "network: live upstream integration test; excluded from the deterministic default suite",
+]

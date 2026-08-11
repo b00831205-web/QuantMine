@@ -1,18 +1,27 @@
+"""Factor computation driver.
+
+Factors declare their inputs through their parameter names, and this module
+fills them from a shared pool by matching those names. Because one factor may
+consume another's output, a first pass computes everything whose inputs are
+already available and ``try_loop`` then retries the failures with newly
+completed factors added to the pool. Dependency chains therefore resolve in any
+declaration order, without factors having to name their dependencies.
+"""
 import inspect
-import pandas as pd
 from . import datareader as dr
+from .registry import make_registry
 
-FACTOR_REGISTRY={}
-
-def factor_register(name:str):
-    def decorate(func):
-        if name in FACTOR_REGISTRY:
-            raise ValueError(f"factor '{name}' is already registered")
-        FACTOR_REGISTRY[name] = func
-        return func
-    return decorate
+FACTOR_REGISTRY, factor_registry=make_registry()
 
 def call_single_factors(func, param_pool: dict):
+    """Call one factor, filling its parameters by name from ``param_pool``.
+
+    Parameters carrying defaults may be absent from the pool.
+
+    Raises:
+        KeyError: If a parameter has neither a pooled value nor a default. The
+            callers treat this as "inputs not ready yet" rather than fatal.
+    """
     sig = inspect.signature(func)
     kwargs = {}
     for name, param in sig.parameters.items():
@@ -25,6 +34,13 @@ def call_single_factors(func, param_pool: dict):
     return func(**kwargs)
 
 def calculate_all_factors(param_pool: dict)-> dict:
+    """Compute every registered factor, resolving inter-factor dependencies.
+
+    Returns:
+        A tuple of ``(pending, completed)``. ``completed`` maps factor name to
+        its frame, with None for factors whose dependencies never resolved;
+        ``pending`` holds those unresolved names and their errors.
+    """
     result ={}
     failures = {}
     for factor_name, func in FACTOR_REGISTRY.items():
@@ -38,6 +54,13 @@ def calculate_all_factors(param_pool: dict)-> dict:
     return pending ,completed
 
 def try_loop(failure: dict, result: dict, param_pool:dict):
+    """Retry failed factors until a full round makes no progress.
+
+    Each round adds already-completed factors to the pool, so a factor that
+    depends on another becomes computable once its input lands. A round that
+    resolves nothing means the remainder can never be satisfied, so they are
+    all marked failed at once and the loop exits.
+    """
     pending = failure.copy()
     completed = result.copy()
     while pending:
@@ -61,6 +84,14 @@ def try_loop(failure: dict, result: dict, param_pool:dict):
     return pending, completed
 
 def build_param_pool(data: dr.MarketData, tickers: list = None, **extra_param)->dict:
+    """Assemble the input pool factors draw their parameters from.
+
+    Args:
+        data: Loaded market data; only the fields actually present are added.
+        tickers: Universe to compute over. Defaults to ``data.close``'s columns.
+        **extra_param: Extra factor parameters (window lengths, half-lives),
+            which override the derived entries.
+    """
     param_pool = {}
     if tickers is None:
         param_pool['tickers'] = data.close.columns

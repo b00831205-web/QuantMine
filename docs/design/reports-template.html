@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUANTMINE · Report Download — Design Template</title>
+<!--
+  Design contract — Report Download (Evidence Ledger)
+  THESIS: the report preview is the primary evidence; settings recede into
+          one toolbar, and the export/history actions frame the preview
+          instead of floating in separate cards.
+  OWN-WORLD: matte navy-black surfaces, tonal layering, cobalt only for
+          selection, focus, and primary actions; the preview itself is a
+          light paper sheet so the report stays the center of attention.
+  STORY: the researcher picks a run/test/language, watches the report
+          render, downloads or prints it, then scans the generation history.
+  FIRST VIEWPORT: page title, settings toolbar, one bordered preview panel
+          (head with AI toggle and export actions + paper sheet), then the
+          history table below the fold.
+  FORM: Evidence Ledger, same world as Market / Rebalance / Research.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with
+          the finish review, the verdict, and DESIGN.md.
+  Mock data only — for design review, not live values.
+-->
+<style>
+  :root {
+    --bg-app: #0e1116;
+    --surface: #161a22;
+    --surface-2: #1d2230;
+    --elevated: #232a3a;
+    --border-subtle: #2a3142;
+    --border-strong: #3a4258;
+    --text-primary: #e6e8ee;
+    --text-secondary: #9aa3b8;
+    --text-muted: #6b7388;
+    --accent: #4f8cff;
+    --accent-hover: #6ea0ff;
+    --positive: #4ec98a;
+    --negative: #ef6464;
+    --warning: #f0b35e;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .content {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* ---- Page header ---- */
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  .page-header .meta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    padding-top: 6px;
+    white-space: nowrap;
+  }
+
+  /* ---- Settings toolbar ---- */
+  .toolbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px;
+    margin-bottom: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+  }
+  .filter {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .filter label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .filter select {
+    height: 28px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    padding: 0 8px;
+    outline: none;
+  }
+  .filter select:focus {
+    border-color: var(--accent);
+  }
+  .filter.run {
+    min-width: 240px;
+  }
+  .filter.test {
+    min-width: 180px;
+  }
+  .filter.lang {
+    min-width: 120px;
+  }
+
+  /* ---- Panel ---- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 24px;
+    margin-bottom: 16px;
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 4px 0 12px;
+  }
+  .panel-head h2 {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  /* ---- AI toggle chip ---- */
+  .ai-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .ai-chip.on {
+    color: var(--text-primary);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .ai-chip .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--border-strong);
+  }
+  .ai-chip.on .dot {
+    background: var(--accent);
+  }
+
+  /* ---- Icon buttons ---- */
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .icon-btn:hover {
+    color: var(--text-primary);
+    background: var(--surface-2);
+    border-color: var(--border-strong);
+  }
+  .icon-btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ---- Paper preview ---- */
+  .preview {
+    position: relative;
+    height: 62vh;
+    min-height: 420px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: #f4f5f7;
+  }
+  .paper {
+    height: 100%;
+    overflow: auto;
+    background: #fff;
+    color: #1d2230;
+    padding: 36px 44px;
+    font-size: 12px;
+  }
+  .paper .brand {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: #4f8cff;
+    text-transform: uppercase;
+  }
+  .paper .p-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 10px 0 2px;
+  }
+  .paper .p-meta {
+    color: #6b7388;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    margin-bottom: 18px;
+  }
+  .paper .p-section {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 16px 0 8px;
+    border-bottom: 1px solid #e3e5ea;
+    padding-bottom: 4px;
+  }
+  .paper table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+  }
+  .paper th, .paper td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #eceef2;
+    text-align: left;
+    color: #3a4258;
+  }
+  .paper th {
+    color: #6b7388;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+  .paper .chart-box {
+    margin: 12px 0;
+    border: 1px solid #e3e5ea;
+    border-radius: 6px;
+    padding: 14px;
+    background: #fafbfc;
+  }
+  .paper .chart-box .axis {
+    stroke: #d6dae2;
+    stroke-width: 1;
+  }
+  .paper .p-foot {
+    margin-top: 22px;
+    color: #9aa3b8;
+    font-size: 10px;
+    border-top: 1px solid #eceef2;
+    padding-top: 10px;
+  }
+  .preview-note {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: 999px;
+    padding: 2px 10px;
+  }
+
+  /* ---- History table ---- */
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table.history {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  table.history th, table.history td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  table.history thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-2);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+  table.history tbody tr:hover {
+    background: var(--surface-2);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+  }
+  .id-cell {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .center {
+    text-align: center;
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .status .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+  .status.ready {
+    color: var(--text-primary);
+  }
+  .status.ready .dot {
+    background: var(--positive);
+  }
+  .status.failed {
+    color: var(--text-muted);
+  }
+  .status.failed .dot {
+    background: var(--negative);
+  }
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .pager {
+    display: flex;
+    gap: 8px;
+  }
+  .pager button {
+    padding: 4px 12px;
+    background: var(--surface-2);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pager button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .footnote {
+    margin-top: 16px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 640px) {
+    .content {
+      padding: 16px;
+    }
+    .panel {
+      padding: 12px 14px;
+    }
+    .page-header {
+      flex-direction: column;
+    }
+    .filter.run,
+    .filter.test,
+    .filter.lang {
+      width: 100%;
+      min-width: 0;
+    }
+    .paper {
+      padding: 20px 18px;
+    }
+    .footer {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <header class="page-header">
+      <div>
+        <h1>报告下载</h1>
+        <p>生成、预览并下载研究报告</p>
+      </div>
+      <span class="meta">Run 42 · ZH · AI 开</span>
+    </header>
+
+    <!-- 报告设置工具条 -->
+    <div class="toolbar" role="group" aria-label="报告设置">
+      <div class="filter run">
+        <label for="r-run">Research Run</label>
+        <select id="r-run">
+          <option selected>Run 42 · 2026-07-30 09:00</option>
+          <option>Run 41 · 2026-07-29 08:50</option>
+          <option>Run 40 · 2026-07-28 08:45</option>
+        </select>
+      </div>
+      <div class="filter test">
+        <label for="r-test">Test ID</label>
+        <select id="r-test">
+          <option>全部</option>
+          <option selected>newey_raw</option>
+          <option>newey_bh</option>
+        </select>
+      </div>
+      <div class="filter lang">
+        <label for="r-lang">Language</label>
+        <select id="r-lang">
+          <option selected>中文</option>
+          <option>English</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- 报告预览（主证据） -->
+    <main class="panel">
+      <div class="panel-head">
+        <h2>报告预览</h2>
+        <div class="head-actions">
+          <button class="ai-chip on" type="button" aria-pressed="true">
+            <span class="dot"></span>
+            AI 分析
+          </button>
+          <button class="icon-btn" type="button" title="强制重新生成报告（绕过缓存）">
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" stroke-width="1.3"/><path d="M3 3v5h5" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+          <button class="icon-btn" type="button" title="下载 PDF">
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1.5v6m0 0 2.5-2.5M6 7.5 3.5 5M2 10.5h8" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+          <button class="icon-btn" type="button" title="打印">
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4V1.5h6V4M3 8.5H1.5v-4h9v4H9M3 10.5h6V7H3v3.5Z" stroke="currentColor" stroke-width="1.1"/></svg>
+          </button>
+          <button class="icon-btn" type="button" title="下载 Excel">
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 1.5h8v9H2zM4.5 4 7.5 8M7.5 4l-3 4" stroke="currentColor" stroke-width="1.1"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="preview">
+        <span class="preview-note">示意 · 真实页面为 PDF 预览</span>
+        <div class="paper">
+          <div class="brand">QUANTMINE · 研究报告</div>
+          <div class="p-title">因子研究简报 · Run 42</div>
+          <div class="p-meta">2026-08-06 · momentum_20d · Newey-West t 统计量 · BH 校正</div>
+
+          <div class="p-section">因子 IC 与显著性</div>
+          <table>
+            <thead>
+              <tr><th>因子名</th><th>Period</th><th>IC Mean</th><th>t 值</th><th>p 值</th><th>BH 显著</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>momentum_20d</td><td>20</td><td>0.0412</td><td>3.214</td><td>0.0014</td><td>显著</td></tr>
+              <tr><td>value_ebitda</td><td>20</td><td>0.0289</td><td>2.512</td><td>0.0121</td><td>显著</td></tr>
+              <tr><td>quality_roe</td><td>20</td><td>0.0214</td><td>1.901</td><td>0.0574</td><td>未显著</td></tr>
+            </tbody>
+          </table>
+
+          <div class="p-section">回测净值曲线</div>
+          <div class="chart-box">
+            <svg viewBox="0 0 600 150" width="100%" preserveAspectRatio="xMidYMid meet">
+              <g class="axis">
+                <line x1="30" y1="20" x2="570" y2="20"/>
+                <line x1="30" y1="55" x2="570" y2="55"/>
+                <line x1="30" y1="90" x2="570" y2="90"/>
+                <line x1="30" y1="125" x2="570" y2="125"/>
+              </g>
+              <path d="M30 118 L90 112 L150 116 L210 104 L270 110 L330 96 L390 100 L450 84 L510 74 L570 60" fill="none" stroke="#4f8cff" stroke-width="2"/>
+              <path d="M30 122 L90 120 L150 118 L210 116 L270 112 L330 110 L390 106 L450 102 L510 98 L570 92" fill="none" stroke="#9aa3b8" stroke-width="1.5"/>
+            </svg>
+          </div>
+
+          <div class="p-foot">For research and educational purposes only. Not investment advice. Past performance does not guarantee future results.</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 报告历史 -->
+    <section class="panel" aria-label="报告历史">
+      <div class="panel-head">
+        <h2>报告历史</h2>
+        <div class="head-actions">
+          <button class="icon-btn" type="button" title="刷新">
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke="currentColor" stroke-width="1.3"/><path d="M3 3v5h5" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="history">
+          <thead>
+            <tr>
+              <th>报告 ID</th>
+              <th class="center">Run</th>
+              <th>Test ID</th>
+              <th class="center">语言</th>
+              <th class="center">AI</th>
+              <th>生成时间</th>
+              <th>状态</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="id-cell">RPT-20260806-001</td>
+              <td class="mono center">42</td>
+              <td class="mono">newey_raw</td>
+              <td class="mono center">ZH</td>
+              <td class="mono center">开</td>
+              <td class="mono">2026-08-06 09:12:04</td>
+              <td><span class="status ready"><span class="dot"></span>完成</span></td>
+              <td class="center">
+                <button class="icon-btn" type="button" title="下载">
+                  <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1.5v6m0 0 2.5-2.5M6 7.5 3.5 5M2 10.5h8" stroke="currentColor" stroke-width="1.3"/></svg>
+                </button>
+              </td>
+            </tr>
+            <tr>
+              <td class="id-cell">RPT-20260806-002</td>
+              <td class="mono center">42</td>
+              <td class="mono">newey_raw</td>
+              <td class="mono center">EN</td>
+              <td class="mono center">关</td>
+              <td class="mono">2026-08-06 09:15:38</td>
+              <td><span class="status ready"><span class="dot"></span>完成</span></td>
+              <td class="center">
+                <button class="icon-btn" type="button" title="下载">
+                  <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1.5v6m0 0 2.5-2.5M6 7.5 3.5 5M2 10.5h8" stroke="currentColor" stroke-width="1.3"/></svg>
+                </button>
+              </td>
+            </tr>
+            <tr>
+              <td class="id-cell">RPT-20260805-003</td>
+              <td class="mono center">41</td>
+              <td class="mono">newey_bh</td>
+              <td class="mono center">ZH</td>
+              <td class="mono center">开</td>
+              <td class="mono">2026-08-05 08:58:11</td>
+              <td><span class="status failed"><span class="dot"></span>失败</span></td>
+              <td class="center">
+                <button class="icon-btn" type="button" title="下载">
+                  <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 1.5v6m0 0 2.5-2.5M6 7.5 3.5 5M2 10.5h8" stroke="currentColor" stroke-width="1.3"/></svg>
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="footer">
+        <span>共 12 条 · 第 1 / 2 页</span>
+        <div class="pager">
+          <button type="button" disabled>上一页</button>
+          <button type="button">下一页</button>
+        </div>
+      </div>
+    </section>
+
+    <p class="footnote">For research and educational purposes only. Not investment advice. Past performance does not guarantee future results.</p>
+  </div>
+</body>
+</html>

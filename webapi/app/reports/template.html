@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 12mm 12mm 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Noto Sans", "Noto Sans CJK SC", "Microsoft YaHei","DejaVu Sans", sans-serif;
+         color: #111; font-size: 11px; margin: 0; line-height: 1.3; }
+  /* 封面单独一页，其余章节自然流动，避免“有效因子少→每页很空” */
+  .section { page-break-after: auto; }
+  body > .section:first-child { page-break-after: always; }
+  .sn { font-size: 10px; color: #666; letter-spacing: .03em; }
+  h1 { font-size: 20px; font-weight: 800; margin: 4px 0 2px; }
+  h2 { font-size: 14px; font-weight: 700; margin: 0 0 6px; padding-bottom: 4px;
+       border-bottom: 1.5px solid #000; }
+  .cap { font-size: 10.5px; color: #666; margin: 8px 0 2px; font-weight: 600;
+         page-break-after: avoid; }
+  table { width: 100%; border-collapse: collapse; font-size: 9px;
+          font-variant-numeric: tabular-nums; }
+  th, td { padding: 2px 3px; text-align: right; border-bottom: 1px solid #ccc; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { border-bottom: 1.4px solid #000; font-size: 10px; color: #666; font-weight: 600; }
+  .grp td { background: #f4f4f4; font-weight: 700; font-size: 10px; color: #666;
+            text-transform: uppercase; letter-spacing: .04em; }
+  .bold td, tr.bold { font-weight: 700; }
+  .meta { width: auto; }
+  .meta td { border: none; padding: 3px 14px 3px 0; }
+  .meta td:first-child { color: #666; }
+  /* 图不铺满整页：约半页宽，避免"图大字小"；matplotlib 内部字号已相应放大 */
+  figure { margin: 4px 0; text-align: center; page-break-inside: avoid; }
+  figure img { display: block; margin: 0 auto; width: 82%; height: auto; }
+  figure.wide img { width: 94%; }
+  .ai { border: 1px dashed #8a6d1f; background: #fbf8ee; border-radius: 4px;
+        padding: 8px 10px; margin-top: 12px; }
+  .ai .h { font-size: 9px; font-weight: 700; color: #8a6d1f; text-transform: uppercase;
+           letter-spacing: .03em; display: flex; justify-content: space-between; }
+  .ai .b { font-size: 11px; color: #333; line-height: 1.5; margin-top: 4px; }
+  .ai .sw { font-size: 9px; color: #8a6d1f; border: 1px solid #8a6d1f; border-radius: 8px; padding: 0 6px; }
+  .fn { font-size: 10px; color: #666; line-height: 1.4; margin-top: 6px; }
+  .cover-note { font-size: 10.5px; color: #666; margin-top: 14px; }
+  ul.apx { font-size: 10px; line-height: 1.7; padding-left: 16px; }
+  ul.apx small { color: #666; }
+  .missing { font-size: 10px; color: #999; font-style: italic; padding: 4px 0; }
+  /* IC 表：固定布局 + 显式列宽，避免身份列过宽、指标列被挤压 */
+  table.ic { table-layout: fixed; }
+  table.ic col.c-ident { width: 11%; }
+  table.ic col.c-period { width: 5%; }
+  table.ic col.c-method { width: 8%; }
+  /* 屏幕预览时模拟 A4 竖版纸张；PDF 由 @page 控制，WeasyPrint 忽略此段 */
+  @media screen {
+    html { background: #d0d0d0; }
+    body { width: 210mm; min-height: 297mm; margin: 16px auto;
+           padding: 16mm 14mm 18mm;
+           box-shadow: 0 0 12px rgba(0, 0, 0, 0.35); }
+  }
+</style>
+</head>
+<body>
+
+{# ---------- COVER ---------- #}
+<div class="section">
+  <div class="sn">{{ L.brand }}</div>
+  <h1>{{ L.report_title }}</h1>
+  <table class="meta">
+    <tr><td>{{ L.generated_at }}</td><td>{{ meta.generated_at }}</td></tr>
+    <tr><td>{{ L.test_id }}</td><td>{{ meta.test_id }}</td></tr>
+    <tr><td>{{ L.run_id }}</td><td>{{ meta.run_id }} · git {{ meta.git_commit }}</td></tr>
+    <tr><td>{{ L.factors_variants }}</td><td>{{ meta.factors }} / {{ meta.variants }}</td></tr>
+    <tr><td>{{ L.backtest_window }}</td><td>{{ meta.start_date }} → {{ meta.end_date }}</td></tr>
+    <tr><td>{{ L.sample_split }}</td><td>train ≤ {{ meta.train_end }} · test ≥ {{ meta.test_start }}</td></tr>
+    <tr><td>{{ L.holding_periods }}</td><td>{{ meta.periods }}</td></tr>
+    <tr><td>{{ L.ai_analysis }}</td><td>{{ L.ai_on if include_ai else L.ai_off }}</td></tr>
+  </table>
+  <div class="cover-note">{{ L.cover_note }}</div>
+</div>
+
+{# ---------- IC ---------- #}
+<div class="section">
+  <div class="sn">01</div><h2>{{ L.sec_ic }}</h2>
+  <div class="cap">{{ L.tbl_ic_caption }}</div>
+  {% if tables.ic %}<figure><img src="{{ tables.ic }}" alt=""></figure>{% endif %}
+  {% if charts.ic_series %}<div class="cap">{{ L.fig_ic_series }}</div><figure><img src="{{ charts.ic_series }}"></figure>{% endif %}
+  {% if charts.ic_hist %}<div class="cap">{{ L.fig_ic_hist }}</div><figure><img src="{{ charts.ic_hist }}"></figure>{% endif %}
+  {% if charts.ic_heatmap %}<div class="cap">{{ L.fig_ic_heatmap }}</div><figure class="wide"><img src="{{ charts.ic_heatmap }}"></figure>{% endif %}
+  {% if include_ai and ai.ic %}
+  <div class="ai"><div class="h"><span>◈ {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.ic }}</div></div>
+  {% endif %}
+</div>
+
+{# ---------- BACKTEST ---------- #}
+<div class="section">
+  <div class="sn">02</div><h2>{{ L.sec_backtest }}</h2>
+  <div class="cap">{{ L.tbl_bt_caption }}</div>
+  {% if tables.backtest %}<figure><img src="{{ tables.backtest }}" alt=""></figure>{% endif %}
+  {% if backtest_groups %}
+  <div class="cap">{{ L.tbl_mono_caption }}</div>
+  {% if tables.monotonicity %}<figure><img src="{{ tables.monotonicity }}" alt=""></figure>{% endif %}
+  {% endif %}
+  {% if charts.quantile_curve %}<div class="cap">{{ L.fig_quantile_curve }}</div><figure><img src="{{ charts.quantile_curve }}"></figure>{% endif %}
+  {% if charts.drawdown %}<div class="cap">{{ L.fig_drawdown }}</div><figure><img src="{{ charts.drawdown }}"></figure>{% endif %}
+  {% if include_ai and ai.backtest %}
+  <div class="ai"><div class="h"><span>◈ {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.backtest }}</div></div>
+  {% endif %}
+</div>
+
+{# ---------- ATTRIBUTION ---------- #}
+<div class="section">
+  <div class="sn">03</div><h2>{{ L.sec_attribution }}</h2>
+  {% if attribution %}
+    {% for a in attribution %}
+    <div class="cap">{{ L.tbl_attr_caption }} — {{ a.variant }}</div>
+    <table>
+      <thead><tr><th>{{ L.col_term }}</th><th>{{ L.col_coef }}</th><th>{{ L.col_stderr }}</th><th>{{ L.col_hac_t }}</th><th>{{ L.col_p }}</th><th>{{ L.col_ci_lo }}</th><th>{{ L.col_ci_hi }}</th></tr></thead>
+      <tbody>
+        {% for t in a.terms %}
+        <tr {% if t.term == 'Alpha' %}class="bold"{% endif %}>
+          <td>{{ L.attr_alpha if t.term == 'Alpha' else t.term }}</td>
+          <td>{{ t.coef }}</td><td>{{ t.stderr }}</td><td>{{ t.t }}</td><td>{{ t.p }}</td><td>{{ t.ci_lo }}</td><td>{{ t.ci_hi }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="fn">R²={{ a.r2 }} · adj R²={{ a.adj_r2 }} · n={{ a.n }} · alpha ≈ {{ a.alpha_annual }}</div>
+    {% endfor %}
+    {% if charts.loadings %}<div class="cap">{{ L.fig_loadings }}</div><figure><img src="{{ charts.loadings }}"></figure>{% endif %}
+  {% else %}
+    <div class="missing">{{ L.attr_missing }}</div>
+  {% endif %}
+  {% if include_ai and ai.attribution %}
+  <div class="ai"><div class="h"><span>◈ {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.attribution }}</div></div>
+  {% endif %}
+</div>
+
+{# ---------- OVERALL + DISCLAIMER ---------- #}
+<div class="section">
+  <div class="sn">04</div><h2>{{ L.sec_overall }}</h2>
+  <div class="cap">{{ L.tbl_summary_caption }}</div>
+  {% if tables.summary %}<figure><img src="{{ tables.summary }}" alt=""></figure>{% endif %}
+  {% if include_ai and ai.overall %}
+  <div class="ai"><div class="h"><span>◈ {{ L.ai_summary_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.overall }}</div></div>
+  {% endif %}
+  <div class="cap">{{ L.disclaimer_title }}</div>
+  <div class="fn">{% for line in disclaimer_lines %}· {{ line }}<br>{% endfor %}</div>
+</div>
+
+{# ---------- APPENDIX ---------- #}
+<div class="section">
+  <div class="sn">{{ L.sec_appendix.split('·')[0] }}</div><h2>{{ L.sec_appendix }}</h2>
+  <ul class="apx">
+    {% for item in appendix_items %}<li>{{ item.code }} · {{ item.title }} <small>— {{ item.note }}</small></li>{% endfor %}
+  </ul>
+  {% if tables.yearly %}
+  <div class="cap">A1 · 分年度 IC 表 / Yearly IC</div>
+  {% for table in tables.yearly %}
+  <figure><img src="{{ table }}" alt=""></figure>
+  {% if include_ai and ai.a1 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a1 }}</div></div>
+  {% endif %}
+  {% endfor %}
+  {% endif %}
+  {% if tables.acf %}
+  <div class="cap">A2 · IC 自相关 ACF / IC autocorrelation</div>
+  {% for table in tables.acf %}
+  <figure><img src="{{ table }}" alt=""></figure>
+  {% if include_ai and ai.a2 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a2 }}</div></div>
+  {% endif %}
+  {% endfor %}
+  {% endif %}
+  {% if charts.monthly_heatmap %}
+  <div class="cap">A3 · 月度 IC 热力图 / Monthly IC heatmap</div>
+  <figure class="wide"><img src="{{ charts.monthly_heatmap }}"></figure>
+  {% endif %}
+  {% if tables.sanity %}
+  <div class="cap">A7 · 稳健性（位移/打乱） / Robustness checks</div>
+  <figure><img src="{{ tables.sanity }}" alt=""></figure>
+  {% if include_ai and ai.a7 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a7 }}</div></div>
+  {% endif %}
+  {% endif %}
+  {% if charts.ic_decay %}
+  <div class="cap">A4 · IC 衰减 / IC decay</div>
+  <figure><img src="{{ charts.ic_decay }}" alt=""></figure>
+  {% endif %}
+  {% if include_ai and ai.a4 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a4 }}</div></div>
+  {% endif %}
+  {% if charts.rolling_sharpe %}
+  <div class="cap">A5 · 滚动 Sharpe / Rolling Sharpe</div>
+  <figure><img src="{{ charts.rolling_sharpe }}" alt=""></figure>
+  {% endif %}
+  {% if include_ai and ai.a5 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a5 }}</div></div>
+  {% endif %}
+  {% if tables.alpha_beta %}
+  <div class="cap">A5 · 回归 Alpha / Beta</div>
+  <figure><img src="{{ tables.alpha_beta }}" alt=""></figure>
+  {% endif %}
+  {% if tables.turnover %}
+  <div class="cap">A6 · 换手率 / Turnover</div>
+  <figure><img src="{{ tables.turnover }}" alt=""></figure>
+  {% endif %}
+  {% if include_ai and ai.a6 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a6 }}</div></div>
+  {% endif %}
+  {% if tables.factor_autocorr %}
+  <div class="cap">A6 · 因子自相关 / Factor autocorrelation</div>
+  <figure><img src="{{ tables.factor_autocorr }}" alt=""></figure>
+  {% endif %}
+  {% if tables.gross %}
+  <div class="cap">A8 · 毛收益绩效 / Gross-return performance</div>
+  <figure><img src="{{ tables.gross }}" alt=""></figure>
+  {% endif %}
+  {% if include_ai and ai.a8 %}
+  <div class="ai"><div class="h"><span>● {{ L.ai_slot }}</span><span class="sw">{{ L.ai_toggle }}</span></div><div class="b">{{ ai.a8 }}</div></div>
+  {% endif %}
+</div>
+
+</body>
+</html>

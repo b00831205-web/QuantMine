@@ -24,11 +24,53 @@ time_series_stationary_test:
   rolling_period: 126       # rolling IC window (~half a year)
   periods: [1, 5, 20]       # ACF lags
 
-backtest:
-  part: 5                   # number of quantile groups (5 = quintiles)
+ic_research:
+  train_end: "2023-12-31"
+  test_start: "2024-02-01"
+  periods: [1, 5, 20]
+  processors:
+    - id: orthogonalized
+      name: orthogonalize
+      input: raw
+      params:
+        periods: [1, 5, 20]
+  tests:
+    - id: newey_raw
+      name: newey_test
+      input: raw
+      params:
+        lag_multiplier: 2
+    - id: newey_orthogonalized
+      name: newey_test
+      input: orthogonalized
+      params:
+        lag_multiplier: 2
 
-transaction_cost:
-  cost_per_trade: 0.001     # one-way rate, charged on actual turnover
+backtest:
+  jobs:
+    - id: raw_quintile
+      variant: raw
+      selection_test: newey_raw
+      part: 5
+      cost_per_trade: 0.001
+      selector:
+        name: bh
+        params: {}
+      sensitivity:
+        enabled: false
+        random_seed: 42
+
+    - id: orthogonalized_quintile
+      variant: orthogonalized
+      selection_test: newey_orthogonalized
+      part: 5
+      cost_per_trade: 0.001
+      selector:
+        name: bh
+        params: {}
+      sensitivity:
+        enabled: false
+        random_seed: 42
 
 carhart_attribution:
   maxlags: 20               # maximum lag for HAC standard errors

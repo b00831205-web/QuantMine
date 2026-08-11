@@ -1,7 +1,35 @@
+"""Quantile long-short backtesting.
+
+The pipeline is: rank a factor cross-sectionally on each rebalance date, split
+the ranked names into quantile groups, then measure each group's forward
+return. ``quantile_backtest`` produces per-rebalance returns and the member
+sets behind them; ``expand_to_daily_returns`` turns those periodic snapshots
+into a daily series with turnover-scaled transaction costs; the remaining
+helpers summarize performance, monotonicity, and turnover.
+
+Group returns are weighted by a strategy from ``weighting`` (equal by
+default), so market-cap weighting plugs in without changing this module's
+call sites. The universe can be point-in-time via a ``ConstituentsSource``;
+passing ``None`` uses every factor column and is survivorship-biased.
+"""
 import pandas as pd
 from .datareader import ConstituentsSource, MembershipTableSource
+from .weighting import equal_weight
 import numpy as np
 from scipy.stats import spearmanr
+
+
+def _weighted_group_return(returns_row: pd.Series, weights: pd.Series) -> float:
+    """Weighted mean of one group's returns, renormalizing over members that
+    actually have data. Equal weights reduce this to ``returns_row.mean()``
+    (which likewise skips NaN), so the equal-weight path is numerically
+    unchanged. Returns NaN if no member has both a return and a weight.
+    """
+    aligned = pd.DataFrame({'r': returns_row, 'w': weights}).dropna()
+    total = aligned['w'].sum()
+    if aligned.empty or not (total > 0):
+        return float('nan')
+    return float((aligned['r'] * aligned['w'] / total).sum())
 
 
 def truncate_quantile(cross_section_series: list|pd.Series, part:int =5):
@@ -31,7 +59,14 @@ def truncate_quantile(cross_section_series: list|pd.Series, part:int =5):
     return list(batch)
         
 
-def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,factors: dict[str, pd.DataFrame], significant_factor_list:list, forward_returns: dict[int,pd.DataFrame], part:int =5):
+def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,
+                      factors: dict[str, pd.DataFrame], 
+                      significant_factor_list:list, 
+                      forward_returns: dict[int,pd.DataFrame], 
+                      part:int =5,
+                      selected_factor_periods: list[tuple[str,int]] | None = None,
+                      weight_fn = None,
+                      market_cap: pd.DataFrame | None = None):
     """Run a quantile long-short backtest for each selected factor.
 
     Args:
@@ -51,35 +86,59 @@ def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,fa
         ``(factor_name, period)``; results hold Q1..Qn plus ``long_short``
         returns per rebalance date, histories hold the member set per group.
     """
+    if part < 2:
+        raise ValueError("part must be at least 2")
+
     if isinstance(constituents, pd.DataFrame):
         constituents = MembershipTableSource(constituents)
 
+    if weight_fn is None:               # Equal weighting is the default and is also registry-backed.
+        weight_fn = equal_weight
+
     all_result={}
     all_ticker_history = {}
+    selected_pairs = (set(selected_factor_periods) if selected_factor_periods is not None else None)
 
     for significant_factor in significant_factor_list:
         factor_df = factors[significant_factor]
         for period, forward_return_df in forward_returns.items():
+            if selected_pairs is not None:
+                if (significant_factor, period) not in selected_pairs:
+                    continue
             result=[]
             ticker_history = []
             for index in range(0, len(factor_df), period):
                 curr_date = factor_df.index[index]
                 if curr_date not in forward_return_df.index:
                     continue
+                return_tickers = set(forward_return_df.columns)
                 if constituents is None:
-                    available_tickers = list(factor_df.columns)
+                    available_tickers = [
+                        ticker
+                        for ticker in factor_df.columns
+                        if ticker in return_tickers
+                    ]
                 else:
                     valid_tickers = constituents.get_constituents(curr_date)
                     #intersect in factor-column order: valid_tickers is a set with
                     #non-deterministic iteration order, and after stable sorting of tied
                     #ranks the bucket-boundary members would drift between runs
-                    available_tickers = [t for t in factor_df.columns if t in valid_tickers]
+                    available_tickers = [
+                        ticker
+                        for ticker in factor_df.columns
+                        if ticker in valid_tickers and ticker in return_tickers
+                    ]
 
-                if factor_df.iloc[index].isnull().all():
+                cross_section_factor = factor_df.loc[
+                    curr_date,
+                    available_tickers,
+                ].dropna()
+                if len(cross_section_factor) < part:
                     continue
-                cross_section_factor = factor_df.loc[curr_date, available_tickers]
                 ranked_cross_section = cross_section_factor.rank(ascending=True)
-                ranked_cross_section = ranked_cross_section.sort_values()
+                ranked_cross_section = ranked_cross_section.sort_values(
+                    kind="mergesort",
+                )
                 tickers = ranked_cross_section.index
 
                 group_list = truncate_quantile(tickers ,part = part)
@@ -88,17 +147,21 @@ def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,fa
                 _tickers = {'date':curr_date}
                 for i in range(part):
                     group_return = forward_return_df.loc[curr_date, group_list[i]]
-                    _return[f'Q{i+1}'] = group_return.mean()
+                    weights = weight_fn(group_list[i], curr_date, market_cap)
+                    _return[f'Q{i+1}'] = _weighted_group_return(group_return, weights)
                     _tickers[f'Q{i+1}'] = set(group_list[i])
                 ticker_history.append(_tickers)
                 result.append(_return)
+            if not result:
+                continue
             result_df = pd.DataFrame(result).set_index('date')
-            result_df['long_short'] = result_df['Q5']-result_df['Q1']
+            result_df['long_short'] = result_df[f'Q{part}']-result_df['Q1']
             all_ticker_history[(significant_factor,period)] = ticker_history
             all_result[(significant_factor,period)] = result_df
-    return all_result ,all_ticker_history
+    return all_result, all_ticker_history
 
-def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost_per_trade: float = 0.001):
+def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost_per_trade: float = 0.001, parts: int = 5,
+                            weight_fn = None, market_cap: pd.DataFrame | None = None):
     """Expand periodic rebalance snapshots into a net-of-cost daily return series.
 
     Between two rebalance dates the portfolio holds the quantile members
@@ -123,6 +186,17 @@ def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost
         rebalance-day anchor, each window's first daily return is lost and the
         cost deduction lands on a NaN (i.e. costs are silently never charged).
     """
+    if weight_fn is None:               # Match quantile_backtest's equal-weight default.
+        weight_fn = equal_weight
+    quantile_columns = [f"Q{i}" for i in range(1, parts + 1)]
+    output_columns = [*quantile_columns, "long_short"]
+    if len(tickers_history) < 2:
+        return pd.DataFrame(
+            columns=output_columns,
+            index=pd.DatetimeIndex([], name="date"),
+            dtype=float,
+        )
+
     daily_records = []
     for i in range(len(tickers_history)-1):
         curr = tickers_history[i]
@@ -134,10 +208,20 @@ def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost
         #next_date (attributed to the old portfolio); the next window starts one day after,
         #so days are covered exactly once
         window_dates = close_data.index[(close_data.index >= curr_date) & (close_data.index <= next_date)]
-        for q in [f'Q{n}' for n in range(1,6)]:
+        for q in quantile_columns:
             tickers_in_group = list(curr[q])
             group_price = close_data.loc[window_dates, tickers_in_group]
-            portfolio_daily_return = group_price.pct_change().mean(axis=1).iloc[1:]
+        # Hold rebalance-date weights until the next rebalance and renormalize
+        # over tickers with data each day. For equal weights this preserves the
+        # original .mean(axis=1) behavior, including its NaN handling.
+            weights = weight_fn(tickers_in_group, curr_date, market_cap)
+            daily_ret = group_price.pct_change().iloc[1:]
+            w = weights.reindex(daily_ret.columns)
+            w_row = daily_ret.notna().mul(w, axis=1)
+            w_sum = w_row.sum(axis=1)
+            w_norm = w_row.div(w_sum.where(w_sum > 0), axis=0)
+            portfolio_daily_return = (daily_ret.fillna(0) * w_norm).sum(axis=1)
+            portfolio_daily_return = portfolio_daily_return.where(w_sum > 0)
 
             if i>0:
                 prev_set = set(tickers_history[i-1][q])
@@ -153,15 +237,27 @@ def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost
                 if j == 0:
                     r = r - cost_today
                 daily_records.append({'date':d, 'group':q, 'return':r})
+    if not daily_records:
+        return pd.DataFrame(
+            columns=output_columns,
+            index=pd.DatetimeIndex([], name="date"),
+            dtype=float,
+        )
+
     daily_long = pd.DataFrame(daily_records)
     daily_wide = daily_long.pivot(index='date', columns='group', values='return')
-    daily_wide['long_short'] = daily_wide['Q5'] - daily_wide['Q1']
+    daily_wide = daily_wide.reindex(columns=quantile_columns)
+    daily_wide.columns.name = None
+    daily_wide['long_short'] = daily_wide[f'Q{parts}'] - daily_wide['Q1']
     return daily_wide
 
 def expand_all_to_daily_returns(
     all_ticker_history: dict,
     close_data: pd.DataFrame,
+    parts: int,
     cost_per_trade: float = 0.001,
+    weight_fn = None,
+    market_cap: pd.DataFrame | None = None,
 ) -> dict:
     """Expand every ticker history produced by ``quantile_backtest`` at once.
 
@@ -177,7 +273,10 @@ def expand_all_to_daily_returns(
     """
     all_daily_returns = {}
     for key, ticker_history in all_ticker_history.items():
-        all_daily_returns[key] = expand_to_daily_returns(ticker_history, close_data, cost_per_trade)
+        all_daily_returns[key] = expand_to_daily_returns(
+            ticker_history, close_data, cost_per_trade, parts,
+            weight_fn=weight_fn, market_cap=market_cap,
+        )
     return all_daily_returns
 
 def calculate_turnover(ticker_history: list, group: str)->pd.Series:
@@ -195,18 +294,33 @@ def calculate_turnover(ticker_history: list, group: str)->pd.Series:
         Turnover is ``1 - |prev ∩ curr| / |curr|``, the fraction of the current
         portfolio that had to be newly bought at this rebalance.
     """
+    if not ticker_history:
+        return pd.Series(
+            index=pd.DatetimeIndex([], name="date"),
+            name=group,
+            dtype=float,
+        )
+
     turnovers = [np.nan]
+    rebalance_dates = [ticker_history[0]['date']]
     for i in range(1, len(ticker_history)):
         prev_set = ticker_history[i-1][group]
         curr_set = ticker_history[i][group]
         overlap = len(prev_set & curr_set)
-        turnover = 1-(overlap/len(curr_set))
+        turnover = (
+            1 - (overlap / len(curr_set))
+            if curr_set
+            else np.nan
+        )
         turnovers.append(turnover)
-    return pd.Series(turnovers)
+        rebalance_dates.append(ticker_history[i]['date'])
+    return pd.Series(turnovers, index = pd.to_datetime(rebalance_dates), name= group, dtype = float,)
 
 
-def back_test_senity_test(constituents: ConstituentsSource | pd.DataFrame | None ,significant_factor_list:list, factors: dict[str,pd.DataFrame] ,forward_returns: dict[int,pd.DataFrame], close:pd.DataFrame, periods:list,
-                          origincal_back_test: dict):
+def back_test_sanity_test(constituents: ConstituentsSource | pd.DataFrame | None ,significant_factor_list:list, factors: dict[str,pd.DataFrame] ,forward_returns: dict[int,pd.DataFrame], close:pd.DataFrame, periods:list,
+                          original_back_test: dict, parts: int = 5,
+                          selected_factor_periods: list[tuple[str, int]]|None = None,
+                          random_seed: int | None = None):
     """Run sensitivity tests against factor displacement and shuffled factors.
 
     Args:
@@ -227,6 +341,7 @@ def back_test_senity_test(constituents: ConstituentsSource | pd.DataFrame | None
         shifting factor values by one period and randomly shuffling factor rows.
     """
     tickers = list(close.columns)
+    rng = np.random.default_rng(random_seed)
     factors_shifting = {}
     for factor_name, factor in factors.items():
         factors_shifting[factor_name] = factor.shift(-1)
@@ -235,7 +350,7 @@ def back_test_senity_test(constituents: ConstituentsSource | pd.DataFrame | None
     shuffle_data = {factor_name: factor.copy() for factor_name, factor in factors.items()}
     for factor_name, factor in shuffle_data.items():
         for idx in factor.index:
-            factor.loc[idx] = np.random.permutation(factor.loc[idx].values)
+            factor.loc[idx] = rng.permutation(factor.loc[idx].values)
     
 
 
@@ -251,10 +366,10 @@ def back_test_senity_test(constituents: ConstituentsSource | pd.DataFrame | None
         period_difference[period] = diff
 
     #factor displacement
-    factor_displacement_result , _ = quantile_backtest(constituents, factors_shifting,significant_factor_list, forward_returns)
+    factor_displacement_result , _ = quantile_backtest(constituents, factors_shifting,significant_factor_list, forward_returns, parts, selected_factor_periods)
 
     #shuffle data
-    shuffle_data_return, _ = quantile_backtest(constituents,shuffle_data, significant_factor_list, forward_returns)
+    shuffle_data_return, _ = quantile_backtest(constituents,shuffle_data, significant_factor_list, forward_returns, parts, selected_factor_periods)
 
     total_difference = 0
     for period, diff in period_difference.items():
@@ -262,21 +377,36 @@ def back_test_senity_test(constituents: ConstituentsSource | pd.DataFrame | None
     
     displace_difference = {}
     for (factor_name, period), df in factor_displacement_result.items():
-        displace_difference[(factor_name,period)] = df - origincal_back_test[(factor_name, period)]
+        displace_difference[(factor_name,period)] = df - original_back_test[(factor_name, period)]
     
     shuffle_difference = {}
     for (factor_name, period), df in shuffle_data_return.items():
-        shuffle_difference[(factor_name,period)] = df - origincal_back_test[(factor_name, period)]
+        shuffle_difference[(factor_name,period)] = df - original_back_test[(factor_name, period)]
     
-    for key, diff in displace_difference.items():
-        long_short_diff = diff['Q5'] - diff['Q1']
-        print(f'{key}: displaced-factor long-short Sharpe delta: {long_short_diff.mean()/long_short_diff.std():.4f}')
+    summary_rows=[]
+    scenarios = {
+        'displaced': displace_difference,
+        'shuffled': shuffle_difference,
+    }
+    for scenario, difference in scenarios.items():
+        for (factor_name, period), diff in difference.items():
+            long_short_diff = diff['long_short'].dropna()
 
-    for key, diff in shuffle_difference.items():
-        long_short_diff = diff['Q5'] - diff['Q1']
-        print(f'{key}: shuffled-factor long-short Sharpe delta: {long_short_diff.mean()/long_short_diff.std():.4f}')
+            std = long_short_diff.std()
+            mean = long_short_diff.mean()
 
-    return total_difference, displace_difference, shuffle_difference
+            summary_rows.append({'scenario': scenario, 
+                                'factor_name': factor_name,
+                                'period': period,
+                                'long_short_mean_difference': mean,
+                                'long_short_std_difference': std,
+                                'long_short_mean_to_std':(mean/std if pd.notna(std) and std!=0 else np.nan)})
+    sanity_summary=pd.DataFrame(summary_rows)
+    return {'forward_return_difference':total_difference, 
+            'displaced_differences':displace_difference, 
+            'shuffled_differences':shuffle_difference,
+            'summary': sanity_summary
+            }
 
 def performance_summary(back_test_quantile:pd.DataFrame, periods:int):
     """Summarize quantile backtest performance.
@@ -293,10 +423,33 @@ def performance_summary(back_test_quantile:pd.DataFrame, periods:int):
     Notes:
         The input should contain return series, not cumulative returns.
     """
+    summary_columns = [
+        "total_return",
+        "yearly_return",
+        "volatility",
+        "sharp_ratio",
+        "max_drawdown",
+        "win_rate",
+        "n_observations",
+    ]
+    if back_test_quantile.empty:
+        return (
+            pd.DataFrame(
+                columns=summary_columns,
+                index=pd.Index([], name="quantile"),
+            ),
+            pd.DataFrame(index=back_test_quantile.index),
+        )
+
     result = []
+    net_returns = {}
     for col in back_test_quantile.columns:
         r = back_test_quantile[col].dropna()
+        if r.empty:
+            continue
+
         net_return = (1+r).cumprod()
+        net_returns[col] = net_return
         
         total_return = net_return.iloc[-1] - 1
         n_years = len(r) * periods / 252 
@@ -315,14 +468,24 @@ def performance_summary(back_test_quantile:pd.DataFrame, periods:int):
         win_rate = (r>0).mean()
         summary = {
             'quantile': col,
+            'total_return': total_return,
             'yearly_return': yearly_return,
             'volatility' :volatility,
             'sharp_ratio': sharp,
             'max_drawdown':max_drawdown,
-            'win_rate': win_rate
+            'win_rate': win_rate,
+            'n_observations': len(r)
         }
         result.append(summary)
-    return pd.DataFrame(result).set_index('quantile'), net_return
+    if not result:
+        summary_df = pd.DataFrame(
+            columns=summary_columns,
+            index=pd.Index([], name="quantile"),
+        )
+    else:
+        summary_df = pd.DataFrame(result).set_index('quantile')
+    net_return_df = pd.DataFrame(net_returns)
+    return summary_df, net_return_df
 
 def monotonicity_test(result_df: pd.DataFrame, part: int = 5)->dict:
     """Test whether quantile returns are monotonically increasing.
@@ -341,6 +504,10 @@ def monotonicity_test(result_df: pd.DataFrame, part: int = 5)->dict:
         Rows with missing quantile values are skipped in the daily test.
     """
     quantile_cols = [f'Q{i}' for i in range(1,part+1)]
+    missing_cols = set(quantile_cols) - set(result_df.columns)
+
+    if missing_cols:
+        raise ValueError(f'result_df is missing quantile columns: {sorted(missing_cols)}')
     ranks = list(range(1, part+1))
     means = result_df[quantile_cols].mean()
     corr_simple, pval_simple = spearmanr(ranks, means.values)
@@ -351,12 +518,14 @@ def monotonicity_test(result_df: pd.DataFrame, part: int = 5)->dict:
             continue
         c, _ = spearmanr(ranks, row.values)
         daily_corrs.append(c)
+    daily_corr_series = pd.Series(daily_corrs, dtype = float)
     return {'mean_based_corr': corr_simple,
             'mean_based_pvalue': pval_simple,
-            'daily_avg_corr': pd.Series(daily_corrs).mean(),
-            'daily_corr_positive_pct':(pd.Series(daily_corrs)>0).mean()}
+            'daily_avg_corr': daily_corr_series.mean(),
+            'daily_corr_positive_pct':(daily_corr_series>0).mean(),
+            'part':part}
 
-def apply_transcation_cost(result_df: pd.DataFrame, ticker_history: list,cost_per_trade: float =0.001)-> pd.DataFrame:
+def apply_transcation_cost(result_df: pd.DataFrame, ticker_history: list,cost_per_trade: float =0.001, part: int = 5)-> pd.DataFrame:
     """Apply turnover-based transaction costs to quantile returns.
 
     Args:
@@ -374,16 +543,40 @@ def apply_transcation_cost(result_df: pd.DataFrame, ticker_history: list,cost_pe
         sells). The spread column is charged for both legs, so its turnover is
         the sum of the Q1 and Q5 turnovers.
     """
-    turnover_q1 = calculate_turnover(ticker_history=ticker_history, group='Q1')
-    turnover_q5 = calculate_turnover(ticker_history=ticker_history, group='Q5')
+    quantile_cols = [f"Q{i}" for i in range(1, part + 1)]
+    top_group = quantile_cols[-1]
+    bottom_group = quantile_cols[0]
+
     result_after_cost = result_df.copy()
-    for col in result_df.columns:
-        
-        if col == 'long_short':
-            cost = (turnover_q5.values + turnover_q1.values)*2*cost_per_trade
-            result_after_cost[col] = result_df[col].values - cost
-        else:
-            turnover = calculate_turnover(ticker_history=ticker_history, group = col)
-            cost = turnover.values * 2 * cost_per_trade
-            result_after_cost[col] = result_df[col].values - cost
+
+    for group in quantile_cols:
+        turnover = calculate_turnover(
+            ticker_history=ticker_history,
+            group=group,
+        ).reindex(result_df.index)
+
+        cost = turnover.fillna(1.0) * 2 * cost_per_trade
+
+        result_after_cost[group] = result_df[group] - cost
+
+    bottom_turnover = calculate_turnover(
+        ticker_history=ticker_history,
+        group=bottom_group,
+    ).reindex(result_df.index)
+
+    top_turnover = calculate_turnover(
+        ticker_history=ticker_history,
+        group=top_group,
+    ).reindex(result_df.index)
+
+    long_short_cost = (
+        bottom_turnover.fillna(1.0)
+        + top_turnover.fillna(1.0)
+    ) * 2 * cost_per_trade
+
+    result_after_cost["long_short"] = (
+        result_df["long_short"] - long_short_cost
+    )
+
     return result_after_cost
+back_test_senity_test = back_test_sanity_test

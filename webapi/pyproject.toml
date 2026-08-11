@@ -1,0 +1,66 @@
+[project]
+name = "quantmine-webapi"
+version = "0.0.0"
+description = "QUANTMINE research library + workflows + web API"
+requires-python = ">=3.13"
+# 注意：fastapi/uvicorn/httpx/pytest 等放在 ``dependencies`` 而不是 ``optional-dependencies``，
+# 这样 ``uv sync`` 会把它们无条件装进 webapi/.venv，避免父项目传递依赖的版本约束
+# （例如 statsmodels 强制 pytest<8）把它们卸掉。
+dependencies = [
+    # 研究库与工作流的现有依赖（与 pyproject.toml 其它部分保持一致）
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+    "pydantic>=2.5",
+    "sqlalchemy>=2.0",
+    # Postgres 已锁定为主库(见部署决策), psycopg2 不再是可选 extra, 否则 uv sync 默认会把它卸掉
+    "psycopg2-binary>=2.9.12",
+    # 本仓库的研究库，通过 [tool.uv.sources] 解析为父目录的 editable package
+    "quantmine",
+    # webapi 运行时（FastAPI app + TestClient）
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "httpx>=0.27",
+    "python-multipart>=0.0.9",
+    # 登录鉴权：bcrypt 密码哈希。未安装时 app.security 会自动回退到标准库 scrypt，
+    # 因此这里是软性依赖；建议 uv sync 装上以使用行业标准 bcrypt。
+    "bcrypt>=4.1",
+    # PDF 报告：Jinja2 模板 + matplotlib 图表 + WeasyPrint HTML→PDF
+    # WeasyPrint 需要 Pango/cairo 原生库（Linux/WSL 环境 pip 即可；Windows 需额外装 GTK）
+    "jinja2>=3.1",
+    "matplotlib>=3.8",
+    "weasyprint>=62",
+    # AI 附件文本提取：PDF / Word（attachments.py 懒加载；缺失只降级为不提取，但应声明以免被 uv sync 清掉）
+    "pypdf>=4.0",
+    "python-docx>=1.1",
+    # webapi 测试
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "python-dotenv>=1.2.2",
+    "openpyxl>=3.1.5",
+]
+
+[project.scripts]
+quantmine-web = "app.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+# 把父目录的研究库声明为 editable path 依赖。
+# 这样 ``uv sync`` 会把 ``quantmine/`` 直接以 editable 方式安装到 webapi/.venv，
+# 无需 sys.path.insert 或 PYTHONPATH 也能 ``import quantmine``。
+quantmine = { path = "../", editable = true }
+
+[tool.hatch.build.targets.wheel]
+# 项目名 ``quantmine-webapi`` 与目录 ``app`` 不一致，因此必须显式声明 wheel 只打包 app。
+# 这样未来如果有人 ``pip install`` 这个 webapi 项目，wheel 里只会有 ``app/`` 包。
+packages = ["app"]
+
+[too.hatch.build.targets.wheel.force-include]
+"app/static" = "app/static"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

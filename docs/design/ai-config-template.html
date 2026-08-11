@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUANTMINE · AI Config — Design Template</title>
+<!--
+  Design contract — AI Config (Evidence Ledger, Operate)
+  THESIS: provider and model configuration is one coherent settings ledger;
+          save lives in the page header, and each section reads as a quiet
+          panel rather than a stack of equal cards.
+  OWN-WORLD: matte navy-black surfaces, tonal layering, cobalt only for the
+          one primary save action, selection, and focus; mono for machine
+          values such as API key env names and endpoints.
+  STORY: the admin reviews providers, edits one inline, picks the default
+          model, tunes the agent and permissions, configures embeddings, and
+          saves from the header.
+  FIRST VIEWPORT: page title with save action, provider panel (cards + edit
+          form), then default model / agent, permissions, embedding, and
+          skills below the fold.
+  FORM: Evidence Ledger, same world as Market / Rebalance / Research.
+  FINISH: unreviewed and undocumented is unfinished; this build ends with
+          the finish review, the verdict, and DESIGN.md.
+  Mock data only — for design review, not live values.
+-->
+<style>
+  :root {
+    --bg-app: #0e1116;
+    --surface: #161a22;
+    --surface-2: #1d2230;
+    --elevated: #232a3a;
+    --border-subtle: #2a3142;
+    --border-strong: #3a4258;
+    --text-primary: #e6e8ee;
+    --text-secondary: #9aa3b8;
+    --text-muted: #6b7388;
+    --accent: #4f8cff;
+    --accent-hover: #6ea0ff;
+    --positive: #4ec98a;
+    --negative: #ef6464;
+    --warning: #f0b35e;
+    --info: #56b6ff;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .content {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* ---- Page header ---- */
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-top: 4px;
+  }
+  .save-msg {
+    font-size: 12px;
+    color: var(--positive);
+  }
+
+  /* ---- Buttons ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 14px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .btn:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .btn-primary {
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+  .btn-danger {
+    background: transparent;
+    border: 1px solid var(--negative);
+    color: var(--negative);
+  }
+  .btn-danger:hover {
+    background: rgba(239, 100, 100, 0.08);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ---- Panel ---- */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 16px 24px;
+    margin-bottom: 16px;
+  }
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0 12px;
+  }
+  .panel-head h2 {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .panel-head .meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* ---- Provider cards ---- */
+  .provider-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .provider {
+    text-align: left;
+    padding: 12px 14px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  .provider:hover {
+    background: var(--surface-2);
+  }
+  .provider.active {
+    background: var(--surface-2);
+    border-color: var(--accent);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .provider .name {
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .provider .state {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .provider .state.ok {
+    color: var(--positive);
+  }
+  .provider-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 66px;
+    padding: 12px;
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .provider-add:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
+  /* ---- Inline edit form ---- */
+  .edit {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .edit-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  .field {
+    margin-bottom: 12px;
+  }
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    outline: none;
+  }
+  .field textarea {
+    font-family: inherit;
+    resize: vertical;
+  }
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus {
+    border-color: var(--accent);
+  }
+  .field .hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .override {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    margin-bottom: 10px;
+  }
+  .cap-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-left: 4px;
+  }
+  .cap-list label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .cap-list .hint {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  .edit .delete-row {
+    margin-top: 6px;
+  }
+
+  /* ---- Toggle switch ---- */
+  .switch {
+    width: 34px;
+    height: 18px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: var(--surface-2);
+    position: relative;
+    cursor: pointer;
+    flex: none;
+    transition: background 0.15s ease-out;
+  }
+  .switch .thumb {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left 0.15s ease-out;
+  }
+  .switch.on {
+    background: var(--positive);
+  }
+  .switch.on .thumb {
+    left: 17px;
+  }
+  .switch:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* ---- Permission rows ---- */
+  .perm-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .perm-row:last-child {
+    border-bottom: none;
+  }
+  .perm-row .pt {
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+  .perm-row .ph {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .perm-hint {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* ---- Skills ---- */
+  .skill-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    margin-bottom: 8px;
+  }
+  .skill-row .sname {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .skill-row .skey {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: 8px;
+    font-weight: 400;
+  }
+  .skill-row .sdesc {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .skill-empty {
+    padding: 14px 0;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* ---- Two-column groups ---- */
+  .cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 24px;
+  }
+  .cols .field input {
+    width: 100%;
+  }
+
+  .footnote {
+    margin-top: 16px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---- Responsive ---- */
+  @media (max-width: 900px) {
+    .cols {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 640px) {
+    .content {
+      padding: 16px;
+    }
+    .panel {
+      padding: 12px 14px;
+    }
+    .page-header {
+      flex-direction: column;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="content">
+    <header class="page-header">
+      <div>
+        <h1>AI 配置</h1>
+        <p>类 Dify 的集中配置页（简化版）· 仅管理员可修改</p>
+      </div>
+      <div class="head-actions">
+        <span class="save-msg">已保存</span>
+        <button class="btn btn-primary" type="button">保存</button>
+      </div>
+    </header>
+
+    <!-- 模型供应商 -->
+    <main class="panel" aria-label="模型供应商">
+      <div class="panel-head">
+        <h2>模型供应商</h2>
+        <span class="meta">4 个供应商 · 2 已配置</span>
+      </div>
+
+      <div class="provider-grid">
+        <button class="provider" type="button">
+          <div class="name">OpenAI</div>
+          <div class="state ok">已配置</div>
+        </button>
+        <button class="provider active" type="button">
+          <div class="name">硅基流动</div>
+          <div class="state ok">已配置</div>
+        </button>
+        <button class="provider" type="button">
+          <div class="name">Ollama</div>
+          <div class="state">未配置</div>
+        </button>
+        <button class="provider" type="button">
+          <div class="name">自定义供应商</div>
+          <div class="state">未配置</div>
+        </button>
+        <button class="provider-add" type="button">＋ 添加自定义供应商</button>
+      </div>
+
+      <!-- 内联编辑表单 -->
+      <div class="edit">
+        <div class="edit-title">编辑：硅基流动</div>
+        <div class="cols">
+          <div class="field">
+            <label>供应商名称</label>
+            <input type="text" value="硅基流动">
+          </div>
+          <div class="field">
+            <label>API Key 环境变量名</label>
+            <input type="text" value="SILICONFLOW_API_KEY">
+            <div class="hint">Key 本身只放环境变量，不回传后端</div>
+          </div>
+          <div class="field">
+            <label>Base URL</label>
+            <input type="text" value="https://api.siliconflow.cn/v1">
+          </div>
+          <div class="field">
+            <label>模型列表（逗号分隔）</label>
+            <input type="text" value="deepseek-ai/DeepSeek-V3, Qwen/Qwen2.5-72B-Instruct">
+          </div>
+        </div>
+
+        <label class="override">
+          <input type="checkbox" checked>
+          覆盖全局权限
+        </label>
+        <div class="cap-list">
+          <label><input type="checkbox" checked>读取研究数据 <span class="hint">IC / 回测 / 因子检验结果</span></label>
+          <label><input type="checkbox" checked>读取行情数据 <span class="hint">市场总览、行情序列</span></label>
+          <label><input type="checkbox" checked>读取报告 <span class="hint">PDF / Excel 报告内容</span></label>
+          <label><input type="checkbox">只读 SQL 查库 <span class="hint">工具调用需逐次确认</span></label>
+        </div>
+
+        <div class="delete-row">
+          <button class="btn btn-danger" type="button">删除该供应商</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- 默认模型 + Agent -->
+    <section class="panel" aria-label="默认模型与 Agent">
+      <div class="panel-head">
+        <h2>默认模型与 Agent</h2>
+      </div>
+      <div class="cols">
+        <div class="field">
+          <label>默认模型</label>
+          <select>
+            <option>OpenAI · gpt-4o</option>
+            <option>硅基流动 · deepseek-ai/DeepSeek-V3</option>
+            <option>硅基流动 · Qwen/Qwen2.5-72B-Instruct</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>温度（0 ~ 1）</label>
+          <input type="number" min="0" max="1" step="0.1" value="0.2">
+        </div>
+      </div>
+      <div class="field">
+        <label>系统提示词</label>
+        <textarea rows="3">你是 QUANTMINE 的研究助手。回答必须基于检索到的研究数据，标注引用来源；对无法确认的结论明确说明不确定性与统计显著性上下文。</textarea>
+      </div>
+    </section>
+
+    <!-- AI 权限 -->
+    <section class="panel" aria-label="AI 权限">
+      <div class="panel-head">
+        <h2>AI 权限（全局默认）</h2>
+      </div>
+      <div class="perm-row">
+        <div><div class="pt">读取研究数据</div><div class="ph">IC / 回测 / 因子检验结果</div></div>
+        <button class="switch on" type="button" role="switch" aria-checked="true"><span class="thumb"></span></button>
+      </div>
+      <div class="perm-row">
+        <div><div class="pt">读取行情数据</div><div class="ph">市场总览、行情序列</div></div>
+        <button class="switch on" type="button" role="switch" aria-checked="true"><span class="thumb"></span></button>
+      </div>
+      <div class="perm-row">
+        <div><div class="pt">读取报告</div><div class="ph">PDF / Excel 报告内容</div></div>
+        <button class="switch on" type="button" role="switch" aria-checked="true"><span class="thumb"></span></button>
+      </div>
+      <div class="perm-row">
+        <div><div class="pt">只读 SQL 查库</div><div class="ph">工具调用需逐次确认</div></div>
+        <button class="switch on" type="button" role="switch" aria-checked="true"><span class="thumb"></span></button>
+      </div>
+      <div class="perm-row">
+        <div><div class="pt">使用当前对话历史</div><div class="ph">多轮对话上下文</div></div>
+        <button class="switch on" type="button" role="switch" aria-checked="true"><span class="thumb"></span></button>
+      </div>
+      <div class="perm-row">
+        <div><div class="pt">跨对话语料检索</div><div class="ph">历史聊天作为本地语料库（RAG）</div></div>
+        <button class="switch" type="button" role="switch" aria-checked="false"><span class="thumb"></span></button>
+      </div>
+      <div class="perm-hint">全局权限作用于所有 AI 入口，单个供应商可在编辑表单里覆盖。</div>
+    </section>
+
+    <!-- Embedding / RAG -->
+    <section class="panel" aria-label="Embedding">
+      <div class="panel-head">
+        <h2>Embedding / RAG 向量模型</h2>
+      </div>
+      <div class="cols">
+        <div class="field">
+          <label>类型</label>
+          <select>
+            <option>关闭（不使用 RAG）</option>
+            <option selected>OpenAI 兼容 API（硅基流动等）</option>
+            <option>本地 Ollama</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Base URL</label>
+          <input type="text" value="https://api.siliconflow.cn/v1">
+        </div>
+        <div class="field">
+          <label>模型名</label>
+          <input type="text" value="BAAI/bge-m3">
+        </div>
+        <div class="field">
+          <label>API Key 环境变量名</label>
+          <input type="text" value="SILICONFLOW_API_KEY">
+        </div>
+      </div>
+      <div class="field" style="max-width:220px">
+        <label>向量维度</label>
+        <input type="number" min="64" step="1" value="1024">
+      </div>
+      <div class="perm-hint">开发测试默认：硅基流动 BAAI/bge-m3（1024 维），Key 放环境变量 SILICONFLOW_API_KEY。本地模型填 Ollama：http://localhost:11434/v1 + bge-m3，不需要 Key。</div>
+    </section>
+
+    <!-- Skill / 插件 -->
+    <section class="panel" aria-label="Skill">
+      <div class="panel-head">
+        <h2>Skill / 插件</h2>
+        <span class="meta">2 个已安装</span>
+      </div>
+      <div class="skill-row">
+        <div>
+          <div class="sname">数据洞察<span class="skey">data_insight</span></div>
+          <div class="sdesc">让 AI 直接查询白名单数据库并展示结果表</div>
+        </div>
+        <button class="switch on" type="button" role="switch" aria-checked="true"><span class="thumb"></span></button>
+      </div>
+      <div class="skill-row">
+        <div>
+          <div class="sname">报告生成<span class="skey">report_generator</span></div>
+          <div class="sdesc">基于研究结果生成 PDF / Excel 报告</div>
+        </div>
+        <button class="switch" type="button" role="switch" aria-checked="false"><span class="thumb"></span></button>
+      </div>
+      <div class="skill-empty">把插件目录放到项目根 skills/ 下（每个目录含 skill.py），重启后端后出现在这里。</div>
+    </section>
+
+    <p class="footnote">For research and educational purposes only. Not investment advice. Past performance does not guarantee future results.</p>
+  </div>
+</body>
+</html>

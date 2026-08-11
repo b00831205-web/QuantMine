@@ -1,3 +1,8 @@
+"""YAML config loading.
+
+Turns a config file into instances of the dataclasses in ``config``, so the
+rest of the codebase reads typed attributes instead of raw dict keys.
+"""
 from .config import CONFIG_REGISTRY
 import yaml
 

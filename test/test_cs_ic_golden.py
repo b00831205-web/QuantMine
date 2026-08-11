@@ -26,7 +26,15 @@ NAME_MAPPING = {
 }
 
 
-def _find_old_column(old_ic_df: pd.DataFrame, factor_name: str, period: int) -> str | None:
+def _find_old_column(
+    old_ic_df: pd.DataFrame,
+    factor_name: str,
+    period: int,
+) -> str | tuple[str, int] | None:
+    multi_index_column = (factor_name, period)
+    if multi_index_column in old_ic_df.columns:
+        return multi_index_column
+
     if factor_name == "momentum":
         prefix = f"{MOMENTUM_DAY}DayMomentum"
     else:
@@ -42,7 +50,8 @@ def _find_old_column(old_ic_df: pd.DataFrame, factor_name: str, period: int) -> 
 class TestCSInformationCorrelationGolden:
 
     @pytest.fixture(scope="class")
-    def new_ic_df(self, tmp_path_factory):
+    @classmethod
+    def new_ic_df(cls, tmp_path_factory):
         import quantmine.factor_mining  # noqa: F401
         from quantmine.factor_register import calculate_all_factors, build_param_pool
         from quantmine.datareader import MarketData
@@ -59,10 +68,16 @@ class TestCSInformationCorrelationGolden:
         forward_returns = forward_return(close, periods=[1, 5, 20])
 
         out_path = str(tmp_path_factory.mktemp("ic") / "ic_test.parquet")
-        return CS_Information_Correlation(factors, forward_returns, output_path=out_path)
+        ic_df, _ = CS_Information_Correlation(
+            factors,
+            forward_returns,
+            output_path=out_path,
+        )
+        return ic_df
 
     @pytest.fixture(scope="class")
-    def old_ic_df(self):
+    @classmethod
+    def old_ic_df(cls):
         return pd.read_parquet(OLD_CS_IC_PATH)
 
     @pytest.mark.parametrize("factor_name", list(NAME_MAPPING.keys()) + ["momentum"])

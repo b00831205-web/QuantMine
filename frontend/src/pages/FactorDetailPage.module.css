@@ -1,0 +1,494 @@
+.page {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+/* —— 返回链 —— */
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  margin: calc(-1 * var(--sp-1)) 0 0 calc(-1 * var(--sp-2));
+  border-radius: var(--radius-sm);
+}
+
+.backBtn:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-2);
+}
+
+.backBtn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.headerWrap {
+  margin-top: 10px;
+  margin-bottom: calc(var(--sp-3) - var(--sp-5));
+}
+
+.periodMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-top: 6px;
+}
+
+.periodDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* —— 上下文工具条 —— */
+.toolbar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr) auto;
+  gap: var(--sp-3);
+  align-items: end;
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+
+.filterLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.filterSelect {
+  width: 100%;
+  height: 28px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  padding: 0 var(--sp-2);
+  outline: none;
+}
+
+.filterSelect:focus {
+  border-color: var(--accent);
+}
+
+.ctxSummary {
+  display: inline-flex;
+  align-items: center;
+  align-self: end;
+  padding-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* —— 面板 —— */
+.panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4) var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-1) 0 var(--sp-3);
+}
+
+.panelHead h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.panelMeta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 持有期分段控件 —— */
+.periodTabs {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.periodTab,
+.periodTabActive {
+  height: 24px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.periodTab:hover {
+  color: var(--text-primary);
+}
+
+.periodTabActive {
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.periodTab:focus-visible,
+.periodTabActive:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* —— IC 图表 —— */
+.chartWrap {
+  min-height: 280px;
+}
+
+/* —— 选中周期统计账本 —— */
+.ledger {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-top: var(--sp-3);
+}
+
+.cell {
+  padding: 10px 14px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.cell:first-child {
+  border-left: none;
+}
+
+.cellLabel {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-1);
+  display: block;
+}
+
+.cellValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cellSigOn .sigDot {
+  background: var(--accent);
+}
+
+.sigDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  display: inline-block;
+}
+
+/* —— 统计表单元格 —— */
+.numCell {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.decision {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.textCell {
+  color: var(--text-secondary);
+}
+
+.sig {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+
+.sigOn {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sigOn .sigDot {
+  background: var(--accent);
+}
+
+.sigOff {
+  color: var(--text-muted);
+}
+
+/* —— 回测架 —— */
+.btGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+  grid-auto-flow: row dense;
+}
+
+.btCard {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--bg-surface);
+}
+
+.btCardExpanded {
+  border-color: var(--border-strong);
+}
+
+.btCardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.btFactor {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.btJob {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.btQuantiles {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-bottom: var(--sp-3);
+}
+
+.btQuantile {
+  padding: var(--sp-2) 10px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.btQuantile:first-child {
+  border-left: none;
+}
+
+.btQl {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.btQv {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  margin-top: 2px;
+  display: block;
+}
+
+.btStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.btSl {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.btSv {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  display: block;
+}
+
+.curveBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  margin-top: var(--sp-3);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.curveBtn:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border-strong);
+}
+
+.curveBtn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.chevron {
+  display: inline-flex;
+  transition: transform 0.15s ease-out;
+  color: var(--text-muted);
+}
+
+.curveBtnOpen .chevron {
+  transform: rotate(180deg);
+}
+
+.curvePanel {
+  grid-column: 1 / -1;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--bg-surface-2);
+}
+
+.curveTitle {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+
+.footnote {
+  margin-top: var(--sp-4);
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* —— 响应式 —— */
+@media (max-width: 960px) {
+  .toolbar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ctxSummary {
+    grid-column: 1 / -1;
+    align-self: start;
+    padding-bottom: 0;
+  }
+
+  .btGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .ledger {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .cell:nth-child(4) {
+    border-left: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .panel {
+    padding: var(--sp-3) 14px;
+  }
+
+  .toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .panelHead {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+  }
+
+  .btQuantiles {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .btStats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .ledger {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .cell {
+    border-left: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .cell:first-child,
+  .cell:nth-child(2) {
+    border-top: none;
+  }
+}

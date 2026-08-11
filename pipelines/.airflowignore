@@ -1,0 +1,5 @@
+# Airflow 只应把 DAG_pipeline.py 当 DAG 解析。
+# task_*.py 是被 BashOperator 以子进程调用的任务脚本，顶层 import quantmine
+# （statsmodels/pandas 等）很重，若被 dag processor 逐个 import 会触发 30s
+# DagBag 导入超时。这里按正则忽略它们（.airflowignore 匹配相对 dags_folder 的路径）。
+task_.*\.py

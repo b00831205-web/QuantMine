@@ -1,7 +1,7 @@
 # --- market data & run artifacts (never committed: size + data licensing) ---
-data/
-tmp/
-analysis/
+/data/
+/tmp/
+/analysis/
 output.txt
 run.log
 *.parquet
@@ -9,7 +9,8 @@ run.log
 *.xlsx
 
 # --- airflow runtime (airflow.cfg contains secret keys; db/logs are local state) ---
-airflow/
+/airflow/
+/.airflow/
 *.db
 *.db-shm
 *.db-wal
@@ -19,6 +20,9 @@ __pycache__/
 *.pyc
 .venv/
 .venv-win/
+.uv-cache/
+.uv-python/
+.superpowers/
 .ipynb_checkpoints/
 
 # --- build & test artifacts ---
@@ -30,11 +34,50 @@ build/
 htmlcov/
 
 # --- local scratch / superseded scripts ---
-scripts/
+# Deployment/account-management scripts are release files. Keep only the two
+# historical ad-hoc diagnostics local.
+/scripts/test.py
+/scripts/test_dhp_bug.py
 
 # --- generated dashboards (frontend being rebuilt) ---
 factor_analysis_dashboard.html
 
+# --- frontend (stage 0) ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/.DS_Store
+
+# --- webapi (stage 0) ---
+webapi/.venv/
+webapi/.venv-win/
+webapi/__pycache__/
+webapi/**/__pycache__/
+webapi/.pytest_cache/
+webapi/.coverage
+
 # --- editor/os noise ---
 .DS_Store
 Thumbs.db
+.env
+.env.*
+!.env.example
+!.env.docker.example
+# setup.py / create_user.py / reset_password.py 生成的明文登录凭据
+.initial-credentials.json
+/config.yaml
+
+# --- build artifacts ---
+# 前端构建产物, 由 `npm run build` + 拷贝生成, 不入库
+webapi/app/static/
+
+# --- local agent/tooling config (个人本地设置, 非项目交付物) ---
+.claude/
+.agents/
+.codex/
+.impeccable/
+.worktrees/
+
+# --- scratch: 临时 clone 的参考仓库(自带 .git + node_modules, 324MB) ---
+react-router-monorepo/

@@ -1,7 +1,14 @@
-import pandas as pd
-from .factor_register import factor_register
+"""Factor definitions.
 
-@factor_register('daily_return')
+Each function computes one factor as a wide date-by-ticker frame and registers
+itself under a name via ``@factor_registry``, so configs can request factors by
+name without importing them. Adding a factor means adding a decorated function
+here; no call site needs to change.
+"""
+import pandas as pd
+from .factor_register import factor_registry
+
+@factor_registry('daily_return')
 def daily_return(close:pd.DataFrame, tickers:list)->pd.DataFrame:
     """Compute daily percentage returns for a list of tickers.
 
@@ -20,7 +27,7 @@ def daily_return(close:pd.DataFrame, tickers:list)->pd.DataFrame:
     daily_return_df = close[cols].pct_change()
     return daily_return_df
 
-@factor_register("excess_return")
+@factor_registry("excess_return")
 def excess_return(daily_return: pd.DataFrame) -> pd.DataFrame:
     """Compute excess returns over the market proxy SPY.
 
@@ -38,7 +45,7 @@ def excess_return(daily_return: pd.DataFrame) -> pd.DataFrame:
     excess_return=daily_return.drop(columns=['SPY']).sub(market_return, axis=0)
     return excess_return
 
-@factor_register('momentum')
+@factor_registry('momentum')
 def momentum(close: pd.DataFrame, tickers: list, day:int =2) -> pd.DataFrame:
     """Compute a simple momentum factor for each ticker.
 
@@ -58,7 +65,7 @@ def momentum(close: pd.DataFrame, tickers: list, day:int =2) -> pd.DataFrame:
     mmt = close[cols].pct_change(day - 1)
     return mmt
 
-@factor_register('ShortTermReversal')
+@factor_registry('ShortTermReversal')
 def ShortTermReversal(excess_return: pd.DataFrame,tickers: list, halflife: int, period: int)->pd.DataFrame:
     """Compute a short-term reversal factor from lagged excess returns.
 
@@ -87,7 +94,7 @@ def ShortTermReversal(excess_return: pd.DataFrame,tickers: list, halflife: int, 
         ewma = ewma + (wk ** i) * data.shift(i)
     return -ewma #reversal signal is negated: high past returns imply lower expected near-term returns
 
-@factor_register('TwentyDayVolatility')
+@factor_registry('TwentyDayVolatility')
 def TwentyDayVolatility(daily_return:pd.DataFrame, tickers:list)->pd.DataFrame:
     """Compute 20-day rolling volatility for each ticker.
 
@@ -102,7 +109,7 @@ def TwentyDayVolatility(daily_return:pd.DataFrame, tickers:list)->pd.DataFrame:
     twenty_day_volatility = daily_return[cols].rolling(20).std()
     return twenty_day_volatility
 
-@factor_register('TwentyDayNegVotality')
+@factor_registry('TwentyDayNegVotality')
 def TwentyDayNegVotality(daily_return:pd.DataFrame, tickers:list)->pd.DataFrame:
     """Compute 20-day rolling volatility using only negative returns.
 
@@ -121,7 +128,7 @@ def TwentyDayNegVotality(daily_return:pd.DataFrame, tickers:list)->pd.DataFrame:
     neg_return = daily_return[cols].where(daily_return[cols] < 0) #where keeps values matching the condition, others become NaN
     return neg_return.rolling(window=20, min_periods=1).std()
 
-@factor_register('TwentyDayAvgVol')
+@factor_registry('TwentyDayAvgVol')
 def TwentyDayAvgVol(volume:pd.DataFrame, tickers:list)->pd.DataFrame:
     """Compute 20-day average trading volume for each ticker.
 
@@ -136,7 +143,7 @@ def TwentyDayAvgVol(volume:pd.DataFrame, tickers:list)->pd.DataFrame:
     volume_avg = volume[cols].rolling(20).mean()
     return volume_avg
 
-@factor_register('VolPriceCorr')
+@factor_registry('VolPriceCorr')
 def VolPriceCorr(volume:pd.DataFrame, daily_return:pd.DataFrame, tickers:list)->pd.DataFrame:
     """Compute 20-day rolling correlation between returns and volume.
 

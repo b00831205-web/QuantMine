@@ -1,0 +1,10 @@
+# 保证容器内的 shell 脚本始终是 LF 换行——Windows 的 autocrlf 若把它们转成 CRLF，
+# 会导致容器里 bash 报 `\r` 相关错误。
+*.sh text eol=lf
+docker/**/entrypoint.sh text eol=lf
+docker/**/*.sh text eol=lf
+
+# Windows PowerShell 5.1 按 ANSI 解读无 BOM 的文件，含中文的 .ps1 会被拆成乱码，
+# 报出来的却是「Missing closing '}'」这种和真实原因毫无关系的语法错。这些脚本
+# 必须带 UTF-8 BOM，因此按二进制处理，不让编码/换行转换碰它们。
+*.ps1 -text
