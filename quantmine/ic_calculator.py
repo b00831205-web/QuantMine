@@ -422,6 +422,16 @@ def time_series_stationary_test(cs_result:tuple[pd.DataFrame,bool], rolling_peri
         The index is converted to ``datetime64`` before grouping and rolling.
     """
     CS_IC_matrix , orthogonalized = cs_result
+    if CS_IC_matrix.empty:
+        # Otherwise the yearly groupby yields nothing and pd.concat dies with
+        # "No objects to concatenate", which says nothing about the cause. An
+        # empty matrix here means the configured window selected no rows --
+        # normally train_end/test_start sitting outside the downloaded range.
+        raise ValueError(
+            "cross-sectional IC matrix has no rows: the configured window "
+            "selected no data. Check ic_research.train_end / test_start "
+            "against the date range actually present in data/processed."
+        )
     if periods is None:
         periods = [1,5,20]
 

@@ -4,7 +4,12 @@ from datetime import date
 
 from sqlalchemy.engine import Engine
 
-from ..storage.membership import DEFAULT_INDEX, apply_diff, fetch_open_spells
+from ..storage.membership import (
+    DEFAULT_INDEX,
+    apply_diff,
+    fetch_open_spells,
+    seed_baseline,
+)
 from ..universe import (
     DEFAULT_GRACE_SCRAPES,
     MAX_PLAUSIBLE_DAILY_CHANGE,
@@ -49,8 +54,19 @@ def refresh_universe(
             plausibility checks. Nothing is written in that case.
     """
     observed = fetch_wiki_members() if members is None else members
+    spells = fetch_open_spells(engine, index_name)
+    if not spells and not dry_run:
+        # Never-seeded table. Diffing today's scrape against nothing would open
+        # a spell starting today for all ~500 members, and the downloader sizes
+        # its history request off start_date -- so every research window before
+        # this week would come back empty for the life of the install. Lay the
+        # vendored baseline down first; the diff below then does its normal job
+        # of carrying it forward to today.
+        seeded = seed_baseline(engine, index_name=index_name)
+        if seeded:
+            spells = fetch_open_spells(engine, index_name)
     diff = diff_universe(
-        fetch_open_spells(engine, index_name),
+        spells,
         observed,
         as_of,
         grace_scrapes=grace_scrapes,

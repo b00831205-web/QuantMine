@@ -100,10 +100,26 @@ def test_missing_lookback_alone_does_not_retrigger_forever():
 
 
 def test_delisted_ticker_is_never_requested_again_once_complete():
+    """Complete reaches through the forward buffer, not just to the exit."""
+    m = membership([("GONE", "2015-01-01", "2023-05-15")])
+    c = coverage([("GONE", "2015-01-02", "2023-06-29", 2100)])
+
+    assert jobs_for(plan(m, c), "GONE") == []
+
+
+def test_delisted_ticker_gets_a_forward_buffer_past_its_exit():
+    """A position held on the last day in the index still has a forward return.
+
+    Stopping at the exit leaves that return NaN for every name that ever left,
+    which is exactly the set carrying the losses.
+    """
     m = membership([("GONE", "2015-01-01", "2023-05-15")])
     c = coverage([("GONE", "2015-01-02", "2023-05-15", 2100)])
 
-    assert jobs_for(plan(m, c), "GONE") == []
+    jobs = jobs_for(plan(m, c), "GONE")
+
+    assert len(jobs) == 1
+    assert jobs[0].end == pd.Timestamp("2023-06-29")
 
 
 def test_delisted_ticker_still_gets_its_own_tail_not_todays():
@@ -114,7 +130,7 @@ def test_delisted_ticker_still_gets_its_own_tail_not_todays():
     jobs = jobs_for(plan(m, c), "GONE")
 
     assert len(jobs) == 1
-    assert jobs[0].end == pd.Timestamp("2023-05-15")
+    assert jobs[0].end == pd.Timestamp("2023-06-29")
     assert jobs[0].end < AS_OF
 
 
@@ -165,10 +181,15 @@ def test_market_closure_at_the_head_is_not_a_gap():
     assert jobs_for(plan(m, c), "T") == []
 
 
-def test_closed_spell_ending_on_a_weekend_is_not_re_requested():
-    """end_date is a calendar date; the last bar is the Friday before."""
-    m = membership([("GONE", "2015-01-01", "2023-05-13")])   # a Saturday
-    c = coverage([("GONE", "2015-01-02", "2023-05-12", 2100)])  # Friday
+def test_closed_spell_whose_buffer_ends_on_a_weekend_is_not_re_requested():
+    """The boundary that must tolerate a weekend is now the buffered one.
+
+    Membership dates are calendar dates and so is the forward buffer added to
+    them, so the window can close on a day the market never opened. Without the
+    slack the planner would re-request that empty tail forever.
+    """
+    m = membership([("GONE", "2015-01-01", "2023-05-11")])  # +45d = Sun 06-25
+    c = coverage([("GONE", "2015-01-02", "2023-06-23", 2100)])  # Friday
 
     assert jobs_for(plan(m, c), "GONE") == []
 

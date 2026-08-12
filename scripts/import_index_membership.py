@@ -15,14 +15,17 @@ the one place where a bad decision is unrecoverable-by-inspection: everything
 after it inherits the baseline, and a wrong exit date there quietly biases every
 backtest without ever looking like an error.
 
-Refresh the snapshot before running::
-
-    git -C ../sp500 pull
-
-Then::
+Step 1 also runs automatically: ``refresh_universe`` seeds the same vendored
+baseline when it finds the table empty, so a fresh install is not left with
+every spell starting today. This script remains the way to *re-import* a
+refreshed snapshot and to reconcile the gap, which stays manual.
 
     python scripts/import_index_membership.py                 # import + report
     python scripts/import_index_membership.py --apply         # also write the gap
+
+To move to a newer upstream snapshot, replace
+``quantmine/storage/sp500_ticker_start_end.csv`` from https://github.com/fja05680/sp500
+and update ``BASELINE_SNAPSHOT_DATE`` to that file's commit date, then re-run.
 """
 
 import argparse
@@ -38,31 +41,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from quantmine.storage.database import get_pipeline_engine
 from quantmine.storage.membership import (
+    BASELINE_CSV,
+    BASELINE_SNAPSHOT_DATE,
     DEFAULT_INDEX,
     fetch_members_on,
+    load_baseline,
     upsert_spells,
 )
 from quantmine.universe import canonical_ticker, fetch_wiki_members
 from quantmine.workflows.universe import refresh_universe
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CSV = PROJECT_ROOT.parent / "sp500" / "sp500_ticker_start_end.csv"
-
-
-def load_csv(path: Path) -> pd.DataFrame:
-    """Read the membership snapshot, validating its columns."""
-    table = pd.read_csv(path)
-    missing = {"ticker", "start_date", "end_date"}.difference(table.columns)
-    if missing:
-        raise ValueError(f"{path} is missing columns: {sorted(missing)}")
-    table["start_date"] = pd.to_datetime(table["start_date"], errors="coerce")
-    table["end_date"] = pd.to_datetime(table["end_date"], errors="coerce")
-    unparsed = table["start_date"].isna()
-    if unparsed.any():
-        raise ValueError(
-            f"{path} has {unparsed.sum()} rows with an unparseable start_date"
-        )
-    return table
+DEFAULT_CSV = BASELINE_CSV
 
 
 def snapshot_date_of(path: Path) -> date:
@@ -119,7 +109,8 @@ def main() -> None:
     parser.add_argument(
         "--snapshot-date",
         help="Override the date the snapshot's open spells were last confirmed; "
-             "defaults to the CSV's last git commit date",
+             "defaults to BASELINE_SNAPSHOT_DATE for the vendored CSV, and to "
+             "the file's last git commit date for any other",
     )
     args = parser.parse_args()
 
@@ -128,12 +119,16 @@ def main() -> None:
 
     if not args.skip_import:
         csv_path = args.csv.expanduser()
-        table = load_csv(csv_path)
-        snapshot_date = (
-            date.fromisoformat(args.snapshot_date)
-            if args.snapshot_date
-            else snapshot_date_of(csv_path)
-        )
+        table = load_baseline(csv_path)
+        if args.snapshot_date:
+            snapshot_date = date.fromisoformat(args.snapshot_date)
+        elif csv_path == BASELINE_CSV:
+            # Vendoring discarded the upstream git history, and this repo's own
+            # history would date the file to the day it was copied in -- weeks
+            # or years after the snapshot actually last confirmed its members.
+            snapshot_date = BASELINE_SNAPSHOT_DATE
+        else:
+            snapshot_date = snapshot_date_of(csv_path)
         written = upsert_spells(
             engine,
             table,

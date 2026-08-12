@@ -32,6 +32,14 @@ import pandas as pd
 # much prior history before its lookback factors produce anything.
 DEFAULT_LOOKBACK_DAYS = 420
 
+# The mirror image of the lookback, for the tail. A position held on a name's
+# last day in the index still has a forward return, and computing it needs bars
+# from *after* the spell closed. Without this the longest forward-return period
+# is NaN for every name that ever left the index -- which is precisely the set
+# that carries the losses, so dropping them biases every backtest upward.
+# 45 calendar days covers the 20-trading-day horizon plus holidays.
+DEFAULT_FORWARD_DAYS = 45
+
 # Membership dates are calendar dates; bar dates are trading dates. A spell
 # starting 2015-01-01 can only ever have its first bar on 2015-01-02, and the
 # longest run of consecutive market closures is a holiday pressed against a
@@ -96,6 +104,7 @@ def build_targets(
     as_of: pd.Timestamp,
     analysis_start: pd.Timestamp,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    forward_days: int = DEFAULT_FORWARD_DAYS,
     extra_tickers: tuple[str, ...] = ("SPY",),
 ) -> dict[str, TickerTarget]:
     """Collapse membership spells into one target window per ticker.
@@ -105,6 +114,8 @@ def build_targets(
         as_of: Latest date worth having.
         analysis_start: Earliest date the project cares about.
         lookback_days: Calendar days of pre-membership history to also fetch.
+        forward_days: Calendar days past a closed spell to also fetch, so a
+            position held at the exit still has its forward return.
         extra_tickers: Always-wanted names outside the index, such as the
             benchmark, which doubles as the trading calendar.
 
@@ -145,7 +156,11 @@ def build_targets(
         required_start = max(
             analysis_start, start - pd.Timedelta(days=lookback_days)
         )
-        capped_end = min(as_of, end)
+        # Reach past the exit for the forward-return horizon. Capped at as_of,
+        # so a name that left within the buffer keeps taking the daily
+        # increment until the buffer runs past it and then goes quiet -- it
+        # does not become permanently "open".
+        capped_end = min(as_of, end + pd.Timedelta(days=forward_days))
         if mandatory_start > capped_end:
             # Spell ended before the analysis window opened; nothing to fetch,
             # and it must stay that way or delisted names get re-requested
@@ -167,6 +182,7 @@ def build_download_plan(
     as_of: pd.Timestamp,
     analysis_start: pd.Timestamp,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    forward_days: int = DEFAULT_FORWARD_DAYS,
     extra_tickers: tuple[str, ...] = ("SPY",),
     attempts: dict | None = None,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
@@ -181,6 +197,8 @@ def build_download_plan(
         as_of: The date being processed.
         analysis_start: Earliest date the project cares about.
         lookback_days: Pre-membership history to fetch alongside a backfill.
+        forward_days: Post-exit history to fetch, for forward returns spanning
+            a name's last day in the index.
         extra_tickers: Always-wanted names outside the index.
         attempts: Ledger of ``{ticker: {"attempts": n, "last_attempt": date}}``
             for names that returned nothing, used to rest hopeless ones.
@@ -203,6 +221,7 @@ def build_download_plan(
         as_of=as_of,
         analysis_start=analysis_start,
         lookback_days=lookback_days,
+        forward_days=forward_days,
         extra_tickers=extra_tickers,
     )
 
@@ -255,10 +274,19 @@ def build_download_plan(
                     reason=reason, priority=priority)
         for (start, end, reason, priority), tickers in grouped.items()
     ]
-    # Priority first, then date. Callers truncate this list, so the daily
-    # increment has to sit at the front regardless of how much catch-up work
-    # is queued behind it.
-    jobs.sort(key=lambda job: (job.priority, job.start, job.end))
+    # Priority first, then how many tickers the job unblocks. Callers truncate
+    # this list, so the daily increment has to sit at the front regardless of
+    # how much catch-up work is queued behind it.
+    #
+    # The secondary key is size, not date, because date order starves the work
+    # that matters. A fresh install plans ~339 jobs: one covers the ~346 names
+    # held since 2015, the rest are one- and two-ticker windows for names that
+    # left the index years ago. Ordered by date those tiny windows come first
+    # -- they end earliest -- so a run capped at 12 jobs spends every one of
+    # them on delisted stragglers and takes ~29 runs to reach the bulk. Largest
+    # first puts the whole current universe in run one. Nothing is starved:
+    # a completed job leaves the plan, so the small windows arrive behind it.
+    jobs.sort(key=lambda job: (job.priority, -len(job.tickers), job.start, job.end))
     return jobs
 
 

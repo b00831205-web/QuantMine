@@ -52,6 +52,10 @@ packages = ["quantmine"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "quantmine/storage/schema.sql" = "quantmine/storage/schema.sql"
+# The point-in-time membership baseline is data the library reads at runtime
+# (storage.membership.seed_baseline), not documentation -- it has to ship.
+"quantmine/storage/sp500_ticker_start_end.csv" = "quantmine/storage/sp500_ticker_start_end.csv"
+"quantmine/storage/sp500_ticker_start_end.LICENSE" = "quantmine/storage/sp500_ticker_start_end.LICENSE"
 
 # Hatchling's default sdist is "everything git does not ignore", which for this
 # repo means the whole application: frontend/, webapi/, docker/, a 1 MB

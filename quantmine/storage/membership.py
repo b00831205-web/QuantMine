@@ -6,6 +6,7 @@ yfinance convention that ``market_bars`` uses.
 """
 
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 from sqlalchemy import MetaData, Table, and_, func, or_, select
@@ -15,6 +16,18 @@ from sqlalchemy.engine import Engine
 from ..universe import canonical_ticker
 
 DEFAULT_INDEX = "SP500"
+
+# Vendored point-in-time baseline. Wikipedia publishes only today's
+# constituents, so without this a fresh install starts every spell at "today",
+# the downloader asks for one lookback window of history, and every window the
+# research config trains on comes back empty. See the adjacent .LICENSE for
+# provenance.
+BASELINE_CSV = Path(__file__).with_name("sp500_ticker_start_end.csv")
+# The date the snapshot last asserted its open spells were still members; it
+# becomes their ``last_seen``. Read from the upstream file's git history, which
+# vendoring discards -- so this constant must be updated whenever the CSV is
+# refreshed, or newly-closed spells get an end_date from the wrong week.
+BASELINE_SNAPSHOT_DATE = date(2026, 6, 8)
 
 
 def _table(engine: Engine) -> Table:
@@ -82,6 +95,55 @@ def fetch_members_on(
     )
     with engine.connect() as connection:
         return {row[0] for row in connection.execute(statement)}
+
+
+def load_baseline(path: Path = BASELINE_CSV) -> pd.DataFrame:
+    """Read the vendored membership snapshot, validating its columns.
+
+    Args:
+        path: CSV to read; defaults to the vendored baseline.
+
+    Returns:
+        Columns ``ticker``, ``start_date``, ``end_date``, the dates parsed.
+
+    Raises:
+        ValueError: If a column is missing or a ``start_date`` will not parse.
+            A spell with no start is not a spell, and silently dropping it
+            would quietly shrink the historical universe.
+    """
+    table = pd.read_csv(path)
+    missing = {"ticker", "start_date", "end_date"}.difference(table.columns)
+    if missing:
+        raise ValueError(f"{path} is missing columns: {sorted(missing)}")
+    table["start_date"] = pd.to_datetime(table["start_date"], errors="coerce")
+    table["end_date"] = pd.to_datetime(table["end_date"], errors="coerce")
+    unparsed = table["start_date"].isna()
+    if unparsed.any():
+        raise ValueError(
+            f"{path} has {unparsed.sum()} rows with an unparseable start_date"
+        )
+    return table
+
+
+def seed_baseline(
+    engine: Engine,
+    *,
+    index_name: str = DEFAULT_INDEX,
+    path: Path = BASELINE_CSV,
+    snapshot_date: date = BASELINE_SNAPSHOT_DATE,
+) -> int:
+    """Load the vendored point-in-time baseline into an empty membership table.
+
+    Returns:
+        The number of spells written.
+    """
+    return upsert_spells(
+        engine,
+        load_baseline(path),
+        index_name=index_name,
+        source=f"fja05680/sp500:{path.name}",
+        snapshot_date=snapshot_date,
+    )
 
 
 def upsert_spells(
