@@ -236,6 +236,49 @@ def build_download_plan(
         attempts or {}, as_of, max_attempts, cooldown_days
     )
 
+    if not have:
+        # Cold start: one window for everyone, rather than one per spell.
+        #
+        # Per-spell windows are right for maintenance -- they keep a daily run
+        # from re-requesting history Yahoo does not have -- but on an empty
+        # database they shatter the plan. Each ticker's window is bounded by
+        # its own membership dates, so 771 tickers become 341 jobs and 358
+        # requests, against 39 for a single 2015-to-today window: nine times
+        # the round trips, serialized, for data that arrives in one call.
+        #
+        # Asking for the full range costs some bandwidth on names that were
+        # only in the index briefly, and nothing at all on delisted ones --
+        # Yahoo returns the rows that exist and no more. It used to also cost
+        # correctness, because bars from outside a ticker's spells reached the
+        # research universe; that is no longer true now that the IC and
+        # backtest paths both filter by point-in-time membership.
+        #
+        # It does not reintroduce the daily re-request loop either: what
+        # triggers a backfill is `mandatory_start` measured against stored
+        # coverage, not the width of the window we happened to fetch.
+        #
+        # The attempts ledger is deliberately ignored here. It exists to stop a
+        # *daily* run spending requests on names that will never return a row,
+        # and in one bulk window those names cost nothing: they ride along in a
+        # batch that is being requested for its live tickers anyway. Honouring
+        # it would only create a trap -- a ledger left behind by an earlier
+        # install, against a database that has since been wiped, would silently
+        # hold names out of the one fetch meant to be complete, for a month.
+        # Which names are hopeless is decided after this run, from what it
+        # actually returned.
+        wanted = tuple(sorted(targets))
+        if not wanted:
+            return []
+        return [
+            DownloadJob(
+                start=analysis_start,
+                end=as_of,
+                tickers=wanted,
+                reason="cold start",
+                priority=PRIORITY_INCREMENT,
+            )
+        ]
+
     grouped: dict[tuple[pd.Timestamp, pd.Timestamp, str, int], list[str]] = {}
 
     def add(start, end, ticker, reason, priority=PRIORITY_BACKFILL):

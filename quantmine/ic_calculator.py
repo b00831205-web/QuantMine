@@ -483,6 +483,53 @@ def get_constitunents_at_date(historical_df: pd.DataFrame, date: pd.Timestamp)->
     return set(historical_df.loc[mask, 'ticker'].str.replace('.','-',regex = False))
 
 
+def membership_mask(
+    index: pd.Index,
+    columns: pd.Index,
+    membership: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build a date-by-ticker mask of who was in the index when.
+
+    Args:
+        index: Dates to evaluate, normally a factor frame's index.
+        columns: Tickers to evaluate.
+        membership: Spell table with ``ticker`` / ``start_date`` / ``end_date``.
+
+    Returns:
+        Boolean frame, True where the ticker was a constituent that day.
+
+    Notes:
+        A ticker can hold several spells -- dropped from the index and later
+        re-added -- and each is honoured separately, so the gap between them
+        stays excluded.
+    """
+    frame = membership.copy()
+    frame['start_date'] = pd.to_datetime(frame['start_date'])
+    frame['end_date'] = pd.to_datetime(frame['end_date'])
+    dates = pd.DatetimeIndex(index)
+    rows = [
+        columns.isin(list(get_constitunents_at_date(frame, date)))
+        for date in dates
+    ]
+    return pd.DataFrame(rows, index=index, columns=columns)
+
+
+def apply_membership(
+    frame: pd.DataFrame,
+    membership: pd.DataFrame,
+) -> pd.DataFrame:
+    """Blank out observations for days a ticker was not in the index.
+
+    Applied to factors and forward returns, never to prices: the factors are
+    computed from a lookback window that deliberately reaches back before the
+    ticker joined, and masking the prices would destroy it. What must not
+    happen is the ticker entering the *cross-section* outside its spells --
+    that is what puts names in the universe on days they were not investable.
+    """
+    mask = membership_mask(frame.index, frame.columns, membership)
+    return frame.where(mask)
+
+
 def split_train_test(data:pd.DataFrame, train_end:str, test_start:str):
     """Split a frame, or a dict of frames, into train and test scopes.
 
@@ -500,9 +547,27 @@ def split_train_test(data:pd.DataFrame, train_end:str, test_start:str):
         'test': data.loc[test_start:]
     }
 
-def prepare_ic_inputs(close: pd.DataFrame, factors: dict[str, pd.DataFrame], train_end: str, test_start :str,periods:list[int]|int):
-    """Compute forward returns and split both them and the factors by scope."""
+def prepare_ic_inputs(close: pd.DataFrame, factors: dict[str, pd.DataFrame], train_end: str, test_start :str,periods:list[int]|int, membership: pd.DataFrame | None = None):
+    """Compute forward returns and split both them and the factors by scope.
+
+    Args:
+        membership: Point-in-time spell table. Required in the pipeline; the
+            default exists only so ad-hoc analysis on a hand-built frame does
+            not have to invent one. Passing None means every ticker present in
+            ``close`` is treated as investable on every date, which overstates
+            the universe both ways -- it keeps names after they were dropped
+            and admits them before they were added.
+    """
     forward_returns = forward_return(close, periods = periods)
+    if membership is not None:
+        factors = {
+            name: apply_membership(frame, membership)
+            for name, frame in factors.items()
+        }
+        forward_returns = {
+            period: apply_membership(frame, membership)
+            for period, frame in forward_returns.items()
+        }
     return{
         'factors': split_train_test(factors, train_end, test_start),
         'forward_returns': split_train_test(forward_returns, train_end, test_start)
@@ -557,6 +622,16 @@ def orthogonalize_analysis(
     orth_train = orthogonalize(train_factors, high_corr_dict, resample_summary_train)
     orth_test = orthogonalize(test_factors, high_corr_dict, resample_summary_train)
 
+    # ``excess_return`` exists in the built-in factor set but is not required
+    # for custom or synthetic factor collections. Dropped *before* the IC is
+    # calculated, not after: popping it afterwards left the column in this
+    # variant's cs_ic, so the tests still reported an excess_return result for
+    # a variant whose factor dict no longer held it -- and the backtest, which
+    # looks up every significant factor by name, died with KeyError the moment
+    # that row came back significant.
+    orth_train.pop('excess_return', None)
+    orth_test.pop('excess_return', None)
+
     orth_ic_input = {
         'factors':{
             'train': orth_train,
@@ -572,10 +647,6 @@ def orthogonalize_analysis(
         output_path = output_path,
     )
 
-    # ``excess_return`` exists in the built-in factor set but is not required
-    # for custom or synthetic factor collections.
-    orth_train.pop('excess_return', None)
-    orth_test.pop('excess_return', None)
     return ICVariant(
     train={
         "factors": orth_train,
@@ -709,6 +780,7 @@ def prepare_raw_variant(
     test_start: str,
     periods: list[int] | int,
     output_path: str | Path | None = None,
+    membership: pd.DataFrame | None = None,
 ):
     split_result = prepare_ic_inputs(
         close = close,
@@ -716,6 +788,7 @@ def prepare_raw_variant(
         train_end = train_end,
         test_start = test_start,
         periods = periods,
+        membership = membership,
     )
 
     ic_result = calculate_ic(
