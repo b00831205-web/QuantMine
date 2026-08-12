@@ -1,7 +1,7 @@
 """Dev entry point: start the webapi (uvicorn --reload) and the frontend (vite)
 together with one command.
 
-Registered as a console script so it runs like ``uv run dev`` — the same
+Registered as a console script so it runs like ``uv run quantmine-dev`` — the same
 mechanism Airflow uses for ``airflow standalone`` (a ``[project.scripts]`` entry
 point resolved inside the project venv). Unlike Airflow's pure-Python case, this
 orchestrates two runtimes (Python uvicorn + Node vite) across two venvs, so it
@@ -37,7 +37,7 @@ def _airflow_bin(env: dict) -> Path:
     """Where the airflow CLI is expected, matching what the webapi looks for.
 
     Kept identical to ``webapi/app/api/v1/workflows/cli.py`` on purpose: if the
-    two disagree, ``uv run dev`` starts a scheduler the API cannot then drive,
+    two disagree, ``uv run quantmine-dev`` starts a scheduler the API cannot then drive,
     and the Workflows page returns 502 on every pause/trigger while looking
     perfectly healthy on read (the DAG list comes from the metadata database,
     not the CLI).
@@ -138,7 +138,7 @@ def main() -> None:
         sys.exit(
             f"[dev] Backend interpreter not found: {api_python}\n"
             "      webapi/.venv is a Linux venv; run this command inside WSL:\n"
-            "      wsl -d Ubuntu -- bash -lc 'cd <repo> && uv run dev'"
+            "      wsl -d Ubuntu -- bash -lc 'cd <repo> && uv run quantmine-dev'"
         )
     api = subprocess.Popen(
         [str(api_python), "-m", "uvicorn",

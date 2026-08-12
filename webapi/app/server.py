@@ -2,7 +2,7 @@
 
 Serves the API and the bundled frontend from a single process, so a deployment
 needs no Node runtime. Host and port come from ``QUANTMINE_WEB_HOST`` and
-``QUANTMINE_WEB_PORT``. Reload is deliberately off; use ``uv run dev`` for
+``QUANTMINE_WEB_PORT``. Reload is deliberately off; use ``uv run quantmine-dev`` for
 development.
 """
 import os

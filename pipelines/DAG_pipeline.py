@@ -64,7 +64,11 @@ def task_command(script: str, *, uses_config: bool = False) -> str:
         'export HTTP_PROXY="${HTTP_PROXY:-$http_proxy}" && '
         'export HTTPS_PROXY="${HTTPS_PROXY:-$https_proxy}" && '
         'export QUANTMINE_DATABASE_URL="${QUANTMINE_PIPELINE_DATABASE_URL:-$QUANTMINE_DATABASE_URL}" && '
-        f'{PYTHON_BIN_EXPR} pipelines/{script} '
+        # -u is load-bearing, not a nicety. Airflow captures stdout through a
+        # pipe, so Python block-buffers it: the download's progress lines only
+        # reached the log when the task ended, leaving twenty-odd minutes that
+        # looked indistinguishable from a hang.
+        f'{PYTHON_BIN_EXPR} -u pipelines/{script} '
         # Airflow 3 manual runs created without an explicit logical date do not
         # expose the legacy ``ds`` template variable. ``run_after`` exists for
         # scheduled and manual runs alike, so the UI/API trigger path remains
@@ -85,6 +89,12 @@ with DAG("quant_factor_mining",
         schedule=timedelta(days=1),
         start_date=datetime(2020, 1, 1, tzinfo=timezone.utc),
         catchup=False,
+        # 这条 pipeline 的任务通过固定文件名交接中间产物（data/processed/*.partNN
+        # .parquet），而清洗步骤会消费掉分片。Airflow 默认允许 16 个并发 run，两个
+        # run 一起跑就会互相删文件，后一个的 data_cleaning 报 FileNotFoundError。
+        # 新用户很容易造出这种情况：启用 DAG 会立刻触发一次到期的调度运行，此时
+        # 再手动点一次「触发」就是两个并发 run。
+        max_active_runs=1,
         tags=['quant_factor_mining'],
         ) as dag:
     t0 = BashOperator(

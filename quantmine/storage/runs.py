@@ -7,13 +7,23 @@ from sqlalchemy.engine import Engine
 
 
 def get_current_git_commit() -> str | None:
-    """Return the current commit, or ``None`` outside a Git checkout."""
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    """Return the current commit, or ``None`` outside a Git checkout.
+
+    ``check=False`` covers "this directory is not a repository", but Git may
+    also be absent entirely — the container images and any minimal install of
+    the library have no ``git`` binary — and that raises before the exit code
+    is ever consulted. Both cases mean the same thing here: no commit to
+    record.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:  # FileNotFoundError when the binary is missing
+        return None
     return result.stdout.strip() or None
 
 

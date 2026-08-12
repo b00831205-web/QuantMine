@@ -100,10 +100,26 @@ def test_missing_lookback_alone_does_not_retrigger_forever():
 
 
 def test_delisted_ticker_is_never_requested_again_once_complete():
+    """Complete reaches through the forward buffer, not just to the exit."""
+    m = membership([("GONE", "2015-01-01", "2023-05-15")])
+    c = coverage([("GONE", "2015-01-02", "2023-06-29", 2100)])
+
+    assert jobs_for(plan(m, c), "GONE") == []
+
+
+def test_delisted_ticker_gets_a_forward_buffer_past_its_exit():
+    """A position held on the last day in the index still has a forward return.
+
+    Stopping at the exit leaves that return NaN for every name that ever left,
+    which is exactly the set carrying the losses.
+    """
     m = membership([("GONE", "2015-01-01", "2023-05-15")])
     c = coverage([("GONE", "2015-01-02", "2023-05-15", 2100)])
 
-    assert jobs_for(plan(m, c), "GONE") == []
+    jobs = jobs_for(plan(m, c), "GONE")
+
+    assert len(jobs) == 1
+    assert jobs[0].end == pd.Timestamp("2023-06-29")
 
 
 def test_delisted_ticker_still_gets_its_own_tail_not_todays():
@@ -114,7 +130,7 @@ def test_delisted_ticker_still_gets_its_own_tail_not_todays():
     jobs = jobs_for(plan(m, c), "GONE")
 
     assert len(jobs) == 1
-    assert jobs[0].end == pd.Timestamp("2023-05-15")
+    assert jobs[0].end == pd.Timestamp("2023-06-29")
     assert jobs[0].end < AS_OF
 
 
@@ -165,10 +181,15 @@ def test_market_closure_at_the_head_is_not_a_gap():
     assert jobs_for(plan(m, c), "T") == []
 
 
-def test_closed_spell_ending_on_a_weekend_is_not_re_requested():
-    """end_date is a calendar date; the last bar is the Friday before."""
-    m = membership([("GONE", "2015-01-01", "2023-05-13")])   # a Saturday
-    c = coverage([("GONE", "2015-01-02", "2023-05-12", 2100)])  # Friday
+def test_closed_spell_whose_buffer_ends_on_a_weekend_is_not_re_requested():
+    """The boundary that must tolerate a weekend is now the buffered one.
+
+    Membership dates are calendar dates and so is the forward buffer added to
+    them, so the window can close on a day the market never opened. Without the
+    slack the planner would re-request that empty tail forever.
+    """
+    m = membership([("GONE", "2015-01-01", "2023-05-11")])  # +45d = Sun 06-25
+    c = coverage([("GONE", "2015-01-02", "2023-06-23", 2100)])  # Friday
 
     assert jobs_for(plan(m, c), "GONE") == []
 
@@ -227,13 +248,18 @@ def test_daily_increment_is_first_even_behind_a_huge_backlog():
     assert jobs[:3][0].reason == "increment"
 
 
+# The ledger only governs maintenance runs -- a cold start deliberately
+# ignores it -- so these cases need a database that already holds something.
+SEEDED = [("SPY", "2015-01-02", "2026-08-10", 2900)]
+
+
 def test_hopeless_tickers_stop_being_requested():
     """~195 historical members have no recoverable Yahoo history. Without a
     ceiling they are re-requested every run, burning the shared rate limit."""
     m = membership([("DEAD", "2015-01-01", "2018-01-01")])
     attempts = {"DEAD": {"attempts": 3, "last_attempt": "2026-08-05"}}
 
-    assert jobs_for(plan(m, coverage([]), attempts=attempts), "DEAD") == []
+    assert jobs_for(plan(m, coverage(SEEDED), attempts=attempts), "DEAD") == []
 
 
 def test_hopeless_tickers_are_retried_after_the_cooldown():
@@ -242,14 +268,14 @@ def test_hopeless_tickers_are_retried_after_the_cooldown():
     m = membership([("DEAD", "2015-01-01", "2018-01-01")])
     attempts = {"DEAD": {"attempts": 9, "last_attempt": "2026-01-01"}}
 
-    assert jobs_for(plan(m, coverage([]), attempts=attempts), "DEAD") != []
+    assert jobs_for(plan(m, coverage(SEEDED), attempts=attempts), "DEAD") != []
 
 
 def test_attempts_below_the_ceiling_still_get_requested():
     m = membership([("MAYBE", "2015-01-01", "2018-01-01")])
     attempts = {"MAYBE": {"attempts": 2, "last_attempt": "2026-08-09"}}
 
-    assert jobs_for(plan(m, coverage([]), attempts=attempts), "MAYBE") != []
+    assert jobs_for(plan(m, coverage(SEEDED), attempts=attempts), "MAYBE") != []
 
 
 def test_ledger_never_suppresses_the_live_increment():
@@ -271,3 +297,49 @@ def test_empty_database_downloads_the_whole_window(empty):
 
     assert jobs[0].start == ANALYSIS_START
     assert jobs[0].end == AS_OF
+
+
+def test_cold_start_is_one_window_for_everyone():
+    """An empty database gets a single request window, not one per spell.
+
+    Per-spell windows are correct for maintenance and ruinous for a first run:
+    they turn one bulk fetch into hundreds of serialized round trips.
+    """
+    m = membership(
+        [
+            ("OLD", "2015-01-01", None),
+            ("GONE", "2015-01-01", "2018-06-01"),
+            ("LATE", "2022-03-01", None),
+        ]
+    )
+
+    jobs = plan(m, coverage([]))
+
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job.start == pd.Timestamp("2015-01-01")
+    assert job.end == AS_OF
+    assert set(job.tickers) == {"OLD", "GONE", "LATE", "SPY"}
+
+
+def test_cold_start_ignores_the_attempts_ledger():
+    """The first fetch is meant to be complete, so nothing is held back.
+
+    Resting a hopeless name saves a request only when it would have had a batch
+    to itself, which is a maintenance-run shape. Here it rides along with live
+    tickers for free -- while honouring a ledger left over from an earlier
+    install would quietly hold names out of the one run meant to get everything.
+    """
+    m = membership([("OLD", "2015-01-01", None), ("DEAD", "2015-01-01", "2016-01-01")])
+    attempts = {"DEAD": {"attempts": 5, "last_attempt": str(AS_OF.date())}}
+
+    jobs = build_download_plan(
+        m,
+        coverage([]),
+        as_of=AS_OF,
+        analysis_start=pd.Timestamp("2015-01-01"),
+        attempts=attempts,
+    )
+
+    assert len(jobs) == 1
+    assert {"OLD", "DEAD"} <= set(jobs[0].tickers)

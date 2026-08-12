@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from quantmine.storage.database import get_engine
 from quantmine.storage.ic import save_ic_artifacts, save_workflow_results, save_test_result_artifacts
+from quantmine.storage.membership import fetch_membership
 from quantmine.storage.runs import create_run
 from quantmine.workflows.ic import run_ic_workflow
 
@@ -69,10 +70,21 @@ def main():
     engine = get_engine()
     run_id = create_run(engine, config_snapshot)
 
+    # Point-in-time universe. Without it the cross-section on any given day is
+    # "every ticker we ever downloaded", which both keeps names after they left
+    # the index and admits them before they joined.
+    membership = fetch_membership(engine)
+    if membership.empty:
+        raise RuntimeError(
+            "index_membership is empty; run task_0_universe first. Computing IC "
+            "without it would silently use a look-ahead universe."
+        )
+
     variants, test_results = run_ic_workflow(
         close=close,
         factors=factors,
         research_config=research_config,
+        membership=membership,
     )
 
     save_workflow_results(

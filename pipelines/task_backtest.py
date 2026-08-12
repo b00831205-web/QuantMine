@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from quantmine.storage.backtest import save_backtest_workflow_results
 from quantmine.storage.database import get_engine
 from quantmine.storage.ic import load_ic_variants, load_test_results
+from quantmine.storage.membership import fetch_membership
 from quantmine.storage.runs import find_run_id_by_airflow_batch
 from quantmine.workflows.backtest_workflow import run_backtest_workflow
 
@@ -58,12 +59,24 @@ def main():
     variants = load_ic_variants(engine, run_id)
     test_results = load_test_results(engine, run_id)
 
+    # Point-in-time universe. quantile_backtest already knows how to honour it
+    # -- MembershipTableSource wraps this frame -- but the pipeline used to
+    # pass None, which silently let every quantile be picked from every ticker
+    # ever downloaded, including names that were not in the index on the day
+    # being traded.
+    membership = fetch_membership(engine)
+    if membership.empty:
+        raise RuntimeError(
+            "index_membership is empty; run task_0_universe first. Backtesting "
+            "without it would silently trade a look-ahead universe."
+        )
+
     workflow_results = run_backtest_workflow(
         close=close,
         variants=variants,
         test_results=test_results,
         backtest_config=backtest_config,
-        constituents=None,
+        constituents=membership,
         market_cap=market_cap,
     )
 

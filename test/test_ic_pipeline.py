@@ -198,3 +198,105 @@ def test_configuration_driven_ic_workflow_returns_normalized_results():
     assert results["newey_raw"]["test_method"] == "newey_test"
     assert isinstance(results["newey_raw"]["summary"], pd.DataFrame)
     assert isinstance(results["newey_raw"]["multiple_testing"], pd.DataFrame)
+
+
+def test_membership_keeps_a_ticker_out_of_the_cross_section_outside_its_spells():
+    """A name counts only on the days it was actually in the index.
+
+    Without this the universe on any date is "every ticker ever downloaded",
+    which admits a name before it joined and keeps it after it was dropped --
+    the second half being the one that flatters a backtest, since the names
+    that leave are the ones that fell out.
+    """
+    dates = pd.date_range("2024-01-01", periods=10, freq="B")
+    columns = ["STAYS", "LEAVES", "JOINS"]
+    close = pd.DataFrame(
+        {t: 100.0 + np.arange(len(dates)) for t in columns}, index=dates
+    )
+    factors = {
+        "f": pd.DataFrame(1.0, index=dates, columns=columns)
+    }
+    membership = pd.DataFrame(
+        [
+            {"ticker": "STAYS", "start_date": dates[0], "end_date": None},
+            {"ticker": "LEAVES", "start_date": dates[0], "end_date": dates[4]},
+            {"ticker": "JOINS", "start_date": dates[5], "end_date": None},
+        ]
+    )
+
+    prepared = prepare_ic_inputs(
+        close=close,
+        factors=factors,
+        train_end=str(dates[-1].date()),
+        test_start=str(dates[-1].date()),
+        periods=[1],
+        membership=membership,
+    )
+    masked = prepared["factors"]["train"]["f"]
+
+    assert masked["STAYS"].notna().all()
+    # LEAVES is present through its exit and absent after it.
+    assert masked.loc[: dates[4], "LEAVES"].notna().all()
+    assert masked.loc[dates[5]:, "LEAVES"].isna().all()
+    # JOINS is the mirror image: nothing before it was added.
+    assert masked.loc[: dates[4], "JOINS"].isna().all()
+    assert masked.loc[dates[5]:, "JOINS"].notna().all()
+
+
+def test_membership_is_ignored_when_not_supplied():
+    """The default must stay a no-op so ad-hoc analysis keeps working."""
+    dates = pd.date_range("2024-01-01", periods=6, freq="B")
+    columns = ["A", "B"]
+    close = pd.DataFrame({t: 100.0 + np.arange(len(dates)) for t in columns}, index=dates)
+    factors = {"f": pd.DataFrame(1.0, index=dates, columns=columns)}
+
+    prepared = prepare_ic_inputs(
+        close=close,
+        factors=factors,
+        train_end=str(dates[-1].date()),
+        test_start=str(dates[-1].date()),
+        periods=[1],
+    )
+
+    assert prepared["factors"]["train"]["f"].notna().all().all()
+
+
+def test_orthogonalized_variant_reports_no_ic_for_a_factor_it_dropped():
+    """Every factor the tests name must exist in the variant's factor dict.
+
+    The backtest resolves significant factors by name against that dict, so a
+    test row for a factor the variant dropped is a KeyError waiting for the
+    day that row comes back significant.
+    """
+    dates = pd.date_range("2024-01-01", periods=40, freq="B")
+    columns = ["A", "B", "C", "D"]
+    rng = np.random.default_rng(0)
+    close = pd.DataFrame(
+        100 + rng.standard_normal((len(dates), len(columns))).cumsum(axis=0),
+        index=dates,
+        columns=columns,
+    )
+    factors = {
+        name: pd.DataFrame(
+            rng.standard_normal((len(dates), len(columns))),
+            index=dates,
+            columns=columns,
+        )
+        for name in ("excess_return", "momentum", "vol")
+    }
+
+    raw = prepare_raw_variant(
+        close=close,
+        factors=factors,
+        train_end=str(dates[29].date()),
+        test_start=str(dates[30].date()),
+        periods=[1],
+    )
+    orth = orthogonalize_analysis(raw, periods=[1])
+
+    assert "excess_return" not in orth.train["factors"]
+    ic_factors = {
+        column[0] if isinstance(column, tuple) else column
+        for column in orth.train["cs_ic"].columns
+    }
+    assert "excess_return" not in ic_factors

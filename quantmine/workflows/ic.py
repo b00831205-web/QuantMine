@@ -19,8 +19,15 @@ def run_ic_workflow(
     close,
     factors,
     research_config: dict,
+    membership=None,
 ):
-    """Build configured variants and run configured tests."""
+    """Build configured variants and run configured tests.
+
+    Args:
+        membership: Point-in-time spell table, used to keep a name out of the
+            cross-section on days it was not in the index. None disables the
+            filter and lets every ticker in ``close`` count on every date.
+    """
     periods = research_config["periods"]
     raw_variant = prepare_raw_variant(
         close=close,
@@ -28,6 +35,7 @@ def run_ic_workflow(
         train_end=research_config["train_end"],
         test_start=research_config["test_start"],
         periods=periods,
+        membership=membership,
     )
 
     variants = {"raw": raw_variant}

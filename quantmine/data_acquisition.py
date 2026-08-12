@@ -20,6 +20,75 @@ import hashlib
 import pandas_datareader.data as web
 from typing import Literal
 
+
+PROGRESS_BAR_WIDTH = 24
+
+
+def _duration(seconds: float) -> str:
+    """Render a coarse duration: nobody needs sub-second precision here."""
+    seconds = int(max(0, seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m{seconds:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
+def progress_line(
+    label: str,
+    done: int,
+    total: int,
+    started: float,
+    *,
+    detail: str = "",
+) -> str:
+    """Render one progress line for a scrolling, line-oriented log.
+
+    Args:
+        label: Which leg is running, e.g. ``prices`` or ``shares``.
+        done: Units finished so far -- not the one being started, so the
+            elapsed-per-unit rate the ETA comes from stays honest.
+        total: Units in this leg.
+        started: ``time.monotonic()`` from before the first unit.
+        detail: What is being fetched right now.
+
+    Returns:
+        A complete line. Airflow renders task output as a scrolling log, so a
+        carriage-return bar redrawn in place would just be noise; one line per
+        step is what can actually be read, and read after the fact.
+
+    Notes:
+        The download is a twenty-minute wall of silence without this. Yahoo
+        rate limiting also makes duration vary a lot between runs, so a bare
+        "please wait" is not enough to tell a slow run from a hung one.
+    """
+    total = max(1, total)
+    done = max(0, min(done, total))
+    fraction = done / total
+    filled = round(fraction * PROGRESS_BAR_WIDTH)
+    bar = "#" * filled + "." * (PROGRESS_BAR_WIDTH - filled)
+    elapsed = time.monotonic() - started
+    parts = [
+        f"{label:<7}[{bar}] {done:>4}/{total} {fraction:>4.0%}",
+        f"elapsed {_duration(elapsed)}",
+    ]
+    if done:
+        parts.append(f"eta {_duration(elapsed / done * (total - done))}")
+    if detail:
+        parts.append(detail)
+    return "  ".join(parts)
+
+
+class _EmptyResponse(Exception):
+    """Yahoo answered, but with no rows.
+
+    Kept distinct from a transport or parsing failure so a batch of names that
+    have simply been delisted for a decade does not look like a broken run.
+    """
+
+
 def is_delisted_error(msg: str, ignore_json: json)-> bool:
     """Check whether an error message matches any delisting keyword.
 
@@ -143,8 +212,17 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
                 and silently mix adjusted with unadjusted closes.
 
         Returns:
-            The downloaded frame, or None once retries are exhausted; in that
-            case the batch is appended to ``failed_batches.json``.
+            The downloaded frame; an *empty* frame when every attempt came back
+            with no rows at all; or None once retries are exhausted against a
+            real error. Both failure kinds are appended to
+            ``failed_batches.json``, tagged with which one it was.
+
+            The distinction matters upstream. A batch made entirely of names
+            delisted years ago legitimately returns nothing, and treating that
+            as a failure aborts the whole download -- see ``data_acquisition``.
+            Yahoo does report throttling as an empty frame too, which is why
+            the empty case is still retried and still logged; what changes is
+            only that it no longer counts as an error.
 
         Notes:
             Requests are serialized (``threads=False``) because concurrent
@@ -156,6 +234,9 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
             print(f"{batch_index} already exist")
             return pd.read_parquet(checkpoint_path)
 
+        # Cleared by any failure that is not "the response had no rows", so the
+        # two outcomes stay distinguishable after the loop.
+        empty_only = True
         for attempt in range(max_retries):
             try:
         # threads=False serializes requests to reduce Yahoo throttling; yfinance
@@ -165,7 +246,7 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
                                 auto_adjust=auto_adjust, progress=False,
                                 threads=False, timeout=30)
                 if data.empty:
-                    raise ValueError("Empty data returned")
+                    raise _EmptyResponse("Empty data returned")
                 if isinstance(data.columns, pd.MultiIndex):
                     close = data["Close"]
                     empty_tickers = close.columns[close.isnull().all()].tolist()
@@ -177,6 +258,7 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
                 data.to_parquet(checkpoint_path)
                 return data
             except Exception as e:
+                empty_only = empty_only and isinstance(e, _EmptyResponse)
                 print(f"Attempt {attempt+1} failed: {e}")
                 if attempt < max_retries - 1:
                     print(f"Retrying after {wait} seconds...")
@@ -189,15 +271,20 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
                     if line.strip():
                         existing_failed.add(json.loads(line)["batch_index"])
 
+        reason = "no_data" if empty_only else "error"
         if batch_index not in existing_failed:
             with open(failed_log, mode="a", encoding="utf-8") as failed_file:
                 json.dump(
-                    {"batch_index": batch_index, "tickers": batch},
+                    {
+                        "batch_index": batch_index,
+                        "tickers": batch,
+                        "reason": reason,
+                    },
                     failed_file,
                 )
                 failed_file.write("\n")
-        print(f"Batch {batch_index} failed, logging to {failed_log}")
-        return None 
+        print(f"Batch {batch_index} failed ({reason}), logging to {failed_log}")
+        return pd.DataFrame() if empty_only else None
 
 def split_price_frames(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Split one download into adjusted close, unadjusted close, and volume.
@@ -300,29 +387,46 @@ def data_acquisition(
     all_close = []
     all_raw_close = []
     all_volume = []
+    errored_batches = 0
+    total_batches = -(-len(tickers) // batch_size)
+    started = time.monotonic()
     for i in range(0, len(tickers), batch_size):
         batch = tickers[i: i+batch_size]
         batch_index= i//batch_size+1
-        print(f"downloading batch{batch_index} ... \ntickers {i} - {min(len(tickers), (i+batch_size))}")
+        print(
+            progress_line(
+                "prices", batch_index - 1, total_batches, started,
+                detail=f"fetching {i}-{min(len(tickers), i + batch_size)}",
+            )
+        )
                 # auto_adjust=False returns adjusted and raw close prices in one
                 # request, avoiding a second price download for market cap.
                 # Volume is identical in both modes.
         data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir, auto_adjust=False)
-        if data is not None:
-            if isinstance(data.columns, pd.MultiIndex):
-                adjusted, raw, vol = split_price_frames(data)
-                all_close.append(adjusted)
-                all_volume.append(vol)
-                if raw is not None:
-                    all_raw_close.append(raw)
+        if data is None:
+            errored_batches += 1
+        elif isinstance(data.columns, pd.MultiIndex):
+            adjusted, raw, vol = split_price_frames(data)
+            all_close.append(adjusted)
+            all_volume.append(vol)
+            if raw is not None:
+                all_raw_close.append(raw)
         if batch_wait > 0:
             time.sleep(batch_wait)
 
     if not all_close:
-        raise RuntimeError(
-            "No market-data batch succeeded; inspect "
-            f"{os.path.join(task_checkpoint_dir, 'failed_batches.json')}"
-        )
+        # Nothing came back. Only a transport-level failure means the run is
+        # broken; a window whose tickers all left the index years ago really
+        # does have no data, and raising there would abort the entire download
+        # over names the caller already expects to be empty. It records them in
+        # its attempts ledger instead, so they stop being requested.
+        if errored_batches:
+            raise RuntimeError(
+                "No market-data batch succeeded; inspect "
+                f"{os.path.join(task_checkpoint_dir, 'failed_batches.json')}"
+            )
+        empty = pd.DataFrame()
+        return empty, empty.copy(), empty.copy(), empty.copy()
     close = pd.concat(all_close, axis=1)
     volume = pd.concat(all_volume, axis=1)
         # Price-only consumers such as datareader skip per-ticker share requests.
@@ -597,7 +701,16 @@ def acquire_market_cap(
 
     shares = {}
     consecutive_failures = 0
-    for t in price.columns:
+    # The longest leg by far on a cold start: the share endpoint is per-ticker,
+    # so this is ~770 serialized requests where prices took 39 batched ones.
+    total_shares = len(price.columns)
+    shares_started = time.monotonic()
+    for done, t in enumerate(price.columns):
+        if done % 20 == 0:
+            # Every ticker would be 770 lines of log for one leg; every 20 is
+            # about one line per 30 seconds at the observed pace.
+            print(progress_line("shares", done, total_shares, shares_started,
+                                detail=f"fetching {t}"))
         raw = load_shares_cache(checkpoint_dir, t, max_age_days=shares_cache_days)
         if raw is None:
             if consecutive_failures >= shares_failure_budget:

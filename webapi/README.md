@@ -20,7 +20,7 @@ Open:
 - Health check: <http://localhost:8000/api/v1/health>
 
 The API expects the PostgreSQL connection variables created by
-`scripts/setup.py`. For the complete frontend/API/Airflow stack, use `uv run dev`
+`scripts/setup.py`. For the complete frontend/API/Airflow stack, use `uv run quantmine-dev`
 from the repository root.
 
 ## Environment

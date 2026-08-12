@@ -97,7 +97,7 @@ cd frontend && npm ci && cd ..
 webapi/.venv/bin/python scripts/setup.py
 
 # Start frontend + API + Airflow together
-uv run dev
+uv run quantmine-dev
 ```
 
 Development endpoints:

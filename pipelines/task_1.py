@@ -369,15 +369,29 @@ def main() -> None:
 
     print(f"[{args.batch}] download plan ({len(jobs)} jobs):")
     print(summarize(jobs))
-    if len(jobs) > args.max_jobs:
+    # The cap protects a *daily* pipeline from a backfill that runs for hours.
+    # On a cold start there is no daily pipeline to protect yet, and capping
+    # costs far more than it saves: a fresh install plans ~340 jobs, so twelve
+    # per run means a month of runs before the research universe is complete,
+    # and until then every window the config trains on is short a few hundred
+    # names. Pay it once, up front, instead.
+    cold_start = coverage.empty
+    max_jobs = len(jobs) if cold_start else args.max_jobs
+    if cold_start:
+        print(
+            f"[{args.batch}] no market data stored yet: running all "
+            f"{len(jobs)} jobs in one pass rather than deferring "
+            f"{max(0, len(jobs) - args.max_jobs)} of them"
+        )
+    if len(jobs) > max_jobs:
         # Safe to truncate only because the plan is priority-sorted: the daily
         # increment is job 1, so a backlog of historical backfills can never
         # crowd out today's prices.
         print(
-            f"[{args.batch}] running the first {args.max_jobs}; "
-            f"{len(jobs) - args.max_jobs} deferred to the next run"
+            f"[{args.batch}] running the first {max_jobs}; "
+            f"{len(jobs) - max_jobs} deferred to the next run"
         )
-        jobs = jobs[: args.max_jobs]
+        jobs = jobs[:max_jobs]
 
     for index, job in enumerate(jobs, start=1):
         print(f"[{args.batch}] job {index}/{len(jobs)}: {job}")

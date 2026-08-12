@@ -625,7 +625,7 @@ cd webapi
 $env:UV_PROJECT_ENVIRONMENT='.venv-win'
 uv sync
 cd ..
-uv run dev
+uv run quantmine-dev
 ```
 
 ```bash
@@ -633,7 +633,7 @@ uv run dev
 cd webapi
 uv sync
 cd ..
-uv run dev
+uv run quantmine-dev
 ```
 
 - [ ] **Step 2: Update Docker dependency and migration documentation**
