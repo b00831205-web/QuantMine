@@ -21,6 +21,66 @@ import pandas_datareader.data as web
 from typing import Literal
 
 
+PROGRESS_BAR_WIDTH = 24
+
+
+def _duration(seconds: float) -> str:
+    """Render a coarse duration: nobody needs sub-second precision here."""
+    seconds = int(max(0, seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m{seconds:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
+def progress_line(
+    label: str,
+    done: int,
+    total: int,
+    started: float,
+    *,
+    detail: str = "",
+) -> str:
+    """Render one progress line for a scrolling, line-oriented log.
+
+    Args:
+        label: Which leg is running, e.g. ``prices`` or ``shares``.
+        done: Units finished so far -- not the one being started, so the
+            elapsed-per-unit rate the ETA comes from stays honest.
+        total: Units in this leg.
+        started: ``time.monotonic()`` from before the first unit.
+        detail: What is being fetched right now.
+
+    Returns:
+        A complete line. Airflow renders task output as a scrolling log, so a
+        carriage-return bar redrawn in place would just be noise; one line per
+        step is what can actually be read, and read after the fact.
+
+    Notes:
+        The download is a twenty-minute wall of silence without this. Yahoo
+        rate limiting also makes duration vary a lot between runs, so a bare
+        "please wait" is not enough to tell a slow run from a hung one.
+    """
+    total = max(1, total)
+    done = max(0, min(done, total))
+    fraction = done / total
+    filled = round(fraction * PROGRESS_BAR_WIDTH)
+    bar = "#" * filled + "." * (PROGRESS_BAR_WIDTH - filled)
+    elapsed = time.monotonic() - started
+    parts = [
+        f"{label:<7}[{bar}] {done:>4}/{total} {fraction:>4.0%}",
+        f"elapsed {_duration(elapsed)}",
+    ]
+    if done:
+        parts.append(f"eta {_duration(elapsed / done * (total - done))}")
+    if detail:
+        parts.append(detail)
+    return "  ".join(parts)
+
+
 class _EmptyResponse(Exception):
     """Yahoo answered, but with no rows.
 
@@ -328,10 +388,17 @@ def data_acquisition(
     all_raw_close = []
     all_volume = []
     errored_batches = 0
+    total_batches = -(-len(tickers) // batch_size)
+    started = time.monotonic()
     for i in range(0, len(tickers), batch_size):
         batch = tickers[i: i+batch_size]
         batch_index= i//batch_size+1
-        print(f"downloading batch{batch_index} ... \ntickers {i} - {min(len(tickers), (i+batch_size))}")
+        print(
+            progress_line(
+                "prices", batch_index - 1, total_batches, started,
+                detail=f"fetching {i}-{min(len(tickers), i + batch_size)}",
+            )
+        )
                 # auto_adjust=False returns adjusted and raw close prices in one
                 # request, avoiding a second price download for market cap.
                 # Volume is identical in both modes.
@@ -634,7 +701,16 @@ def acquire_market_cap(
 
     shares = {}
     consecutive_failures = 0
-    for t in price.columns:
+    # The longest leg by far on a cold start: the share endpoint is per-ticker,
+    # so this is ~770 serialized requests where prices took 39 batched ones.
+    total_shares = len(price.columns)
+    shares_started = time.monotonic()
+    for done, t in enumerate(price.columns):
+        if done % 20 == 0:
+            # Every ticker would be 770 lines of log for one leg; every 20 is
+            # about one line per 30 seconds at the observed pace.
+            print(progress_line("shares", done, total_shares, shares_started,
+                                detail=f"fetching {t}"))
         raw = load_shares_cache(checkpoint_dir, t, max_age_days=shares_cache_days)
         if raw is None:
             if consecutive_failures >= shares_failure_budget:

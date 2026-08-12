@@ -64,7 +64,11 @@ def task_command(script: str, *, uses_config: bool = False) -> str:
         'export HTTP_PROXY="${HTTP_PROXY:-$http_proxy}" && '
         'export HTTPS_PROXY="${HTTPS_PROXY:-$https_proxy}" && '
         'export QUANTMINE_DATABASE_URL="${QUANTMINE_PIPELINE_DATABASE_URL:-$QUANTMINE_DATABASE_URL}" && '
-        f'{PYTHON_BIN_EXPR} pipelines/{script} '
+        # -u is load-bearing, not a nicety. Airflow captures stdout through a
+        # pipe, so Python block-buffers it: the download's progress lines only
+        # reached the log when the task ended, leaving twenty-odd minutes that
+        # looked indistinguishable from a hang.
+        f'{PYTHON_BIN_EXPR} -u pipelines/{script} '
         # Airflow 3 manual runs created without an explicit logical date do not
         # expose the legacy ``ds`` template variable. ``run_after`` exists for
         # scheduled and manual runs alike, so the UI/API trigger path remains
