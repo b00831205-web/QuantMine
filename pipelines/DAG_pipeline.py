@@ -85,6 +85,12 @@ with DAG("quant_factor_mining",
         schedule=timedelta(days=1),
         start_date=datetime(2020, 1, 1, tzinfo=timezone.utc),
         catchup=False,
+        # 这条 pipeline 的任务通过固定文件名交接中间产物（data/processed/*.partNN
+        # .parquet），而清洗步骤会消费掉分片。Airflow 默认允许 16 个并发 run，两个
+        # run 一起跑就会互相删文件，后一个的 data_cleaning 报 FileNotFoundError。
+        # 新用户很容易造出这种情况：启用 DAG 会立刻触发一次到期的调度运行，此时
+        # 再手动点一次「触发」就是两个并发 run。
+        max_active_runs=1,
         tags=['quant_factor_mining'],
         ) as dag:
     t0 = BashOperator(

@@ -2,7 +2,7 @@
 # 等 Postgres 就绪 → 幂等创建首个管理员 → 启动 uvicorn。
 set -euo pipefail
 
-for name in QUANT_AUTH_SECRET QUANTMINE_ADMIN_PASSWORD AIRFLOW_FERNET_KEY; do
+for name in QUANT_AUTH_SECRET QUANTMINE_ADMIN_PASSWORD AIRFLOW__CORE__FERNET_KEY; do
     value="${!name:-}"
     if [ -z "$value" ] || [ "$value" = "REPLACE_ME" ]; then
         echo "[webapi] $name is missing or still uses the example placeholder" >&2
