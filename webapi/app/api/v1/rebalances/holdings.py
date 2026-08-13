@@ -33,9 +33,13 @@ def fetch_holdings(path: str, trade_date: str, quantile_rank: int) -> list[dict]
     market-cap-weighted run, and the reported returns would not match the
     holdings shown next to them.
 
-    Artifacts written before weights were persisted have no such column (or
-    null values). Those runs were equal-weighted, so falling back to ``1/n``
-    reproduces them faithfully rather than guessing.
+    Two different absences, two different answers. An artifact with no ``weight``
+    column at all predates weight persistence; those runs were equal-weighted, so
+    ``1/n`` reproduces them faithfully. A null *within* a weighted set means
+    something else: the weighting scheme found no market cap for that name on
+    that date, and ``_weighted_group_return`` dropped it, so the backtest held no
+    position in it. Reporting ``1/n`` there would invent a position the strategy
+    never took and push the column past 100%.
     """
     df = pd.read_parquet(path)
 
@@ -47,18 +51,20 @@ def fetch_holdings(path: str, trade_date: str, quantile_rank: int) -> list[dict]
         return []
 
     quantile = "LS" if quantile_rank == 0 else f"Q{quantile_rank}"
+    has_weights = "weight" in filtered.columns
     equal = round(1 / len(filtered), 6)
-    stored = (
-        filtered["weight"] if "weight" in filtered.columns else pd.Series(dtype=float)
-    )
-    holdings = []
-    for position, ticker in enumerate(filtered["ticker"].tolist()):
-        weight = stored.iloc[position] if position < len(stored) else None
-        holdings.append(
-            {
-                "symbol": ticker,
-                "weight": equal if pd.isna(weight) else round(float(weight), 6),
-                "quantile": quantile,
-            }
-        )
-    return holdings
+    weights = filtered["weight"].tolist() if has_weights else []
+    return [
+        {
+            "symbol": ticker,
+            "weight": (
+                equal
+                if not has_weights
+                else 0.0
+                if pd.isna(weights[position])
+                else round(float(weights[position]), 6)
+            ),
+            "quantile": quantile,
+        }
+        for position, ticker in enumerate(filtered["ticker"].tolist())
+    ]
