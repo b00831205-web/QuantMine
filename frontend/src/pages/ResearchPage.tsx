@@ -29,6 +29,8 @@ import type {
   BacktestSeriesResponse,
 } from '@/types/research';
 import type { AsyncState } from '@/types/api';
+import { effectSizeColor } from '@/utils/effectSize';
+import { EffectSizeLegend } from '@/components/common/EffectSizeLegend';
 import styles from './ResearchPage.module.css';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -130,8 +132,11 @@ const buildTestColumns = (
       const cls = r.bhSignificant
         ? `${styles.sig} ${styles.sigOn}`
         : `${styles.sig} ${styles.sigOff}`;
+      // Significant says the IC is reliably non-zero; the colour says how big it
+      // is, so a 0.9% IC does not look like a 3.9% one at a glance.
+      const tone = r.bhSignificant ? { color: effectSizeColor(r.icMean) } : undefined;
       return (
-        <span className={cls}>
+        <span className={cls} style={tone}>
           <span className={styles.sigDot} aria-hidden="true" />
           {r.bhSignificant ? t('research.significant') : t('research.notSignificant')}
         </span>
@@ -476,6 +481,7 @@ export const ResearchPage = () => {
               ? t('research.factorMeta', { runId: activeRunId })
               : t('research.noRun')}
           </span>
+          <EffectSizeLegend />
         </div>
 
         <AsyncBoundary
@@ -614,6 +620,7 @@ const FactorLedger = ({
                 : t('research.notSignificant')
           }
           significance={factor.bhSignificant === true}
+          icMean={factor.icMean}
         />
       </div>
 
@@ -639,14 +646,20 @@ const ExpandKpi = ({
   label,
   value,
   significance,
+  /** Mean IC behind a significance verdict, used to colour it by effect size. */
+  icMean,
 }: {
   label: string;
   value: string;
   significance?: boolean;
+  icMean?: number | null | undefined;
 }) => (
   <div className={styles.kpi}>
     <span className={styles.kpiLabel}>{label}</span>
-    <span className={significance ? `${styles.kpiValue} ${styles.kpiSigOn}` : styles.kpiValue}>
+    <span
+      className={significance ? `${styles.kpiValue} ${styles.kpiSigOn}` : styles.kpiValue}
+      style={significance ? { color: effectSizeColor(icMean) } : undefined}
+    >
       {significance ? <span className={styles.sigDot} aria-hidden="true" /> : null}
       {value}
     </span>

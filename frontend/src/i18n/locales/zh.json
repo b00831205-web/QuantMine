@@ -108,6 +108,10 @@
       "emptyHint": "请先导入对应回测的日收益结果。",
       "show": "查看净值曲线",
       "hide": "收起净值曲线"
+    },
+    "effectSize": {
+      "weak": "IC 弱",
+      "strong": "IC 强 (≥{{strong}})"
     }
   },
   "factorDetail": {
@@ -325,7 +329,8 @@
       "turnover": "换手率",
       "holdings": "持仓数",
       "daysToNext": "距下次(天)",
-      "return": "收益"
+      "return": "收益",
+      "weighting": "加权方式"
     },
     "filter": {
       "date": "调仓日期",
@@ -347,6 +352,10 @@
       "turnoverNote": "单边平均换手",
       "lsNote": "LS 多空组合无单独持仓",
       "nextNote": "距下次调仓 {{days}} 天"
+    },
+    "weighting": {
+      "equal": "等权",
+      "mcap": "市值加权"
     }
   },
   "rebalanceDetail": {
@@ -596,7 +605,7 @@
     "embeddingModel": "模型名",
     "embeddingApiKeyEnv": "API Key环境变量名（默认SILICONFLOW_API_KEY）",
     "embeddingDimensions": "向量维度",
-    "embeddingHint": "开发测试默认：硅基流动BAAI/bge-m3（1024维），Key 放环境变量SILICONFLOW_API_KEY。本地模型填Ollama：http://localhost:11434/v1 + bge-m3，不需要Key。只有开启上方「跨对话语料检索」权限后才会真正生效。",
+    "embeddingHint": "开发测试默认：硅基流动 BAAI/bge-m3（1024 维），Key 放环境变量 SILICONFLOW_API_KEY。本地模型填 Ollama + bge-m3，不需要 Key —— 地址按部署方式区分：原生部署填 http://localhost:11434/v1；Docker 部署必须填 http://host.docker.internal:11434/v1，因为容器里的 localhost 指的是容器自己，连不到宿主机上的 Ollama。只有开启上方「跨对话语料检索」权限后才会真正生效。",
     "skillCard": "Skill / 插件",
     "skillEmpty": "未发现技能插件。把插件目录放到项目根 skills/ 下（每个目录含 skill.py），重启后端后出现在这里。",
     "loading": "加载中...",

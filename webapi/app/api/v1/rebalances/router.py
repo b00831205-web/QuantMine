@@ -85,6 +85,9 @@ def get_rebalances(
             ),
             "backtestJob": r["backtest_id"],
             "variant": r["variant_name"],
+            # Two jobs can share a variant, so without this a market-cap and an
+            # equal-weight row are indistinguishable in the table.
+            "weighting": r["weighting"],
             "factor": r["factor_name"],
             "holdingPeriod": r["period"],
             "type": "long_short" if r["quantile_rank"] == 0 else "quantile",
@@ -205,6 +208,7 @@ def get_rebalance_detail(
         'rebalanceId': rebalance_id,
         'backtestJob': row['backtest_id'],
         'variant': row['variant_name'],
+        'weighting': row['weighting'],
         'factor': row['factor_name'],
         'holdingPeriod': row['period'],
         'type': 'long_short' if row['quantile_rank'] == 0 else 'quantile',

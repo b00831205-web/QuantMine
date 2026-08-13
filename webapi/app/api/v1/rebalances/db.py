@@ -37,7 +37,12 @@ def fetch_rebalance_rows(
             table.c.trade_date,
             table.c.quantile_rank,
             table.c.return_value,
-            table.c.run_id
+            table.c.run_id,
+            # Without this the list cannot be read: mcap_quintile and
+            # orthogonalized_quintile share a variant, so two rows for the same
+            # date, factor, period and quantile look identical while holding
+            # completely different weights.
+            table.c.weighting,
         )
         .where(*conditions)
         .order_by(table.c.trade_date.desc(), table.c.quantile_rank)
@@ -117,7 +122,8 @@ def fetch_rebalance_detail_row(
             table.c.period,
             table.c.trade_date,
             table.c.quantile_rank,
-            table.c.return_value
+            table.c.return_value,
+            table.c.weighting,
         )
         .where(
             table.c.run_id == run_id,

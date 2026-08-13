@@ -144,13 +144,14 @@
   display: inline-block;
 }
 
+/* Colour is set inline from the effect-size ramp so text and dot move together:
+   a significant-but-tiny IC reads grey, a strong one reads accent blue. */
 .sigOn {
-  color: var(--text-primary);
   font-weight: 600;
 }
 
 .sigOn .sigDot {
-  background: var(--accent);
+  background: currentColor;
 }
 
 .sigOff {

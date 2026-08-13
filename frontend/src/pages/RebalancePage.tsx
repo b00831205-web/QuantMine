@@ -57,6 +57,21 @@ const REBALANCE_COLUMNS: Column<RebalanceSummary>[] = [
     render: (r) => <span className={styles.textCell}>{r.variant}</span>,
   },
   {
+    // Sits next to Variant because that is where the ambiguity is: two backtest
+    // jobs can share a variant, and then only the weighting scheme tells the
+    // rows apart -- while it is the thing that decides every position size.
+    key: 'weighting',
+    header: i18n.t('rebalance.col.weighting'),
+    align: 'left',
+    render: (r) => (
+      <span className={styles.textCell}>
+        {r.weighting
+          ? i18n.t(`rebalance.weighting.${r.weighting}`, { defaultValue: r.weighting })
+          : '—'}
+      </span>
+    ),
+  },
+  {
     key: 'holdingPeriod',
     header: i18n.t('rebalance.col.holdingPeriod'),
     align: 'right',

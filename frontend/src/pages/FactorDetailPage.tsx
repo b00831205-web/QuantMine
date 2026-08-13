@@ -44,6 +44,7 @@ import type {
   IcSeriesResponse,
 } from '@/types/research';
 import type { AsyncState, Page } from '@/types/api';
+import { effectSizeColor } from '@/utils/effectSize';
 import styles from './FactorDetailPage.module.css';
 
 /* ── URL 派生状态：所有筛选状态都来自 useSearchParams ── */
@@ -581,6 +582,7 @@ export const FactorDetailPage = () => {
                   : t('research.notSignificant')
             }
             significance={selectedRow?.bhSignificant === true}
+            icMean={selectedRow?.icMean}
           />
         </div>
       </section>
@@ -663,14 +665,20 @@ const LedgerCell = ({
   label,
   value,
   significance,
+  /** Mean IC behind a significance verdict, used to colour it by effect size. */
+  icMean,
 }: {
   label: string;
   value: string;
   significance?: boolean;
+  icMean?: number | null | undefined;
 }) => (
   <div className={styles.cell}>
     <span className={styles.cellLabel}>{label}</span>
-    <span className={significance ? `${styles.cellValue} ${styles.cellSigOn}` : styles.cellValue}>
+    <span
+      className={significance ? `${styles.cellValue} ${styles.cellSigOn}` : styles.cellValue}
+      style={significance ? { color: effectSizeColor(icMean) } : undefined}
+    >
       {significance ? <span className={styles.sigDot} aria-hidden="true" /> : null}
       {value}
     </span>
@@ -779,8 +787,10 @@ const StatsTable = ({
             const cls = r.bhSignificant
               ? `${styles.sig} ${styles.sigOn}`
               : `${styles.sig} ${styles.sigOff}`;
+            // Reliably non-zero is the claim; the colour carries how large.
+            const tone = r.bhSignificant ? { color: effectSizeColor(r.icMean) } : undefined;
             return (
-              <span className={cls}>
+              <span className={cls} style={tone}>
                 <span className={styles.sigDot} aria-hidden="true" />
                 {r.bhSignificant ? t('research.significant') : t('research.notSignificant')}
               </span>

@@ -1,0 +1,27 @@
+/* Sits in the panel header, right-aligned next to the run metadata. */
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Same two endpoints the chips interpolate between, in the same colour space,
+   so the bar is the scale rather than an approximation of it. */
+.ramp {
+  width: 72px;
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    to right in oklab,
+    var(--text-muted),
+    var(--accent)
+  );
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

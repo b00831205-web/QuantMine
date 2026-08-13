@@ -312,6 +312,28 @@ documented in the [official DeepSeek API documentation](https://api-docs.deepsee
 After saving the page, restart `quantmine-api` so the running process reloads
 `.env`, then refresh the browser.
 
+#### Under Docker
+
+The steps above describe the native deployment, which reads the repository-root
+`.env`. Containers do not. Put the key in `.env.docker` instead, and note that
+`--env-file` only feeds Compose's `${VAR}` substitution -- it does not inject
+anything into a container. The variable must also be forwarded in the `webapi`
+service's `environment:` block, which `docker-compose.yml` does for
+`OPENAI_API_KEY` and `SILICONFLOW_API_KEY`. A provider configured with any other
+`API Key env var` needs a matching line added there.
+
+Recreate the service after changing either file; a running container keeps the
+environment it started with:
+
+```bash
+docker compose --env-file .env.docker up -d webapi
+```
+
+**Ollama needs a different URL under Docker.** Inside a container `localhost` is
+the container itself, so a local Ollama on the host is unreachable at
+`http://localhost:11434/v1`. Use `http://host.docker.internal:11434/v1`. The
+symptom is a connection timeout, which does not point at the cause.
+
 Common pitfalls:
 
 - **API Key env var is a variable name, not the key itself.** Enter

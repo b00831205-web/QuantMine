@@ -4,6 +4,11 @@ export interface RebalanceSummary {
   rebalanceId: string;
   backtestJob: string;
   variant: string;
+  /**
+   * 加权方式（`equal` / `mcap`）。必须显示：两个 job 可以共用同一个 variant，
+   * 不显示它的话，同日期同因子同分位的两行看起来一模一样，权重却完全不同。
+   */
+  weighting?: string;
   factor: string;
   holdingPeriod: number; // 交易日
   type: 'quantile' | 'long_short';

@@ -108,6 +108,10 @@
       "emptyHint": "Please import the daily returns for this backtest first.",
       "show": "Show equity curve",
       "hide": "Hide equity curve"
+    },
+    "effectSize": {
+      "weak": "Weak IC",
+      "strong": "Strong IC (≥{{strong}})"
     }
   },
   "factorDetail": {
@@ -325,7 +329,8 @@
       "turnover": "Turnover",
       "holdings": "Holdings",
       "daysToNext": "Days to Next",
-      "return": "Return"
+      "return": "Return",
+      "weighting": "Weighting"
     },
     "filter": {
       "date": "Rebalance date",
@@ -347,6 +352,10 @@
       "turnoverNote": "Average one-way turnover",
       "lsNote": "LS portfolio has no separate holdings",
       "nextNote": "{{days}} days until next rebalance"
+    },
+    "weighting": {
+      "equal": "Equal",
+      "mcap": "Market cap"
     }
   },
   "rebalanceDetail": {
@@ -596,7 +605,7 @@
     "embeddingModel": "Model name",
     "embeddingApiKeyEnv": "API Key env var (default SILICONFLOW_API_KEY)",
     "embeddingDimensions": "Vector dimensions",
-    "embeddingHint": "Dev default: SiliconFlow BAAI/bge-m3 (1024 dims), key in SILICONFLOW_API_KEY. For local models use Ollama: http://localhost:11434/v1 + bge-m3 (no key). Only active when the cross-conversation RAG capability is enabled.",
+    "embeddingHint": "Dev default: SiliconFlow BAAI/bge-m3 (1024 dims), key in SILICONFLOW_API_KEY. For a local model use Ollama + bge-m3 (no key) -- the URL depends on how you deployed: http://localhost:11434/v1 when running natively, but http://host.docker.internal:11434/v1 under Docker, because localhost inside the container is the container itself, not the host running Ollama. Only active when the cross-conversation RAG capability is enabled.",
     "skillCard": "Skill / Plugins",
     "skillEmpty": "No skill plugins found. Drop a plugin directory (each containing skill.py) into the project root skills/ folder and restart the backend.",
     "loading": "Loading...",
