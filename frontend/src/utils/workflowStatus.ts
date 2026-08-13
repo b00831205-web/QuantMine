@@ -60,6 +60,34 @@ export const STATE_LABEL: Record<string, string> = {
   none: '无状态',
 };
 
+/**
+ * States that are still going to change on their own, so a view showing them
+ * has to keep asking.
+ *
+ * Classified by exclusion rather than by listing the interesting ones: the
+ * terminal set is short, closed, and easy to check against Airflow's own
+ * documentation, whereas "what counts as in-flight" is easy to under-list.
+ * ``up_for_retry`` and ``up_for_reschedule`` are the ones usually forgotten --
+ * a task waiting out its backoff looks frozen but is very much alive, and that
+ * is exactly when a stale screen is most misleading.
+ *
+ * ``none``/null is treated as terminal on purpose: a run with no state is not
+ * evidence of work in progress, and letting it drive fast polling would keep an
+ * idle page hammering the backend.
+ */
+export const TERMINAL_STATES: ReadonlySet<string> = new Set([
+  'success',
+  'failed',
+  'skipped',
+  'upstream_failed',
+  'removed',
+  'none',
+]);
+
+/** True while `state` can still change without anyone touching it. */
+export const isActiveState = (state: AirflowState | string | null | undefined): boolean =>
+  !!state && !TERMINAL_STATES.has(state);
+
 const NEUTRAL = 'var(--border-subtle)';
 
 export function stateColor(state: AirflowState | string | undefined): string {

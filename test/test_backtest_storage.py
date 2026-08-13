@@ -21,7 +21,7 @@ def test_build_ticker_history_rows_flattens_holdings_to_long_form():
 
     rows = build_ticker_history_rows(ticker_history)
 
-    assert list(rows.columns) == ["trade_date", "quantile_rank", "ticker"]
+    assert list(rows.columns) == ["trade_date", "quantile_rank", "ticker", "weight"]
     # first snapshot Q1 members are sorted for deterministic output
     assert rows[
         (rows["trade_date"] == d1) & (rows["quantile_rank"] == 1)
@@ -34,7 +34,7 @@ def test_build_ticker_history_rows_flattens_holdings_to_long_form():
 def test_build_ticker_history_rows_empty_input_has_columns():
     rows = build_ticker_history_rows([])
     assert rows.empty
-    assert list(rows.columns) == ["trade_date", "quantile_rank", "ticker"]
+    assert list(rows.columns) == ["trade_date", "quantile_rank", "ticker", "weight"]
 
 
 def test_build_backtest_rows_adds_variant_and_quantile_identity():
@@ -233,6 +233,9 @@ def test_save_backtest_workflow_results_routes_one_successful_job(monkeypatch, t
         "trade_date",
         "quantile_rank",
         "ticker",
+        # Weights travel with the holdings so the detail page reports the
+        # portfolio that was actually held rather than assuming 1/n.
+        "weight",
     ]
 
 

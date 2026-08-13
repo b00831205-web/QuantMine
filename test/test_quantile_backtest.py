@@ -92,8 +92,10 @@ def test_ticker_history_structure(synthetic_factors, synthetic_forward_returns):
     _, history = quantile_backtest(None, synthetic_factors, ["toy"], synthetic_forward_returns)
     snap = history[("toy", 1)][0]
     assert set(snap.keys()) == {"date", "Q1", "Q2", "Q3", "Q4", "Q5"}
-    assert snap["Q1"] == {"T0", "T1"}
-    assert snap["Q5"] == {"T8", "T9"}
+    # Snapshots map ticker -> target weight, not just membership: under mcap
+    # weighting the names alone do not describe the portfolio.
+    assert snap["Q1"] == {"T0": 0.5, "T1": 0.5}
+    assert snap["Q5"] == {"T8": 0.5, "T9": 0.5}
 
 
 def test_constituents_filtering_excludes_non_members(synthetic_factors, synthetic_forward_returns):

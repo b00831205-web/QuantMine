@@ -72,5 +72,27 @@ backtest:
         enabled: false
         random_seed: 42
 
+    # Same factors and selection as the job above, weighted by market cap
+    # instead of equally. Equal weighting quietly tilts a portfolio towards the
+    # smallest names in each bucket, so a factor can look profitable on a book
+    # nobody could actually run; comparing the two jobs shows how much of the
+    # result survives at realistic position sizes.
+    # Falls back to equal weighting on dates where no member has a positive
+    # market cap, so early windows degrade instead of producing NaN.
+    - id: mcap_quintile
+      variant: orthogonalized
+      selection_test: newey_orthogonalized
+      part: 5
+      cost_per_trade: 0.001
+      weighting:
+        name: mcap
+        params: {}
+      selector:
+        name: bh
+        params: {}
+      sensitivity:
+        enabled: false
+        random_seed: 42
+
 carhart_attribution:
   maxlags: 20               # maximum lag for HAC standard errors

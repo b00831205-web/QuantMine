@@ -48,9 +48,11 @@ from .factor_register import (
     factor_registry,
     build_param_pool,
     calculate_all_factors,
+    drop_intermediates,
     FACTOR_REGISTRY,
 )
 from . import factor_mining  # noqa: F401  importing registers the built-in factors
+from .factor_mining import INTERMEDIATE_FACTORS
 from .ic_calculator import (
     forward_return,
     data_standarization,
@@ -83,6 +85,7 @@ __all__ = [
     "YFinanceSource", "ConstituentsSource", "StaticUniverse",
     "MembershipTableSource",
     "factor_registry", "build_param_pool", "calculate_all_factors",
+    "drop_intermediates", "INTERMEDIATE_FACTORS",
     "FACTOR_REGISTRY",
     "forward_return", "data_standarization", "CS_Information_Correlation",
     "TM_Information_correlation", "summary", "resample_summary",

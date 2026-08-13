@@ -149,7 +149,17 @@ def quantile_backtest(constituents: ConstituentsSource | pd.DataFrame | None ,
                     group_return = forward_return_df.loc[curr_date, group_list[i]]
                     weights = weight_fn(group_list[i], curr_date, market_cap)
                     _return[f'Q{i+1}'] = _weighted_group_return(group_return, weights)
-                    _tickers[f'Q{i+1}'] = set(group_list[i])
+                    # Keep the weights, not just the membership. They are the
+                    # only record of what the portfolio actually held: under
+                    # mcap weighting the members alone say nothing about
+                    # position sizes, and a reader who assumes 1/n from a
+                    # ticker list gets a different portfolio than the one that
+                    # produced these returns. Consumers that only want the
+                    # names still work -- iterating a dict yields its keys.
+                    _tickers[f'Q{i+1}'] = {
+                        ticker: float(weight)
+                        for ticker, weight in weights.items()
+                    }
                 ticker_history.append(_tickers)
                 result.append(_return)
             if not result:
@@ -224,8 +234,12 @@ def expand_to_daily_returns(tickers_history:list, close_data: pd.DataFrame, cost
             portfolio_daily_return = portfolio_daily_return.where(w_sum > 0)
 
             if i>0:
+                # Snapshots hold ticker -> weight; wrap both sides so this stays
+                # a set operation. Turnover here is still name-based: it counts
+                # positions entered and exited, not weight drift within the
+                # names that were kept.
                 prev_set = set(tickers_history[i-1][q])
-                curr_set = curr[q]
+                curr_set = set(curr[q])
                 overlap = len(prev_set & curr_set)
                 turnover = 1 - overlap/len(curr_set)
             else:
@@ -304,8 +318,11 @@ def calculate_turnover(ticker_history: list, group: str)->pd.Series:
     turnovers = [np.nan]
     rebalance_dates = [ticker_history[0]['date']]
     for i in range(1, len(ticker_history)):
-        prev_set = ticker_history[i-1][group]
-        curr_set = ticker_history[i][group]
+        # Snapshots map ticker -> weight; take the names to keep this a set
+        # operation. Turnover stays name-based, counting positions opened and
+        # closed rather than weight drift among the names that were held on.
+        prev_set = set(ticker_history[i-1][group])
+        curr_set = set(ticker_history[i][group])
         overlap = len(prev_set & curr_set)
         turnover = (
             1 - (overlap / len(curr_set))

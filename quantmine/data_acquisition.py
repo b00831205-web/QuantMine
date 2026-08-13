@@ -193,7 +193,7 @@ def save_blacklist(tickers: list, checkpoint_dir:str):
         json.dump(updated,f, indent=2)
     print(f"Blacklist updated: {updated}")
 
-def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_index:int , task_checkpoint_dir: str,max_retries:int =3, wait: int =60, auto_adjust: bool = True, file_prefix: str = 'batch') ->pd.DataFrame | None :
+def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_index:int , task_checkpoint_dir: str,max_retries:int =3, wait: int =60, auto_adjust: bool = True, file_prefix: str = 'batch', session_healthy: bool = False) ->pd.DataFrame | None :
         """Download one batch of tickers, resuming from its checkpoint if present.
 
         Args:
@@ -210,6 +210,9 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
                 kind of price data must change it, otherwise
                 ``merge_checkpoints`` would glob those files as ordinary bars
                 and silently mix adjusted with unadjusted closes.
+            session_healthy: True once another batch in this same run came back
+                with rows. An empty response is then taken at face value and
+                retried no further -- see the note below.
 
         Returns:
             The downloaded frame; an *empty* frame when every attempt came back
@@ -260,6 +263,17 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
             except Exception as e:
                 empty_only = empty_only and isinstance(e, _EmptyResponse)
                 print(f"Attempt {attempt+1} failed: {e}")
+        # Throttling is a property of the session, not of one batch: if another
+        # batch already came back with rows, we are demonstrably not throttled,
+        # so an empty frame here means the names really have no history. Sleeping
+        # 60s twice to re-ask about a stock delisted in 2015 costs two minutes
+        # per batch and never once changed the answer -- on a fresh install,
+        # where the attempts ledger has not yet rested these names, that was the
+        # bulk of the download step. When nothing has succeeded yet we cannot
+        # tell the two apart, so the original retry stands.
+                if isinstance(e, _EmptyResponse) and session_healthy:
+                    print("Empty response with a healthy session: treating as no data, not retrying")
+                    break
                 if attempt < max_retries - 1:
                     print(f"Retrying after {wait} seconds...")
                     time.sleep(wait)
@@ -390,6 +404,9 @@ def data_acquisition(
     errored_batches = 0
     total_batches = -(-len(tickers) // batch_size)
     started = time.monotonic()
+    # Flips once any batch returns rows; from then on an empty frame is read as
+    # "no such history" rather than "possibly throttled".
+    session_healthy = False
     for i in range(0, len(tickers), batch_size):
         batch = tickers[i: i+batch_size]
         batch_index= i//batch_size+1
@@ -402,10 +419,12 @@ def data_acquisition(
                 # auto_adjust=False returns adjusted and raw close prices in one
                 # request, avoiding a second price download for market cap.
                 # Volume is identical in both modes.
-        data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir, auto_adjust=False)
+        data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir, auto_adjust=False, session_healthy=session_healthy)
         if data is None:
             errored_batches += 1
         elif isinstance(data.columns, pd.MultiIndex):
+            # One batch with rows proves the session is not being throttled.
+            session_healthy = True
             adjusted, raw, vol = split_price_frames(data)
             all_close.append(adjusted)
             all_volume.append(vol)

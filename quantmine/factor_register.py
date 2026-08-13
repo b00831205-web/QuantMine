@@ -103,3 +103,21 @@ def build_param_pool(data: dr.MarketData, tickers: list = None, **extra_param)->
         param_pool['volume'] = data.volume
     param_pool.update(extra_param)
     return param_pool
+
+
+def drop_intermediates(factors: dict) -> dict:
+    """Drop the intermediates, leaving only things worth scoring as signals.
+
+    ``calculate_all_factors`` deliberately returns everything it computed,
+    because a factor's dependencies are part of that result. But not everything
+    computed is a factor: see ``factor_mining.INTERMEDIATE_FACTORS`` for why a
+    stock's own return is an input rather than a signal. Persisting them would
+    put them in front of the IC tests and the backtest, where they show up as
+    findings.
+
+    Imported lazily to keep this module free of a cycle: ``factor_mining``
+    imports the registry from here.
+    """
+    from .factor_mining import INTERMEDIATE_FACTORS
+
+    return {name: df for name, df in factors.items() if name not in INTERMEDIATE_FACTORS}

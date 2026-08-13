@@ -90,4 +90,12 @@ def test_example_config_is_accepted():
 
     configs = load_configs(example_path)
 
-    assert len(configs["backtest"].jobs) == 2
+    jobs = configs["backtest"].jobs
+    assert [job["id"] for job in jobs] == [
+        "raw_quintile",
+        "orthogonalized_quintile",
+        # Same factors as the job above but market-cap weighted, so the two can
+        # be compared at realistic position sizes.
+        "mcap_quintile",
+    ]
+    assert jobs[2]["weighting"]["name"] == "mcap"

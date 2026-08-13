@@ -128,6 +128,3 @@ export function usePolledAsync<T>(
 
 /** 有任务在跑就快轮询，空闲时放慢——空闲时仍要轮询，否则新 run 起来没人发现。 */
 export const runAwarePollMs = (hasActive: boolean): number => (hasActive ? 5000 : 30000);
-
-/** Airflow 里代表「还没结束」的状态。 */
-export const ACTIVE_RUN_STATES = new Set(['running', 'queued', 'scheduled', 'restarting']);

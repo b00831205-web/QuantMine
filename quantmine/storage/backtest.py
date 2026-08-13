@@ -53,10 +53,15 @@ def build_ticker_history_rows(
     """Flatten one factor/period's per-rebalance holdings into long rows.
 
     ``ticker_history`` is the list produced by ``quantile_backtest``: one dict
-    per rebalance date with keys ``date`` and ``Q1``..``Qn`` (each a set of
-    tickers). Returns a long frame ``[trade_date, quantile_rank, ticker]`` so
-    the API can read the holdings of any rebalance date and quantile. Members
-    are sorted for deterministic parquet output.
+    per rebalance date with keys ``date`` and ``Q1``..``Qn``, each mapping
+    ticker to target weight. Returns a long frame
+    ``[trade_date, quantile_rank, ticker, weight]`` so the API can read what a
+    rebalance actually held rather than inferring equal weights from the names.
+    Members are sorted for deterministic parquet output.
+
+    Older snapshots stored a bare set of tickers with no weights. Those are
+    still accepted and written with a null weight, which readers render as
+    equal weighting -- the scheme those runs used.
     """
     records = []
     for snapshot in ticker_history:
@@ -65,16 +70,18 @@ def build_ticker_history_rows(
             if key == "date":
                 continue
             quantile_rank = int(str(key).removeprefix("Q"))
+            weights = members if isinstance(members, dict) else {}
             for ticker in sorted(members):
                 records.append(
                     {
                         "trade_date": trade_date,
                         "quantile_rank": quantile_rank,
                         "ticker": ticker,
+                        "weight": weights.get(ticker),
                     }
                 )
     return pd.DataFrame(
-        records, columns=["trade_date", "quantile_rank", "ticker"]
+        records, columns=["trade_date", "quantile_rank", "ticker", "weight"]
     )
 
 

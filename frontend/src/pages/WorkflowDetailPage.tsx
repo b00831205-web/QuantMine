@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ACTIVE_RUN_STATES,
-  runAwarePollMs,
-  usePolledAsync,
-} from '@/hooks/usePolledAsync';
+import { runAwarePollMs, usePolledAsync } from '@/hooks/usePolledAsync';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -33,7 +29,7 @@ import type {
 import type { AsyncState } from '@/types/api';
 import { DagGraphView } from '@/components/chart/DagGraph';
 import { TaskBarChart } from '@/components/chart/TaskBarChart';
-import { stateColor, stateLabel, CORE_LEGEND } from '@/utils/workflowStatus';
+import { stateColor, stateLabel, isActiveState, CORE_LEGEND } from '@/utils/workflowStatus';
 import { fmtDateTime, fmtDuration } from '@/utils/format';
 import { Toggle } from '@/components/common/Toggle';
 import { Play } from 'lucide-react';
@@ -207,10 +203,10 @@ export const WorkflowDetailPage = () => {
     return acc;
   }, [grid]);
 
-  // 只要还有 run 没结束就快轮询。注意用 ACTIVE_RUN_STATES 而不是只看 'running'：
-  // queued/scheduled 的 run 同样会变化，漏掉它们会让刚触发的那几秒看起来像卡住了。
+  // 只要还有 run 没结束就快轮询。用 isActiveState 而不是只看 'running'：queued、
+  // up_for_retry 这些同样会自己变化，漏掉它们，正在退避等待重试的任务看起来就像卡死了。
   useEffect(() => {
-    const active = (grid?.runs ?? []).some((r) => ACTIVE_RUN_STATES.has(r.state ?? ''));
+    const active = (grid?.runs ?? []).some((r) => isActiveState(r.state));
     setHasActiveRun(active);
   }, [grid]);
 

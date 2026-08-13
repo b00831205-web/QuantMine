@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  #locate the repo root when executed as a script
 
-from quantmine.factor_register import calculate_all_factors, build_param_pool
+from quantmine.factor_register import calculate_all_factors, build_param_pool, drop_intermediates
 from quantmine.datareader import MarketData
 from quantmine import factor_mining  # noqa: F401  importing registers the built-in factors
 import pandas as pd
@@ -43,7 +43,12 @@ if __name__ == "__main__":
             print(f"factors failed to compute: {list(failed.keys())}")
 
         os.makedirs(factors_dir, exist_ok=True)
-        for name, df in factors.items():
+        # Only signals get written: task_ic_calculate globs this directory, so a
+        # file here is a factor that will be tested, ranked and backtested.
+        # Intermediates are computed above because other factors need them, but
+        # persisting them would put a stock's own daily return on the results
+        # page as a significant finding.
+        for name, df in drop_intermediates(factors).items():
             if df is not None:
                 df.to_parquet(os.path.join(factors_dir, f"{name}.parquet"))
         print("data_proceeding_complete")

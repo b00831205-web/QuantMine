@@ -8,6 +8,27 @@ here; no call site needs to change.
 import pandas as pd
 from .factor_register import factor_registry
 
+#: Registered for their outputs, not as signals in their own right.
+#:
+#: ``daily_return`` is the thing a factor is supposed to predict, so scoring it
+#: against forward returns measures the return series' own autocorrelation and
+#: says nothing about stock selection. It reliably reads "significant" at a
+#: one-day horizon because short-term reversal is real -- but
+#: ``ShortTermReversal`` already expresses that effect as an actual factor, and
+#: reporting both invites the reader to count one effect twice.
+#:
+#: ``excess_return`` looks like a distinct market-relative factor but is not: it
+#: subtracts SPY's return, one scalar per date, from every stock. That leaves the
+#: cross-sectional ordering untouched, so its IC matches ``daily_return``'s to
+#: the last decimal. Making it genuinely independent would take a per-stock beta
+#: adjustment; until then it is an input, not a signal.
+#:
+#: Both stay registered because four real factors consume them:
+#: ``TwentyDayVolatility``, ``TwentyDayNegVotality`` and ``VolPriceCorr`` take
+#: ``daily_return``, and ``ShortTermReversal`` takes ``excess_return``.
+INTERMEDIATE_FACTORS = frozenset({"daily_return", "excess_return"})
+
+
 @factor_registry('daily_return')
 def daily_return(close:pd.DataFrame, tickers:list)->pd.DataFrame:
     """Compute daily percentage returns for a list of tickers.

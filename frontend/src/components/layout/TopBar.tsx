@@ -2,11 +2,7 @@ import styles from './TopBar.module.css';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
-import {
-  ACTIVE_RUN_STATES,
-  runAwarePollMs,
-  usePolledAsync,
-} from '@/hooks/usePolledAsync';
+import { runAwarePollMs, usePolledAsync } from '@/hooks/usePolledAsync';
 import {
   fetchAIConfig,
   fetchAIModels,
@@ -16,7 +12,7 @@ import {
   fetchMe,
   logout,
 } from '@/api/client';
-import { stateLabel, stateColor } from '@/utils/workflowStatus';
+import { stateLabel, stateColor, isActiveState } from '@/utils/workflowStatus';
 import type { AIConfig } from '@/types/ai';
 
 /**
@@ -82,7 +78,7 @@ export const TopBar = () => {
   }, [workflowsPoll.state]);
 
   useEffect(() => {
-    setHasActiveRun(ACTIVE_RUN_STATES.has(latestRun?.state ?? ''));
+    setHasActiveRun(isActiveState(latestRun?.state));
     setTaskStatus(
       latestRun
         ? { label: stateLabel(latestRun.state), color: stateColor(latestRun.state) }
