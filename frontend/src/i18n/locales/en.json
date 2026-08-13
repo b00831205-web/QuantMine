@@ -201,7 +201,7 @@
   },
   "market": {
     "title": "Market Overview",
-    "subtitle": "S&P 500 price comparison · free to browse, not official rebalancing",
+    "subtitle": "S&P 500 price comparison · explore freely; official rebalances live on the Rebalance page",
     "compareCard": "Comparison",
     "timeRange": "Time range",
     "removeTicker": "Remove {{symbol}}",
@@ -295,7 +295,7 @@
     }
   },
   "rebalance": {
-    "subtitle": "Current and historical rebalance performance of the formal strategy portfolio",
+    "subtitle": "Current and historical rebalance performance of the official strategy portfolio",
     "curveTitle": "Current-period return curve",
     "noSelection": "No rebalance selected",
     "meta": "Rebalance {{date}} · {{variant}} · {{quantile}} · {{holdingPeriod}}d",

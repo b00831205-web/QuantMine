@@ -52,6 +52,7 @@ def test_empty_batch_is_not_retried_once_a_batch_has_returned_rows(monkeypatch, 
     """
     sleeps = []
     monkeypatch.setattr(acquisition.time, "sleep", lambda seconds: sleeps.append(seconds))
+    acquisition.reset_session_health()
 
     attempts = []
 
@@ -83,6 +84,7 @@ def test_empty_batch_still_retries_while_the_session_is_unproven(monkeypatch, tm
     """
     sleeps = []
     monkeypatch.setattr(acquisition.time, "sleep", lambda seconds: sleeps.append(seconds))
+    acquisition.reset_session_health()
 
     attempts = []
 
@@ -105,3 +107,51 @@ def test_empty_batch_still_retries_while_the_session_is_unproven(monkeypatch, tm
 
     assert len(attempts) == 3, "an unproven session must still exhaust its retries"
     assert sleeps == [60, 60]
+
+
+def test_session_health_survives_across_download_calls(monkeypatch, tmp_path):
+    """The judgement is process-wide, because each download job is its own call.
+
+    ``task_1`` issues one ``data_acquisition`` call per planned job. Jobs made
+    up entirely of long-delisted names never see a single success, so a flag
+    scoped to one call is False in exactly the case it needs to be True -- and
+    those jobs go on paying the full backoff.
+    """
+    monkeypatch.setattr(acquisition.time, "sleep", lambda seconds: None)
+    acquisition.reset_session_health()
+    assert acquisition.session_is_healthy() is False
+
+    dates = pd.to_datetime(["2026-07-23"])
+
+    def good_download(tickers, **kwargs):
+        columns = pd.MultiIndex.from_product([["Close", "Volume"], tickers])
+        return pd.DataFrame([[1.0] * len(columns)], index=dates, columns=columns)
+
+    monkeypatch.setattr(acquisition.yf, "download", good_download)
+    acquisition.download_batch_with_retry(
+        batch=["LIVE"],
+        start_date="2026-07-23",
+        end_date="2026-07-24",
+        batch_index=1,
+        task_checkpoint_dir=str(tmp_path),
+    )
+    assert acquisition.session_is_healthy() is True
+
+    # A later, separate call for a batch of dead names must inherit that.
+    attempts = []
+
+    def empty_download(tickers, **kwargs):
+        attempts.append(list(tickers))
+        return pd.DataFrame()
+
+    monkeypatch.setattr(acquisition.yf, "download", empty_download)
+    acquisition.download_batch_with_retry(
+        batch=["DEAD"],
+        start_date="2015-01-01",
+        end_date="2015-03-13",
+        batch_index=2,
+        task_checkpoint_dir=str(tmp_path),
+    )
+
+    assert len(attempts) == 1, "a proven session must not re-ask for an empty batch"
+    acquisition.reset_session_health()

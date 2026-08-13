@@ -36,6 +36,32 @@ def _duration(seconds: float) -> str:
     return f"{hours}h{minutes:02d}m"
 
 
+#: Whether anything at all has downloaded successfully in this process.
+#:
+#: Deliberately process-wide rather than per call. One pipeline task issues a
+#: separate ``data_acquisition`` call per download job, and the jobs made
+#: entirely of long-delisted names never succeed even once -- so a per-call flag
+#: is False exactly when it needs to be True. What rules out throttling is that
+#: *some* request worked recently, whoever asked for it.
+_SESSION_HEALTHY = False
+
+
+def session_is_healthy() -> bool:
+    """True once any batch in this process has come back with rows."""
+    return _SESSION_HEALTHY
+
+
+def reset_session_health() -> None:
+    """Forget earlier successes. For tests, and for callers starting a new run."""
+    global _SESSION_HEALTHY
+    _SESSION_HEALTHY = False
+
+
+def _mark_session_healthy() -> None:
+    global _SESSION_HEALTHY
+    _SESSION_HEALTHY = True
+
+
 def progress_line(
     label: str,
     done: int,
@@ -193,7 +219,7 @@ def save_blacklist(tickers: list, checkpoint_dir:str):
         json.dump(updated,f, indent=2)
     print(f"Blacklist updated: {updated}")
 
-def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_index:int , task_checkpoint_dir: str,max_retries:int =3, wait: int =60, auto_adjust: bool = True, file_prefix: str = 'batch', session_healthy: bool = False) ->pd.DataFrame | None :
+def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_index:int , task_checkpoint_dir: str,max_retries:int =3, wait: int =60, auto_adjust: bool = True, file_prefix: str = 'batch', session_healthy: bool | None = None) ->pd.DataFrame | None :
         """Download one batch of tickers, resuming from its checkpoint if present.
 
         Args:
@@ -210,9 +236,9 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
                 kind of price data must change it, otherwise
                 ``merge_checkpoints`` would glob those files as ordinary bars
                 and silently mix adjusted with unadjusted closes.
-            session_healthy: True once another batch in this same run came back
-                with rows. An empty response is then taken at face value and
-                retried no further -- see the note below.
+            session_healthy: Force the "something already worked" judgement.
+                Defaults to the process-wide flag, which is what callers want;
+                tests pass it explicitly.
 
         Returns:
             The downloaded frame; an *empty* frame when every attempt came back
@@ -232,6 +258,8 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
             requests trigger Yahoo rate limiting, which surfaces misleadingly
             as "possibly delisted".
         """
+        if session_healthy is None:
+            session_healthy = session_is_healthy()
         checkpoint_path = os.path.join(task_checkpoint_dir, f"{file_prefix}_{batch_index}.parquet")
         if os.path.exists(checkpoint_path):
             print(f"{batch_index} already exist")
@@ -259,6 +287,7 @@ def download_batch_with_retry(batch: list, start_date: str, end_date:str, batch_
                     if empty_tickers:
                         print(f"Empty columns (not blacklisted): {empty_tickers}")
                 data.to_parquet(checkpoint_path)
+                _mark_session_healthy()
                 return data
             except Exception as e:
                 empty_only = empty_only and isinstance(e, _EmptyResponse)
@@ -404,9 +433,6 @@ def data_acquisition(
     errored_batches = 0
     total_batches = -(-len(tickers) // batch_size)
     started = time.monotonic()
-    # Flips once any batch returns rows; from then on an empty frame is read as
-    # "no such history" rather than "possibly throttled".
-    session_healthy = False
     for i in range(0, len(tickers), batch_size):
         batch = tickers[i: i+batch_size]
         batch_index= i//batch_size+1
@@ -419,12 +445,10 @@ def data_acquisition(
                 # auto_adjust=False returns adjusted and raw close prices in one
                 # request, avoiding a second price download for market cap.
                 # Volume is identical in both modes.
-        data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir, auto_adjust=False, session_healthy=session_healthy)
+        data = download_batch_with_retry(batch=batch, start_date=start_date, end_date=end_date, max_retries=max_retries, wait=wait, batch_index=batch_index, task_checkpoint_dir = task_checkpoint_dir, auto_adjust=False)
         if data is None:
             errored_batches += 1
         elif isinstance(data.columns, pd.MultiIndex):
-            # One batch with rows proves the session is not being throttled.
-            session_healthy = True
             adjusted, raw, vol = split_price_frames(data)
             all_close.append(adjusted)
             all_volume.append(vol)
