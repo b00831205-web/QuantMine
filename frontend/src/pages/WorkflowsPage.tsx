@@ -18,15 +18,15 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { PageHeader } from '@/components/common/PageHeader';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
+import { FreshnessNote } from '@/components/common/FreshnessNote';
 import { HttpError } from '@/api/http';
 import { fetchWorkflows, pauseDag, triggerWorkflow } from '@/api/client';
+import { runAwarePollMs, usePolledAsync } from '@/hooks/usePolledAsync';
 import type { DagListItem, RunRef } from '@/types/workflow';
-import type { AsyncState } from '@/types/api';
 import { stateColor, CORE_LEGEND } from '@/utils/workflowStatus';
 import { fmtDateTime, fmtDuration } from '@/utils/format';
 import { Toggle } from '@/components/common/Toggle';
 import { Play, RotateCcw } from 'lucide-react';
-import i18n from '@/i18n';
 import styles from './WorkflowsPage.module.css';
 
 type StateFilter = 'all' | 'running' | 'success' | 'failed' | 'paused';
@@ -34,16 +34,6 @@ type StateFilter = 'all' | 'running' | 'success' | 'failed' | 'paused';
 const FILTERS: StateFilter[] = ['all', 'running', 'success', 'failed', 'paused'];
 
 const RECENT_SQUARES = 10;
-
-const networkError = (): AsyncState<never> => ({
-  status: 'error',
-  error: {
-    code: 'NETWORK_ERROR',
-    title: i18n.t('common.networkError.title'),
-    detail: i18n.t('common.networkError.detail'),
-    status: 0,
-  },
-});
 
 /** 状态 → i18n 文案；未知状态回退到原始值 */
 const stateLabel = (state: string | null | undefined, t: TFunction) =>
@@ -84,7 +74,6 @@ const StateDot = ({ state }: { state: string | null }) => {
 export const WorkflowsPage = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [listState, setListState] = useState<AsyncState<DagListItem[]>>({ status: 'idle' });
   const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<StateFilter>('all');
@@ -92,23 +81,12 @@ export const WorkflowsPage = () => {
   const [confirmTrigger, setConfirmTrigger] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    setListState({ status: 'loading' });
-    fetchWorkflows(controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setListState({ status: 'success', data });
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        if (error instanceof HttpError) {
-          setListState({ status: 'error', error: error.apiError });
-          return;
-        }
-        setListState(networkError());
-      });
-    return () => controller.abort();
-  }, [refreshKey]);
+  // 有 DAG 在跑就 5 秒一轮，空闲 30 秒一轮。轮询走静默路径，不会把列表闪回骨架屏。
+  const [hasRunning, setHasRunning] = useState(false);
+  const listPoll = usePolledAsync<DagListItem[]>((s) => fetchWorkflows(s), [refreshKey], {
+    pollMs: runAwarePollMs(hasRunning),
+  });
+  const listState = listPoll.state;
 
   const dags = useMemo(() => (listState.status === 'success' ? listState.data : []), [listState]);
 
@@ -123,6 +101,10 @@ export const WorkflowsPage = () => {
     }
     return { total: dags.length, running, failed, paused };
   }, [dags]);
+
+  useEffect(() => {
+    setHasRunning(summary.running > 0);
+  }, [summary.running]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -145,23 +127,14 @@ export const WorkflowsPage = () => {
     });
   }, [dags, search, filter]);
 
-  const patchDag = (dagId: string, patch: Partial<DagListItem>) => {
-    setListState((prev) =>
-      prev.status === 'success'
-        ? {
-            status: 'success',
-            data: prev.data.map((d) => (d.dagId === dagId ? { ...d, ...patch } : d)),
-          }
-        : prev,
-    );
-  };
-
   const handleTogglePause = async (dag: DagListItem) => {
     setBusyDagId(dag.dagId);
     setActionMsg(null);
     try {
-      const res = await pauseDag(dag.dagId, !dag.isPaused);
-      patchDag(dag.dagId, { isPaused: res.isPaused });
+      await pauseDag(dag.dagId, !dag.isPaused);
+      // 以前是就地打补丁改本地状态。现在列表本身在轮询，拉一次真实数据即可——
+      // 而且启用 DAG 会立刻触发一次补跑，本地补丁看不到那个新 run，反而更不准。
+      listPoll.refresh();
     } catch (error) {
       setActionMsg(error instanceof HttpError ? error.apiError.title : t('workflow.pauseFailed'));
     } finally {
@@ -194,14 +167,22 @@ export const WorkflowsPage = () => {
           title={t('nav.workflows')}
           subtitle={t('workflow.subtitle')}
           actions={
-            <button
-              type="button"
-              className={styles.refreshBtn}
-              onClick={() => setRefreshKey((k) => k + 1)}
-            >
-              <RotateCcw size={12} strokeWidth={1.75} aria-hidden="true" />
-              {t('workflow.refresh')}
-            </button>
+            <>
+              <FreshnessNote
+                lastUpdatedAt={listPoll.lastUpdatedAt}
+                isRefreshing={listPoll.isRefreshing}
+                isStale={listPoll.lastError !== null}
+                pollMs={runAwarePollMs(hasRunning)}
+              />
+              <button
+                type="button"
+                className={styles.refreshBtn}
+                onClick={() => listPoll.refresh()}
+              >
+                <RotateCcw size={12} strokeWidth={1.75} aria-hidden="true" />
+                {t('workflow.refresh')}
+              </button>
+            </>
           }
         />
       </div>

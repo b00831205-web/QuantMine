@@ -22,6 +22,12 @@ export interface RebalanceDetail extends RebalanceSummary {
   asOfDate: string;
   holdings: Array<{ symbol: string; weight: number; quantile?: string }>;
   contributions: Array<{ symbol: string; contribution: number }>;
+  /**
+   * 持仓为空的原因。`long_short` 是正常的（LS 组合没有独立持仓）；
+   * `artifact_missing` 是故障（回测产物 parquet 找不到，通常是 webapi 没挂 data 目录）。
+   * 旧后端不返回该字段，故为可选。
+   */
+  holdingsStatus?: 'ok' | 'long_short' | 'artifact_missing' | 'empty';
 }
 
 export interface RebalanceQuery {

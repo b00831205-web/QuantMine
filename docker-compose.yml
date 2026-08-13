@@ -48,6 +48,11 @@ services:
       QUANTMINE_ADMIN_PASSWORD: ${QUANTMINE_ADMIN_PASSWORD}
       POSTGRES_HOST: postgres
       QUANT_AUTH_COOKIE_SECURE: "0"
+    volumes:
+      # 回测产物（ticker_history parquet）由 airflow 容器写进 ./data，webapi 读它才能
+      # 给出调仓持仓与个股贡献。不挂这一条，holdings 永远解析不到，前端只会显示
+      # 一句"本期没有独立持仓"，把缺文件伪装成正常状态。只读：webapi 从不写产物。
+      - ./data:/app/data:ro
     depends_on:
       postgres:
         condition: service_healthy

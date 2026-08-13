@@ -288,6 +288,10 @@
     },
     "gantt": {
       "minutes": "运行后分钟"
+    },
+    "freshness": {
+      "updated": "最后更新 {{time}}",
+      "stale": "刷新失败，仍显示 {{time}} 的数据"
     }
   },
   "rebalance": {
@@ -305,6 +309,7 @@
     "topTitle": "前 20 只股票收益",
     "topHint": "按本期贡献排序",
     "railEmpty": "该调仓无单独持仓（如 LS 多空组合），请选择 Q1–Q5 的行查看。",
+    "railMissingArtifact": "读不到本期回测产物，持仓无法显示。这不是「本期没有持仓」，而是产物文件缺失——Docker 部署下通常是 webapi 未挂载 data 目录。",
     "railNote": "前 {{shown}} / 共 {{total}} 只持仓",
     "viewHoldings": "查看完整持仓 →",
     "notApplicable": "不适用",
@@ -349,6 +354,7 @@
     "title": "调仓详情",
     "subtitle": "本期 Q1–Q5 实际持仓",
     "empty": "该调仓无单独持仓（如 LS 多空组合）。",
+    "missingArtifact": "读不到本期回测产物，持仓无法显示。这不是「本期没有持仓」，而是产物文件缺失——Docker 部署下通常是 webapi 未挂载 data 目录。",
     "donutTitle": "持股比例",
     "meta": "调仓日 {{date}} · {{variant}} · {{holdingPeriod}}d · 数据日 {{asOf}}",
     "holdingsCount": "{{count}} 只持仓",
@@ -573,7 +579,6 @@
     "providerNamePlaceholder": "自定义供应商名称",
     "customProviderName": "自定义供应商",
     "apiKeyEnv": "API Key 环境变量名（留空默认 OPENAI_API_KEY）",
-    "baseUrl": "Base URL",
     "modelList": "模型列表（逗号分隔）",
     "overrideCapabilities": "覆盖全局权限",
     "deleteProvider": "删除该供应商",

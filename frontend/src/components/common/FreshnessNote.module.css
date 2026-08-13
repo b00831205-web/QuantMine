@@ -1,0 +1,48 @@
+/* 次要信息：跟旁边的刷新按钮同高对齐，但不与之争夺注意力。 */
+.note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 28px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* 刷新失败时数据是旧的。这不是装饰性的强调，是「别信屏幕上的数字」的警告。 */
+.note.stale {
+  color: var(--warning);
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--border-strong);
+  flex: none;
+}
+
+/* 正在刷新：呼吸一下就够了，这是背景活动，不该抢视线。 */
+.dotActive {
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 关掉动画偏好时保持静态可见，而不是让它消失。 */
+@media (prefers-reduced-motion: reduce) {
+  .dotActive {
+    animation: none;
+    opacity: 1;
+  }
+}

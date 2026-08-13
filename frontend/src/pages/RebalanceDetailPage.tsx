@@ -81,7 +81,12 @@ export const RebalanceDetailPage = () => {
       <AsyncBoundary state={detailState}>
         {(detail) => {
           if (detail.holdings.length === 0) {
-            return <div className={styles.empty}>{t('rebalanceDetail.empty')}</div>;
+            // 同 RebalancePage：产物缺失是故障，不能显示成"本期本来就没有持仓"。
+            const emptyKey =
+              detail.holdingsStatus === 'artifact_missing'
+                ? 'rebalanceDetail.missingArtifact'
+                : 'rebalanceDetail.empty';
+            return <div className={styles.empty}>{t(emptyKey)}</div>;
           }
 
           const holdings = detail.holdings;

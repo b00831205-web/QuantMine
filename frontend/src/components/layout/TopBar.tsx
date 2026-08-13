@@ -1,7 +1,12 @@
 import styles from './TopBar.module.css';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  ACTIVE_RUN_STATES,
+  runAwarePollMs,
+  usePolledAsync,
+} from '@/hooks/usePolledAsync';
 import {
   fetchAIConfig,
   fetchAIModels,
@@ -59,25 +64,31 @@ export const TopBar = () => {
       navigate('/login', { replace: true });
     }
   };
+  // 这个指示器以前只在挂载时取一次，而 TopBar 挂在 AppShell 上、切页面不会重新挂载，
+  // 所以 DAG 跑起来它纹丝不动，跑完也不变——必须整页刷新才更新。改成轮询：有任务在跑
+  // 5 秒一次，空闲 30 秒一次（空闲也要轮，否则新 run 起来没人发现）。
+  const [hasActiveRun, setHasActiveRun] = useState(false);
+  const workflowsPoll = usePolledAsync((s) => fetchWorkflows(s), [], {
+    pollMs: runAwarePollMs(hasActiveRun),
+  });
+
+  const latestRun = useMemo(() => {
+    if (workflowsPoll.state.status !== 'success') return null;
+    const runs = workflowsPoll.state.data
+      .flatMap((dag) => dag.recentRuns ?? [])
+      .filter((run) => run.startDate !== null)
+      .sort((a, b) => (b.startDate! > a.startDate! ? 1 : -1));
+    return runs[0] ?? null;
+  }, [workflowsPoll.state]);
+
   useEffect(() => {
-    const controller = new AbortController();
-    fetchWorkflows(controller.signal)
-      .then((dags) => {
-        if (controller.signal.aborted) return;
-        const runs = dags
-          .flatMap((dag) => dag.recentRuns ?? [])
-          .filter((run) => run.startDate !== null)
-          .sort((a, b) => (b.startDate! > a.startDate! ? 1 : -1));
-        const latest = runs[0];
-        setTaskStatus(
-          latest ? { label: stateLabel(latest.state), color: stateColor(latest.state) } : null,
-        );
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setTaskStatus(null);
-      });
-    return () => controller.abort();
-  }, []);
+    setHasActiveRun(ACTIVE_RUN_STATES.has(latestRun?.state ?? ''));
+    setTaskStatus(
+      latestRun
+        ? { label: stateLabel(latestRun.state), color: stateColor(latestRun.state) }
+        : null,
+    );
+  }, [latestRun]);
 
   // 模型列表 + 全局默认模型：路由变化时刷新，配置页改完切回来能同步
   useEffect(() => {

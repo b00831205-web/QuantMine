@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import {
+  ACTIVE_RUN_STATES,
+  runAwarePollMs,
+  usePolledAsync,
+} from '@/hooks/usePolledAsync';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/common/PageHeader';
+import { FreshnessNote } from '@/components/common/FreshnessNote';
 import { Card } from '@/components/common/Card';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
 import { HttpError } from '@/api/http';
@@ -151,15 +157,23 @@ export const WorkflowDetailPage = () => {
 
   const detailState = useAsync<DagDetail>((s) => fetchWorkflowDetail(dagId, s), [dagId]);
   const graphState = useAsync<DagGraph>((s) => fetchDagGraph(dagId, s), [dagId]);
-  const gridState = useAsync<GridResponse>(
+  // 网格与任务面板是唯一会随运行变化的两块，轮询它们即可；详情/图/代码是静态的。
+  // 有 run 未结束就 5 秒一轮，否则 30 秒。走静默刷新，不会每轮闪一次骨架屏。
+  const [hasActiveRun, setHasActiveRun] = useState(false);
+  const pollMs = runAwarePollMs(hasActiveRun);
+  const gridPoll = usePolledAsync<GridResponse>(
     (s) => fetchWorkflowGrid(dagId, 25, s),
     [dagId, gridRefresh],
+    { pollMs },
   );
+  const gridState = gridPoll.state;
   const codeState = useAsync<CodeResponse>((s) => fetchWorkflowCode(dagId, s), [dagId]);
-  const runTasksState = useAsync<TaskInstanceInfo[]>(
+  const runTasksPoll = usePolledAsync<TaskInstanceInfo[]>(
     (s) => (selectedRunId ? fetchRunTasks(dagId, selectedRunId, s) : Promise.resolve([])),
     [dagId, selectedRunId, gridRefresh],
+    { pollMs },
   );
+  const runTasksState = runTasksPoll.state;
   const runsState = useAsync<WorkflowRunsPage>(
     (s) => fetchWorkflowRuns(dagId, runsPage, RUNS_PAGE_SIZE, s),
     [dagId, runsPage],
@@ -191,6 +205,13 @@ export const WorkflowDetailPage = () => {
       else acc.other += 1;
     }
     return acc;
+  }, [grid]);
+
+  // 只要还有 run 没结束就快轮询。注意用 ACTIVE_RUN_STATES 而不是只看 'running'：
+  // queued/scheduled 的 run 同样会变化，漏掉它们会让刚触发的那几秒看起来像卡住了。
+  useEffect(() => {
+    const active = (grid?.runs ?? []).some((r) => ACTIVE_RUN_STATES.has(r.state ?? ''));
+    setHasActiveRun(active);
   }, [grid]);
 
   const handleTogglePause = async () => {
@@ -269,6 +290,12 @@ export const WorkflowDetailPage = () => {
         }
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+            <FreshnessNote
+              lastUpdatedAt={gridPoll.lastUpdatedAt}
+              isRefreshing={gridPoll.isRefreshing}
+              isStale={gridPoll.lastError !== null}
+              pollMs={pollMs}
+            />
             {isPaused !== null && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <Toggle on={isPaused} disabled={busy} onChange={handleTogglePause} />

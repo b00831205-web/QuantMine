@@ -152,6 +152,17 @@ def get_rebalance_detail(
         fetch_holdings(path, ident['trade_date'], ident['quantile_rank'])
         if path else []
     )
+    # 空持仓有三种截然不同的原因，前端必须能区分：LS 组合本就没有独立持仓（正常），
+    # 产物文件找不到（部署/挂载故障），文件在但这一期没有记录（数据问题）。
+    # 以前一律显示"本期没有独立持仓"，把故障说成了正常，排查时极具误导性。
+    if ident['quantile_rank'] == 0:
+        holdings_status = 'long_short'
+    elif path is None:
+        holdings_status = 'artifact_missing'
+    elif not holdings:
+        holdings_status = 'empty'
+    else:
+        holdings_status = 'ok'
     next_date = fetch_next_rebalance_date(engine, **ident)
 
     closes=[]
@@ -203,6 +214,7 @@ def get_rebalance_detail(
         'excessReturn': excess_return,
         'turnover': metrics.get('turnover'),
         'holdingsCount': len(holdings),
+        'holdingsStatus': holdings_status,
         'tradingDaysToNext': trading_days,
         'unit': 'decimal',
     }

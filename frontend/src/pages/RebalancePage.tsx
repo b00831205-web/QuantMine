@@ -542,7 +542,13 @@ export const RebalancePage = () => {
                 ).slice(0, 20);
 
                 if (top.length === 0) {
-                  return <div className={styles.railEmpty}>{t('rebalance.railEmpty')}</div>;
+                  // 别把"产物找不到"说成"本期没有独立持仓"——那是把故障伪装成正常，
+                  // 排查的人会去翻回测逻辑，而真正的原因往往只是 data 目录没挂载。
+                  const emptyKey =
+                    detail.holdingsStatus === 'artifact_missing'
+                      ? 'rebalance.railMissingArtifact'
+                      : 'rebalance.railEmpty';
+                  return <div className={styles.railEmpty}>{t(emptyKey)}</div>;
                 }
 
                 return (

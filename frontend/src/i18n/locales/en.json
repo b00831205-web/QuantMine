@@ -288,6 +288,10 @@
     },
     "gantt": {
       "minutes": "Minutes after start"
+    },
+    "freshness": {
+      "updated": "Updated {{time}}",
+      "stale": "Refresh failing — still showing {{time}}"
     }
   },
   "rebalance": {
@@ -305,6 +309,7 @@
     "topTitle": "Top 20 stock returns",
     "topHint": "Sorted by contribution",
     "railEmpty": "This rebalance has no separate holdings (e.g. LS portfolios). Select a Q1–Q5 row instead.",
+    "railMissingArtifact": "The backtest artifact for this period could not be read, so holdings cannot be shown. This does not mean the period has no holdings — the artifact file is missing, usually because the webapi container has no data directory mounted.",
     "railNote": "Top {{shown}} / {{total}} holdings",
     "viewHoldings": "View all holdings →",
     "notApplicable": "N/A",
@@ -349,6 +354,7 @@
     "title": "Rebalance Detail",
     "subtitle": "Actual Q1–Q5 holdings for this period",
     "empty": "This rebalance has no separate holdings (e.g. LS portfolios).",
+    "missingArtifact": "The backtest artifact for this period could not be read, so holdings cannot be shown. This does not mean the period has no holdings — the artifact file is missing, usually because the webapi container has no data directory mounted.",
     "donutTitle": "Holdings Concentration",
     "meta": "Rebalance {{date}} · {{variant}} · {{holdingPeriod}}d · as of {{asOf}}",
     "holdingsCount": "{{count}} holdings",
@@ -573,7 +579,6 @@
     "providerNamePlaceholder": "Custom provider name",
     "customProviderName": "Custom provider",
     "apiKeyEnv": "API Key env var (blank defaults to OPENAI_API_KEY)",
-    "baseUrl": "Base URL",
     "modelList": "Models (comma separated)",
     "overrideCapabilities": "Override global capabilities",
     "deleteProvider": "Delete this provider",
