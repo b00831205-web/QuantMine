@@ -283,9 +283,9 @@ rejected at container startup.
 | `QUANT_AIRFLOW_PYTHON` | Python used for task-state operations |
 | `QUANT_PROJECT_ROOT` | Project path seen by Airflow tasks |
 | `QUANT_PYTHON_BIN` | Python interpreter used by DAG task commands |
-| `OPENAI_API_KEY` | Default API key for OpenAI-compatible AI providers |
-| `DEEPSEEK_API_KEY` | Recommended dedicated API key variable for DeepSeek |
-| `SILICONFLOW_API_KEY` | Default API key for the embedding provider |
+| `OPENAI_API_KEY` | Fallback API key when a provider names no env var of its own |
+| `SILICONFLOW_API_KEY` | Fallback API key for the embedding provider |
+| `<ANYTHING>_API_KEY` | Any name works; it just has to match the provider's `API Key env var` |
 | `http_proxy` / `https_proxy` | Optional upstream proxy for WSL market data |
 
 ### AI API configuration
@@ -317,12 +317,20 @@ After saving the page, restart `quantmine-api` so the running process reloads
 #### Under Docker
 
 The steps above describe the native deployment, which reads the repository-root
-`.env`. Containers do not. Put the key in `.env.docker` instead, and note that
-`--env-file` only feeds Compose's `${VAR}` substitution -- it does not inject
-anything into a container. The variable must also be forwarded in the `webapi`
-service's `environment:` block, which `docker-compose.yml` does for
-`OPENAI_API_KEY` and `SILICONFLOW_API_KEY`. A provider configured with any other
-`API Key env var` needs a matching line added there.
+`.env`. Containers do not. Put the key in `.env.docker` instead:
+
+```dotenv
+DEEPSEEK_API_KEY=sk-...
+```
+
+That is the whole change. The `webapi` service loads `.env.docker` through
+`env_file`, so **every** variable in it reaches the container and any provider
+name works -- `docker-compose.yml` does not need editing. The file is optional
+(`required: false`), so a clone without one still starts.
+
+Note that `--env-file` on the command line does something different: it only
+feeds Compose's `${VAR}` substitution and injects nothing into a container. Both
+are needed, which is why the command below still passes it.
 
 Recreate the service after changing either file; a running container keeps the
 environment it started with:

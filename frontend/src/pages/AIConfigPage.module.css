@@ -169,6 +169,63 @@
   border-color: var(--border-strong);
 }
 
+/* —— 厂商预设选择器 —— */
+.presetMenu {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-2);
+}
+
+.presetHint {
+  margin-bottom: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.presetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-2);
+}
+
+.presetItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  cursor: pointer;
+}
+
+.presetItem:hover {
+  border-color: var(--accent);
+}
+
+.presetItem:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.presetName {
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+/* Base URLs are machine values: monospace keeps them scannable and stops a long
+   host from being mistaken for prose. */
+.presetUrl {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
 /* —— 内联编辑表单 —— */
 .edit {
   margin-top: 14px;

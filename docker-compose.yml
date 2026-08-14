@@ -48,8 +48,20 @@ services:
       QUANTMINE_ADMIN_PASSWORD: ${QUANTMINE_ADMIN_PASSWORD}
       POSTGRES_HOST: postgres
       QUANT_AUTH_COOKIE_SECURE: "0"
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+    # AI provider keys reach the container through this file, not through
+    # `environment:` entries. `--env-file` only feeds Compose's ${VAR}
+    # substitution -- it injects nothing into a container -- so enumerating each
+    # key above meant every new provider needed a compose edit, and the failure
+    # mode was silent: AI Config just showed "not configured" with no hint that
+    # the key was sitting in .env.docker unread.
+    #
+    # `required: false` keeps a fresh clone working: the file is gitignored and
+    # does not exist until the operator creates it, and a missing env_file is a
+    # hard error otherwise. Values here are overridden by `environment:` above,
+    # so the DB URLs built from ${VAR} substitution still win.
+    env_file:
+      - path: .env.docker
+        required: false
     volumes:
       # 回测产物（ticker_history parquet）由 airflow 容器写进 ./data，webapi 读它才能
       # 给出调仓持仓与个股贡献。不挂这一条，holdings 永远解析不到，前端只会显示

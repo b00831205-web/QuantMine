@@ -35,6 +35,40 @@ import styles from './AIConfigPage.module.css';
 const CUSTOM_PREFIX = 'custom-';
 const isCustomProvider = (providerId: string): boolean => providerId.startsWith(CUSTOM_PREFIX);
 
+/**
+ * Presets for OpenAI-compatible providers.
+ *
+ * Only the two stable, hard-to-remember fields are filled in: the API base URL
+ * and the conventional env var name. `models` is deliberately left empty --
+ * model identifiers change often enough that a stale built-in list would send
+ * users into 400s that read like a broken integration, and the page already
+ * lets them be typed in.
+ *
+ * Everything here stays editable after insertion; a preset is a starting point,
+ * not a locked profile.
+ */
+const PROVIDER_PRESETS: ReadonlyArray<{
+  name: string;
+  baseUrl: string;
+  apiKeyEnv: string;
+}> = [
+  { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', apiKeyEnv: 'OPENAI_API_KEY' },
+  { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', apiKeyEnv: 'DEEPSEEK_API_KEY' },
+  { name: 'SiliconFlow', baseUrl: 'https://api.siliconflow.cn/v1', apiKeyEnv: 'SILICONFLOW_API_KEY' },
+  { name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', apiKeyEnv: 'MOONSHOT_API_KEY' },
+  {
+    name: 'DashScope (Qwen)',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    apiKeyEnv: 'DASHSCOPE_API_KEY',
+  },
+  { name: 'Zhipu', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiKeyEnv: 'ZHIPU_API_KEY' },
+  { name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', apiKeyEnv: 'OPENROUTER_API_KEY' },
+  // Inside a container `localhost` is the container itself, so a host Ollama is
+  // unreachable at localhost:11434. The symptom is a connection timeout, which
+  // does not point at the cause -- hence the host.docker.internal default here.
+  { name: 'Ollama', baseUrl: 'http://host.docker.internal:11434/v1', apiKeyEnv: '' },
+];
+
 /** 开关（胶囊拨动），与全站工作流开关同语言 */
 const Switch = ({
   on,
@@ -100,6 +134,7 @@ export const AIConfigPage = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
+  const [presetOpen, setPresetOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -177,7 +212,8 @@ export const AIConfigPage = () => {
     );
   };
 
-  const addCustomProvider = (): void => {
+  /** Add a provider, optionally seeded from a preset. Presets stay fully editable. */
+  const addProvider = (preset?: (typeof PROVIDER_PRESETS)[number]): void => {
     const id = `${CUSTOM_PREFIX}${Date.now()}`;
     setDraft((prev) =>
       prev
@@ -187,17 +223,18 @@ export const AIConfigPage = () => {
               ...prev.providers,
               {
                 providerId: id,
-                name: t('aiConfig.customProviderName'),
+                name: preset?.name ?? t('aiConfig.customProviderName'),
                 configured: false,
-                baseUrl: '',
+                baseUrl: preset?.baseUrl ?? '',
                 models: [],
-                apiKeyEnv: '',
+                apiKeyEnv: preset?.apiKeyEnv ?? '',
               },
             ],
           }
         : prev,
     );
     setEditingId(id);
+    setPresetOpen(false);
     setSavedMsg('');
   };
 
@@ -310,10 +347,42 @@ export const AIConfigPage = () => {
                       </button>
                     );
                   })}
-                  <button type="button" className={styles.providerAdd} onClick={addCustomProvider}>
+                  <button
+                    type="button"
+                    className={styles.providerAdd}
+                    aria-expanded={presetOpen}
+                    onClick={() => setPresetOpen((open) => !open)}
+                  >
                     ＋ {t('aiConfig.addProvider')}
                   </button>
                 </div>
+
+                {presetOpen ? (
+                  <div className={styles.presetMenu}>
+                    <div className={styles.presetHint}>{t('aiConfig.presetHint')}</div>
+                    <div className={styles.presetGrid}>
+                      {PROVIDER_PRESETS.map((preset) => (
+                        <button
+                          key={preset.name}
+                          type="button"
+                          className={styles.presetItem}
+                          onClick={() => addProvider(preset)}
+                        >
+                          <span className={styles.presetName}>{preset.name}</span>
+                          <span className={styles.presetUrl}>{preset.baseUrl}</span>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className={styles.presetItem}
+                        onClick={() => addProvider()}
+                      >
+                        <span className={styles.presetName}>{t('aiConfig.customProviderName')}</span>
+                        <span className={styles.presetUrl}>{t('aiConfig.presetBlank')}</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 {editing ? (
                   <div className={styles.edit}>

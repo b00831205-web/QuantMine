@@ -47,10 +47,25 @@ describe('AIConfigPage provider onboarding', () => {
     render(<AIConfigPage />);
 
     expect(await screen.findByText('No providers')).toBeInTheDocument();
-    const addButton = screen.getByRole('button', { name: /Add custom provider/i });
-    fireEvent.click(addButton);
+    fireEvent.click(screen.getByRole('button', { name: /Add provider/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Start blank/i }));
 
     expect(screen.getByText(/Editing: Custom provider/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText('OPENAI_API_KEY')).toBeInTheDocument();
+  });
+
+  it('seeds base URL and env var from a preset, leaving models to be filled in', async () => {
+    await i18n.changeLanguage('en');
+    apiMocks.fetchAIConfig.mockResolvedValue(emptyConfig);
+
+    render(<AIConfigPage />);
+
+    expect(await screen.findByText('No providers')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Add provider/i }));
+    fireEvent.click(screen.getByRole('button', { name: /DeepSeek/i }));
+
+    expect(screen.getByText(/Editing: DeepSeek/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://api.deepseek.com')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('DEEPSEEK_API_KEY')).toBeInTheDocument();
   });
 });
