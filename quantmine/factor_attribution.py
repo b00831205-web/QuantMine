@@ -62,7 +62,17 @@ def fetch_french_factors_daily(
         mom = mom.rename(columns={mom.columns[0]: "Mom"})
 
         merged = ff.join(mom[["Mom"]], how="inner") / 100  # percent -> decimal
-        merged.index = pd.to_datetime(merged.index)
+        # The famafrench reader returns a PeriodIndex (period[D]), and since
+        # pandas 3 `to_datetime` rejects period data outright instead of
+        # coercing it. Reaching this with a PeriodIndex used to raise, get
+        # caught by the blanket handler below, and surface as "factor data
+        # unavailable" -- so the whole attribution feature looked like a
+        # network problem and never produced a row.
+        index = merged.index
+        merged.index = (
+            index.to_timestamp() if isinstance(index, pd.PeriodIndex)
+            else pd.to_datetime(index)
+        )
         merged = merged[_FACTOR_COLS].dropna(how="all")
         if merged.empty:
             raise ValueError("Ken French returned no rows for the requested range")

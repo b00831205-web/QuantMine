@@ -95,7 +95,11 @@ def main():
     cache_path = PROJECT_ROOT / "tmp" / "ff3" / "ff_daily.parquet"
     factors = fetch_french_factors_daily(all_dates.min(), all_dates.max(), cache_path=cache_path)
     if factors is None:
-        print("Attribution skipped: Fama-French factor data unavailable (offline, no cache)")
+        # Deliberately does not name a cause. fetch_french_factors_daily catches
+        # every exception, so blaming the network here once disguised a pandas
+        # incompatibility as an offline run; the real reason is in the logged
+        # "live FF factor download failed" warning above.
+        print("Attribution skipped: no Fama-French factors (see the warning above for why)")
         return
 
     rows: list[dict] = []
