@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import i18n from '@/i18n';
+import { HttpError } from '@/api/http';
+import { runAwarePollMs } from '@/hooks/usePolledAsync';
 
 const marketMocks = vi.hoisted(() => ({
   fetchLatestMarketDate: vi.fn(),
@@ -130,6 +132,37 @@ describe('MarketOverviewPage', () => {
     expect(screen.getByText('AAPL')).toBeInTheDocument();
     expect(screen.getByText('MSFT')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '1Y' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  // 回归：先起服务、再跑 DAG 是新用户的必经路径。库还空着时 /market/latest-date 返回
+  // 404，页面以前就永久停在空白——那三个取数都是挂载时一次性的，DAG 跑完也没人再问。
+  it('recovers on its own once the pipeline lands data, with no remount or manual refresh', async () => {
+    vi.useFakeTimers();
+    try {
+      marketMocks.fetchLatestMarketDate
+        .mockRejectedValueOnce(
+          new HttpError({ code: 'NOT_FOUND', title: 'Not found', detail: '', status: 404 }),
+        )
+        .mockResolvedValue({ latestTradeDate: '2026-08-08' });
+
+      renderPage();
+
+      // 空库阶段：日期取不到，序列请求根本不该发出去。
+      await act(async () => undefined);
+      expect(marketMocks.fetchSeries).not.toHaveBeenCalled();
+
+      // DAG 落库后的下一个轮询周期（空闲 30s）。
+      await act(async () => {
+        vi.advanceTimersByTime(runAwarePollMs(false));
+      });
+
+      expect(marketMocks.fetchSeries).toHaveBeenCalledWith(
+        expect.objectContaining({ endDate: '2026-08-08' }),
+        expect.any(AbortSignal),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('requests normalized series for the selected range using the latest trade date', async () => {

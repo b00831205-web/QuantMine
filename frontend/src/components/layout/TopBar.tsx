@@ -25,21 +25,11 @@ export const TopBar = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [username, setUsername] = useState<string>('');
-  const [latestTradeDate, setLatestTradeDate] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<{ label: string; color: string } | null>(null);
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [config, setConfig] = useState<AIConfig | null>(null);
   const [savingModel, setSavingModel] = useState(false);
-  useEffect(() => {
-    fetchLatestMarketDate()
-      .then((data) => {
-        setLatestTradeDate(data.latestTradeDate);
-      })
-      .catch(() => {
-        setLatestTradeDate(null);
-      });
-  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,6 +57,14 @@ export const TopBar = () => {
   const workflowsPoll = usePolledAsync((s) => fetchWorkflows(s), [], {
     pollMs: runAwarePollMs(hasActiveRun),
   });
+
+  // 数据日期原本也只在挂载时取一次，于是库空着时拿到 404 后永远停在 "-"，DAG 跑完
+  // 也不会变——跟上面那个指示器是同一个毛病，当时漏了这一处。共用同一个轮询节奏。
+  const latestDatePoll = usePolledAsync((s) => fetchLatestMarketDate(s), [], {
+    pollMs: runAwarePollMs(hasActiveRun),
+  });
+  const latestTradeDate =
+    latestDatePoll.state.status === 'success' ? latestDatePoll.state.data.latestTradeDate : null;
 
   const latestRun = useMemo(() => {
     if (workflowsPoll.state.status !== 'success') return null;

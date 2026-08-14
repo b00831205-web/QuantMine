@@ -32,8 +32,8 @@ export function fetchSeries(
   );
 }
 
-export function fetchLatestMarketDate(): Promise<MarketLatestDateResponse>{
-  return http<MarketLatestDateResponse>('/api/v1/market/latest-date')
+export function fetchLatestMarketDate(signal?: AbortSignal): Promise<MarketLatestDateResponse>{
+  return http<MarketLatestDateResponse>('/api/v1/market/latest-date', { signal })
 }
 
 /** GET /api/v1/market/overview —— 上涨家数 / 市场宽度 */

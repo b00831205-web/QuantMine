@@ -21,9 +21,10 @@ import { AsyncBoundary } from '@/components/common/AsyncBoundary';
 import { SeriesChart } from '@/components/chart/SeriesChart';
 import { fetchSeries, fetchLatestMarketDate, fetchMarketOverview } from '@/api/client/market';
 import { fetchWorkflows } from '@/api/client';
+import { runAwarePollMs, usePolledAsync } from '@/hooks/usePolledAsync';
 import type { AsyncState } from '@/types/api';
 import type { MarketOverview, SeriesQuery, SeriesResponse } from '@/types/market';
-import { stateColor, stateLabel } from '@/utils/workflowStatus';
+import { isActiveState, stateColor, stateLabel } from '@/utils/workflowStatus';
 import { HttpError } from '@/api/http';
 import { Plus, X } from 'lucide-react';
 import styles from './MarketOverviewPage.module.css';
@@ -56,9 +57,43 @@ export const MarketOverviewPage = () => {
 
   // —— 数据状态 ——
   const [seriesState, setSeriesState] = useState<AsyncState<SeriesResponse>>({ status: 'idle' });
-  const [latestTradeDate, setLatestTradeDate] = useState<string | null>(null);
-  const [overview, setOverview] = useState<MarketOverview | null>(null);
-  const [taskStatus, setTaskStatus] = useState<{ label: string; color: string } | null>(null);
+
+  // 这三项以前都只在挂载时取一次，合起来的后果不是"少刷新一次"，而是页面永久空白：
+  // 库还空着时 /market/latest-date 返回 **404**（不是 null），取数直接 reject 且原来
+  // 没有 catch，latestTradeDate 停在 null → query 为 null → 序列请求根本不发 →
+  // 图表停在 idle。而"先起服务、再跑 DAG"正是新用户的必经路径，于是跑完了页面依旧
+  // 空白，且连一次失败的网络请求都看不到，看起来像产品坏了。
+  //
+  // 只轮询这三个便宜的接口；序列（单次约 36KB）不轮询——它的 query 由 latestTradeDate
+  // 推导，日期一变就会自动重取，没必要额外定时打它。
+  const [hasActiveRun, setHasActiveRun] = useState(false);
+  const pollMs = runAwarePollMs(hasActiveRun);
+
+  const workflowsPoll = usePolledAsync((s) => fetchWorkflows(s), [], { pollMs });
+  const latestDatePoll = usePolledAsync((s) => fetchLatestMarketDate(s), [], { pollMs });
+  const overviewPoll = usePolledAsync((s) => fetchMarketOverview(s), [], { pollMs });
+
+  const latestTradeDate =
+    latestDatePoll.state.status === 'success' ? latestDatePoll.state.data.latestTradeDate : null;
+  const overview: MarketOverview | null =
+    overviewPoll.state.status === 'success' ? overviewPoll.state.data : null;
+
+  const latestRun = useMemo(() => {
+    if (workflowsPoll.state.status !== 'success') return null;
+    const runs = workflowsPoll.state.data
+      .flatMap((dag) => dag.recentRuns ?? [])
+      .filter((run) => run.startDate !== null)
+      .sort((a, b) => (b.startDate! > a.startDate! ? 1 : -1));
+    return runs[0] ?? null;
+  }, [workflowsPoll.state]);
+
+  useEffect(() => {
+    setHasActiveRun(isActiveState(latestRun?.state));
+  }, [latestRun]);
+
+  const taskStatus = latestRun
+    ? { label: stateLabel(latestRun.state), color: stateColor(latestRun.state) }
+    : null;
 
   const query = useMemo<SeriesQuery | null>(() => {
     if (latestTradeDate === null) return null;
@@ -103,46 +138,6 @@ export const MarketOverviewPage = () => {
 
     return () => controller.abort();
   }, [latestTradeDate, symbols, range, query, reloadKey]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchLatestMarketDate().then((data) => {
-      if (!controller.signal.aborted) setLatestTradeDate(data.latestTradeDate);
-    });
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchMarketOverview(controller.signal)
-      .then((data) => {
-        if (!controller.signal.aborted) setOverview(data);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setOverview(null);
-      });
-    return () => controller.abort();
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchWorkflows(controller.signal)
-      .then((dags) => {
-        if (controller.signal.aborted) return;
-        const runs = dags
-          .flatMap((dag) => dag.recentRuns ?? [])
-          .filter((run) => run.startDate !== null)
-          .sort((a, b) => (b.startDate! > a.startDate! ? 1 : -1));
-        const latest = runs[0];
-        setTaskStatus(
-          latest ? { label: stateLabel(latest.state), color: stateColor(latest.state) } : null,
-        );
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setTaskStatus(null);
-      });
-    return () => controller.abort();
-  }, []);
 
   const handleAddTicker = (): void => {
     const ticker = tickerDraft.trim().toUpperCase();
