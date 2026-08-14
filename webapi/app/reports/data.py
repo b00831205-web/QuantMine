@@ -245,8 +245,13 @@ def _fetch_attribution(engine: Engine, run_id: int, test_id: str | None) -> list
     """Read attribution_results into the per-group structure the template wants.
 
     Returns a list of ``{variant, terms[], r2, adj_r2, n, alpha_annual}`` blocks,
-    one per (variant, factor, period). Empty list when nothing is stored — the
-    caller then leaves the section's "not stored" note in place.
+    one per (variant, job, factor, period). Empty list when nothing is stored —
+    the caller then leaves the section's "not stored" note in place.
+
+    ``backtest_id`` is in the key for the same reason as in
+    ``_fetch_backtest_groups``: two jobs can share a variant. Here the failure
+    was worse than a lost row -- terms are appended, not overwritten, so a
+    collision produced one block carrying both regressions' terms interleaved.
     """
     try:
         table = _table(engine, "attribution_results")
@@ -261,7 +266,7 @@ def _fetch_attribution(engine: Engine, run_id: int, test_id: str | None) -> list
 
     blocks: dict[tuple, dict] = {}
     for r in rows:
-        key = (r["variant_name"], r["factor_name"], r["period"])
+        key = (r["variant_name"], r["backtest_id"], r["factor_name"], r["period"])
         block = blocks.setdefault(key, {"terms": [], "model": r})
         block["terms"].append({
             "term": r["term"], "coef": _f(r["coef"]), "stderr": _f(r["std_err"]),
@@ -270,10 +275,10 @@ def _fetch_attribution(engine: Engine, run_id: int, test_id: str | None) -> list
         })
 
     result = []
-    for (variant, factor, period), block in sorted(blocks.items()):
+    for (variant, backtest_id, factor, period), block in sorted(blocks.items()):
         model = block["model"]
         result.append({
-            "variant": f"{variant} · {factor} · {period}d",
+            "variant": f"{backtest_id} · {variant} · {factor} · {period}d",
             "terms": sorted(block["terms"], key=lambda t: _ATTR_TERM_ORDER.get(t["term"], 99)),
             "r2": _f(model["r2"], 3), "adj_r2": _f(model["adj_r2"], 3),
             "n": model["n"], "alpha_annual": _pct(model["alpha_annual"]),

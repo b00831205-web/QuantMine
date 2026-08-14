@@ -242,6 +242,12 @@ CREATE TABLE IF NOT EXISTS attribution_results (
     run_id INT NOT NULL REFERENCES research_runs(run_id),
 
     variant_name VARCHAR NOT NULL,
+    -- Not redundant with variant_name: two jobs can share one variant.
+    -- mcap_quintile and orthogonalized_quintile both run the orthogonalized
+    -- variant over the same factors and periods, so without the job id their
+    -- long-short series collide and the regression runs on a blend of two
+    -- different portfolios.
+    backtest_id VARCHAR NOT NULL,
     test_id VARCHAR NOT NULL,
     factor_name VARCHAR NOT NULL,
     period INT NOT NULL,
@@ -265,6 +271,7 @@ CREATE TABLE IF NOT EXISTS attribution_results (
     UNIQUE (
         run_id,
         variant_name,
+        backtest_id,
         test_id,
         factor_name,
         period,

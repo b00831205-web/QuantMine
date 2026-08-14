@@ -17,13 +17,20 @@ def load_long_short_returns(
     engine: Engine,
     run_id: int,
     test_id: str | None = None,
-) -> dict[tuple[str, str, int, str], pd.Series]:
+) -> dict[tuple[str, str, str, int, str], pd.Series]:
     """Load daily long-short returns for each combination.
 
     Returns:
-        ``{(variant, factor, period, test_id): Series}``, indexed by
-        ``trade_date``. Including ``test_id`` aligns attribution results with
-        their source backtest rows. Long-short rows use ``quantile_rank = 0``.
+        ``{(variant, backtest_id, factor, period, test_id): Series}``, indexed
+        by ``trade_date``. Long-short rows use ``quantile_rank = 0``.
+
+    Notes:
+        ``backtest_id`` is part of the key because a variant does not identify a
+        portfolio on its own: ``mcap_quintile`` and ``orthogonalized_quintile``
+        are both the ``orthogonalized`` variant over the same factors and
+        periods. Keyed without the job, their two return series land on the same
+        dates in one dict and the later read silently overwrites the earlier, so
+        the regression is run against a blend that is neither portfolio.
     """
     table = Table("backtest_results", MetaData(), autoload_with=engine)
     conditions = [table.c.run_id == run_id, table.c.quantile_rank == 0]
@@ -32,6 +39,7 @@ def load_long_short_returns(
     statement = (
         select(
             table.c.variant_name,
+            table.c.backtest_id,
             table.c.factor_name,
             table.c.period,
             table.c.test_id,
@@ -44,11 +52,14 @@ def load_long_short_returns(
     with engine.connect() as connection:
         rows = connection.execute(statement).mappings().all()
 
-    grouped: dict[tuple[str, str, int, str], dict] = {}
+    grouped: dict[tuple[str, str, str, int, str], dict] = {}
     for row in rows:
         if row["return_value"] is None:
             continue
-        key = (row["variant_name"], row["factor_name"], int(row["period"]), row["test_id"])
+        key = (
+            row["variant_name"], row["backtest_id"], row["factor_name"],
+            int(row["period"]), row["test_id"],
+        )
         grouped.setdefault(key, {})[row["trade_date"]] = float(row["return_value"])
 
     return {
@@ -61,9 +72,9 @@ def load_long_short_returns(
 def save_attribution_results(engine: Engine, rows: pd.DataFrame) -> int:
     """Upsert attribution rows into ``attribution_results``.
 
-    ``rows`` columns: run_id, variant_name, test_id, factor_name, period, term,
-    coef, std_err, t_stat, p_value, ci_lo, ci_hi, r2, adj_r2, n, alpha_annual,
-    maxlags.
+    ``rows`` columns: run_id, variant_name, backtest_id, test_id, factor_name,
+    period, term, coef, std_err, t_stat, p_value, ci_lo, ci_hi, r2, adj_r2, n,
+    alpha_annual, maxlags.
     """
     if rows.empty:
         return 0
@@ -74,6 +85,7 @@ def save_attribution_results(engine: Engine, rows: pd.DataFrame) -> int:
         index_elements=[
             "run_id",
             "variant_name",
+            "backtest_id",
             "test_id",
             "factor_name",
             "period",

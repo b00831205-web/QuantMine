@@ -30,14 +30,14 @@ _TERM_LABELS = {"const": "Alpha", "Mkt-RF": "Mkt-RF", "SMB": "SMB", "HML": "HML"
 
 
 def _attribution_rows(
-    key: tuple[str, str, int, str],
+    key: tuple[str, str, str, int, str],
     long_short: pd.Series,
     factors: pd.DataFrame,
     *,
     run_id: int,
     maxlags: int,
 ) -> list[dict]:
-    variant, factor, period, test_id = key
+    variant, backtest_id, factor, period, test_id = key
     daily_returns = long_short.to_frame("long_short")
     daily_returns.index = pd.to_datetime(daily_returns.index)
 
@@ -52,6 +52,7 @@ def _attribution_rows(
         rows.append({
             "run_id": run_id,
             "variant_name": variant,
+            "backtest_id": backtest_id,
             "test_id": test_id,
             "factor_name": factor,
             "period": period,
