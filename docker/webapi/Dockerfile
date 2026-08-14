@@ -8,9 +8,26 @@ FROM python:3.13-slim
 # 字体缺失时 WeasyPrint 会静默回退到 DejaVu，中文报告整页渲染成豆腐块——
 # 接口照样 200、PDF 照样生成，只有打开看才发现。约 55 MB，是中文报告能用的
 # 最低代价。
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
-        libffi8 shared-mime-info postgresql-client fonts-noto-cjk \
+#
+# 分两步（先 -d 只下载、循环补齐，再从本地缓存装）是因为镜像站会对随机的少数
+# 请求返 502。这一层要拉 60 多个包，单包按 5% 失败算，一次全中的概率不到 5%，
+# 而 BuildKit 一失败整层缓存就丢——重试整个 build 是在重新掷骰子，可能永远不过。
+# apt 自己的 Acquire::Retries 救不了：它只重试连接层失败，不重试 HTTP 错误码。
+# /var/cache/apt/archives 在同一个 RUN 内是累积的，所以每轮只补上回没下到的，
+# 几轮必然收敛。
+ARG APT_DOWNLOAD_PASSES=8
+RUN PKGS="libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
+          libffi8 shared-mime-info postgresql-client fonts-noto-cjk" \
+    && apt-get update \
+    && n=0 \
+    && until apt-get install -y --no-install-recommends -d $PKGS; do \
+           n=$((n+1)); \
+           if [ "$n" -ge "$APT_DOWNLOAD_PASSES" ]; then \
+               echo "apt: still incomplete after $n download passes" >&2; exit 1; \
+           fi; \
+           echo "apt: download pass $n incomplete, retrying"; \
+       done \
+    && apt-get install -y --no-install-recommends $PKGS \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
