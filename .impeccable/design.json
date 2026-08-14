@@ -1,0 +1,403 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-14T10:07:53.320Z",
+  "title": "Design System: QUANTMINE",
+  "extensions": {
+    "colorMeta": {
+      "app-bg": {
+        "role": "neutral",
+        "displayName": "Obsidian Field",
+        "canonical": "#0e1116",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Ledger Surface",
+        "canonical": "#161a22",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Raised Register",
+        "canonical": "#1d2230",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "accent": {
+        "role": "primary",
+        "displayName": "Research Cobalt",
+        "canonical": "#4f8cff",
+        "tonalRamp": [
+          "#102044",
+          "#173267",
+          "#234995",
+          "#315fbe",
+          "#4f8cff",
+          "#6ea0ff",
+          "#9bbcff",
+          "#dce8ff"
+        ]
+      },
+      "positive": {
+        "role": "secondary",
+        "displayName": "Verified Mint",
+        "canonical": "#4ec98a",
+        "tonalRamp": [
+          "#123424",
+          "#1c5739",
+          "#287a4e",
+          "#38a96d",
+          "#4ec98a",
+          "#79d9a7",
+          "#abe9c8",
+          "#e1faeb"
+        ]
+      },
+      "negative": {
+        "role": "secondary",
+        "displayName": "Signal Red",
+        "canonical": "#ef6464",
+        "tonalRamp": [
+          "#401616",
+          "#682222",
+          "#992f2f",
+          "#c94444",
+          "#ef6464",
+          "#f58c8c",
+          "#fac0c0",
+          "#ffe5e5"
+        ]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Measured Amber",
+        "canonical": "#f0b35e",
+        "tonalRamp": [
+          "#3c2813",
+          "#66451e",
+          "#94662c",
+          "#c18a3e",
+          "#f0b35e",
+          "#f6c985",
+          "#faddb0",
+          "#fff0d7"
+        ]
+      },
+      "elevated": {
+        "role": "neutral",
+        "displayName": "Elevated Slate",
+        "canonical": "#232a3a",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "border-subtle": {
+        "role": "neutral",
+        "displayName": "Subtle Rule",
+        "canonical": "#2a3142",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "border-strong": {
+        "role": "neutral",
+        "displayName": "Strong Rule",
+        "canonical": "#3a4258",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#e6e8ee",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "text-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Ink",
+        "canonical": "#9aa3b8",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "text-muted": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "#6b7388",
+        "tonalRamp": [
+          "#0e1116",
+          "#12161d",
+          "#161a22",
+          "#1d2230",
+          "#232a3a",
+          "#2a3142",
+          "#3a4258",
+          "#e6e8ee"
+        ]
+      },
+      "accent-hover": {
+        "role": "primary",
+        "displayName": "Cobalt Lift",
+        "canonical": "#6ea0ff",
+        "tonalRamp": [
+          "#102044",
+          "#173267",
+          "#234995",
+          "#315fbe",
+          "#4f8cff",
+          "#6ea0ff",
+          "#9bbcff",
+          "#dce8ff"
+        ]
+      },
+      "info": {
+        "role": "secondary",
+        "displayName": "Research Blue",
+        "canonical": "#56b6ff",
+        "tonalRamp": [
+          "#0f2a3d",
+          "#164363",
+          "#1f6291",
+          "#2f8bc4",
+          "#56b6ff",
+          "#83cbff",
+          "#b3e0ff",
+          "#e3f4ff"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Interface Headline",
+        "purpose": "Page titles and the lead of an analytical result view."
+      },
+      "section": {
+        "displayName": "Editorial Section",
+        "purpose": "Reports and analytical subsections; not the default card title level."
+      },
+      "data": {
+        "displayName": "Evidence Mono",
+        "purpose": "Dates, metrics, identifiers, and machine-readable workflow output."
+      },
+      "metric": {
+        "displayName": "Primary Metric",
+        "purpose": "The main number in a panel, always tabular and visibly heavier than supporting values."
+      },
+      "micro": {
+        "displayName": "Micro Label",
+        "purpose": "Small uppercase field names and provenance tags."
+      },
+      "title": {
+        "displayName": "Card Title",
+        "purpose": "Card titles and section anchors."
+      },
+      "body": {
+        "displayName": "Interface Body",
+        "purpose": "Default interface copy and table content."
+      },
+      "label": {
+        "displayName": "Field Label",
+        "purpose": "Compact metadata, table headers, and state labels."
+      }
+    },
+    "shadows": [
+      {
+        "name": "micro-separation",
+        "value": "0 1px 2px rgba(0, 0, 0, 0.3)",
+        "purpose": "Small controls and quiet containment."
+      },
+      {
+        "name": "raised-separation",
+        "value": "0 4px 12px rgba(0, 0, 0, 0.4)",
+        "purpose": "Functional elevated panels or overlays."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-transition",
+        "value": "120ms ease",
+        "purpose": "Navigation, hover, and small control state changes."
+      },
+      {
+        "name": "toggle-transition",
+        "value": "150ms ease",
+        "purpose": "Workflow toggle track and thumb movement."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "rail-collapse",
+        "value": "960px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Navigation",
+      "kind": "nav",
+      "refersTo": "nav-active",
+      "description": "The persistent QUANTMINE rail with quiet default links and a cobalt active rail.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-link ds-nav-link-active\" href=\"#\">Research</a><a class=\"ds-nav-link\" href=\"#\">Reports</a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; gap: 2px; width: 220px; padding: 12px 0; background: var(--bg-surface); border-right: 1px solid var(--border-subtle); } .ds-nav-link { padding: 8px 16px; color: var(--text-secondary); font: 13px/1.5 Inter, sans-serif; border-left: 2px solid transparent; text-decoration: none; transition: all 120ms ease; } .ds-nav-link:hover { color: var(--text-primary); background: var(--bg-surface-2); } .ds-nav-link-active { color: var(--text-primary); background: var(--bg-surface-2); border-left-color: var(--accent); }"
+    },
+    {
+      "name": "Evidence Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The standard matte container for a result, chart, or workflow section.",
+      "html": "<section class=\"ds-card\"><header class=\"ds-card-header\"><h3>IC summary</h3><span>20D</span></header><div class=\"ds-card-body\">Evidence content</div></section>",
+      "css": ".ds-card { min-height: 160px; display: flex; flex-direction: column; padding: 16px 24px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); } .ds-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; } .ds-card h3 { margin: 0; color: var(--text-primary); font: 600 13px/1.5 Inter, sans-serif; } .ds-card-header span { color: var(--text-secondary); font: 12px/1.5 JetBrains Mono, monospace; } .ds-card-body { flex: 1; color: var(--text-secondary); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A compact table or pager action that stays matte and legible.",
+      "html": "<button class=\"ds-button\" type=\"button\">Next page</button>",
+      "css": ".ds-button { padding: 4px 12px; color: var(--text-primary); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font: 13px/1.5 Inter, sans-serif; transition: border-color 120ms ease, color 120ms ease; } .ds-button:hover { border-color: var(--border-strong); } .ds-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; } .ds-button:disabled { opacity: 0.4; cursor: not-allowed; }"
+    },
+    {
+      "name": "Research Input",
+      "kind": "input",
+      "description": "A quiet raised field for filters, model selection, and research controls.",
+      "html": "<label class=\"ds-field\"><span>Model</span><select><option>Default</option></select></label>",
+      "css": ".ds-field { display: grid; gap: 4px; color: var(--text-muted); font: 11px/1.5 Inter, sans-serif; letter-spacing: .05em; text-transform: uppercase; } .ds-field select { padding: 4px 8px; color: var(--text-primary); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); font: 13px/1.5 Inter, sans-serif; } .ds-field select:focus-visible { border-color: var(--accent); outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); outline-offset: 1px; }"
+    },
+    {
+      "name": "Evidence Table",
+      "kind": "custom",
+      "description": "A sticky-header table that keeps result qualifiers close to the values they explain.",
+      "html": "<table class=\"ds-table\"><thead><tr><th>Factor</th><th>IC</th><th>p-value</th></tr></thead><tbody><tr><td>TwentyDayAvgVol</td><td>0.042</td><td>0.018</td></tr></tbody></table>",
+      "css": ".ds-table { width: 100%; border-collapse: collapse; color: var(--text-primary); font: 12px/1.5 Inter, sans-serif; } .ds-table th, .ds-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); text-align: left; } .ds-table th { position: sticky; top: 0; color: var(--text-secondary); background: var(--bg-surface-2); font-size: 11px; font-weight: 500; letter-spacing: .05em; text-transform: uppercase; } .ds-table td:nth-child(n+2) { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; } .ds-table tbody tr:hover { background: var(--bg-surface-2); }"
+    },
+    {
+      "name": "Methodology Drawer",
+      "kind": "custom",
+      "description": "A collapsible right rail that keeps statistical assumptions one interaction away without crowding the evidence workspace.",
+      "html": "<aside class=\"ds-methodology\"><header><span>Methodology</span><button aria-label=\"Collapse\">×</button></header><dl><div><dt>Standard errors</dt><dd>Newey–West</dd></div><div><dt>Multiple testing</dt><dd>BH / FDR</dd></div><div><dt>Universe</dt><dd>Point-in-time</dd></div></dl></aside>",
+      "css": ".ds-methodology { width: 280px; padding: 16px; color: var(--text-secondary); background: var(--bg-surface); border-left: 1px solid var(--border-subtle); } .ds-methodology header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 12px; color: var(--text-primary); font: 600 15px/1.5 Inter, sans-serif; border-bottom: 1px solid var(--border-subtle); } .ds-methodology button { color: var(--text-secondary); background: transparent; border: 0; font-size: 18px; } .ds-methodology dl { display: grid; gap: 12px; margin: 16px 0 0; } .ds-methodology dl div { display: flex; justify-content: space-between; gap: 16px; } .ds-methodology dt { color: var(--text-muted); font: 10px/1.4 Inter, sans-serif; letter-spacing: .08em; text-transform: uppercase; } .ds-methodology dd { margin: 0; color: var(--text-primary); font: 12px/1.5 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Workflow Toggle",
+      "kind": "custom",
+      "description": "A compact running/paused state control used in workflow lists and details.",
+      "html": "<button class=\"ds-toggle\" role=\"switch\" aria-checked=\"true\"><span></span></button>",
+      "css": ".ds-toggle { position: relative; width: 38px; height: 20px; padding: 0; border: 1px solid var(--border-subtle); border-radius: 999px; background: var(--positive); transition: background 150ms ease; } .ds-toggle span { position: absolute; top: 1px; left: 19px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left 150ms ease; } .ds-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Evidence Ledger",
+    "overview": "QUANTMINE treats every factor result as an entry that must be inspected, contextualized, and judged. The visual language is a matte, low-saturation research surface: quiet enough for long sessions, exact enough for dense tables and pipeline state, and restrained enough that the evidence—not the interface—carries the argument. The calm instrument-panel clarity is deliberate, but it never borrows the adrenaline of a live trading desk.\n\nDaily operating surfaces use compact rhythm, clear hierarchy, and stable tonal layers. Reports and result views can become analytical and editorial through stronger headings, generous grouping, and visible statistical context. Uncertainty is part of the composition: p-values, significance flags, controls, and error ranges should sit next to the headline result rather than hide below it.",
+    "keyCharacteristics": [
+      "Matte navy-black surfaces with tonal layering instead of gradients or glass.",
+      "Cobalt blue is a precise interaction accent, not a decorative wash.",
+      "Inter handles interface prose; JetBrains Mono marks data, dates, and machine-readable values.",
+      "Compact 4px rhythm with deliberate 8/16/24/32px grouping.",
+      "Evidence and caveats remain visually present wherever performance is discussed."
+    ],
+    "rules": [
+      {
+        "name": "The Cobalt Rarity Rule",
+        "body": "Keep the accent concentrated on interaction and evidence markers. Do not flood an entire card, chart, or page with blue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Evidence-Adjacent Type Rule",
+        "body": "The more consequential the claim, the closer its supporting statistic should sit in the same typographic group; do not enlarge a return figure while shrinking its p-value into a footnote.",
+        "section": "typography"
+      },
+      {
+        "name": "The Intentional Scale Rule",
+        "body": "Every numeric value uses `font-variant-numeric: tabular-nums`; primary metrics are visibly larger and heavier, while field names stay small, uppercase, and quiet. Data UI earns its authority through hierarchy before decoration.",
+        "section": "typography"
+      },
+      {
+        "name": "The Matte Surface Rule",
+        "body": "No gradients, glassmorphism, blur, or luminous shadows. Tonal change and a crisp border should explain hierarchy.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do preserve the dark, low-saturation surface hierarchy and use the existing tokens as the source of truth.",
+      "Do use cobalt to clarify active state, focus, and interaction—not as decoration.",
+      "Do keep p-values, significance flags, multiple-testing controls, and error bars near consequential results.",
+      "Do use mono type for dates, metrics, and identifiers where alignment improves trust.",
+      "Do make every numeric value tabular, right-align decision data, and give primary metrics a clear size/weight step above supporting values.",
+      "Do keep Methodology one interaction away in a collapsible right rail or per-value tooltip.",
+      "Do keep Chinese and English layouts equally legible, including exported report headings and labels."
+    ],
+    "donts": [
+      "Don't introduce blinking tickers, pulsing live P&L, or red/green trading-desk adrenaline.",
+      "Don't use glossy gradients, glassmorphism, or decorative glow to create hierarchy.",
+      "Don't use gamified language, streaks, confetti, leaderboards, or triumphant performance framing.",
+      "Don't show a large return number without its uncertainty, significance context, and methodological caveats.",
+      "Don't make every panel equally loud or box every secondary module.",
+      "Don't use red/green P&L-style coloring to communicate significance.",
+      "Don't imply live trading, personalized advice, or certainty that the evidence does not support."
+    ]
+  }
+}

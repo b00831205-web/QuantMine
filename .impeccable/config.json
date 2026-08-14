@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "frontend/src/components/chart/DagGraph.tsx"
+        ],
+        "createdAt": "2026-08-14T12:25:53.406Z",
+        "reason": "DAG graph node, not a card: the left border is the task status colour and sits where the incoming edge connects (rankdir LR)"
+      }
+    ]
+  }
+}

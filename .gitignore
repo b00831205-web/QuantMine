@@ -76,8 +76,14 @@ webapi/app/static/
 .claude/
 .agents/
 .codex/
-.impeccable/
 .worktrees/
+
+# Impeccable 是例外：设计系统旁车与 detector 豁免是项目交付物，重新 clone 后必须
+# 还在，否则已判定为误报的告警会重新冒出来、旁车又退回陈旧状态。只放行这两个文件；
+# 个人开关(config.local.json)与缓存(hook.cache.json)仍然忽略。
+.impeccable/*
+!.impeccable/config.json
+!.impeccable/design.json
 
 # --- scratch: 临时 clone 的参考仓库(自带 .git + node_modules, 324MB) ---
 react-router-monorepo/
