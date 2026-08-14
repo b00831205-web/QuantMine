@@ -78,7 +78,15 @@ def _fetch_ic_rows(engine: Engine, run_id: int, test_id: str | None, lang: str, 
 
 
 def _fetch_backtest_groups(engine: Engine, run_id: int, test_id: str | None) -> list[dict]:
-    """Pivot backtest_metrics into per (variant,factor,period) group blocks."""
+    """Pivot backtest_metrics into per (variant,job,factor,period) group blocks.
+
+    ``backtest_id`` belongs in the key even though it looks redundant next to
+    the variant: two jobs can share one variant. ``mcap_quintile`` and
+    ``orthogonalized_quintile`` both run the ``orthogonalized`` variant over the
+    same factors and periods, so keying without the job silently collapses them
+    and the metrics of whichever was read last win. The result was a table
+    missing a third of its rows while still looking complete.
+    """
     table = _table(engine, "backtest_metrics")
     conditions = [table.c.run_id == run_id]
     if test_id:
@@ -90,7 +98,7 @@ def _fetch_backtest_groups(engine: Engine, run_id: int, test_id: str | None) -> 
     # group key -> {quantile_rank -> {metric_name -> value}} and monotonicity metrics
     blocks: dict[tuple, dict] = {}
     for r in rows:
-        key = (r["variant_name"], r["factor_name"], r["period"])
+        key = (r["variant_name"], r["backtest_id"], r["factor_name"], r["period"])
         block = blocks.setdefault(key, {"metrics": {}, "mono": {}})
         name = r["metric_name"]
         if name.startswith("monotonicity_"):
@@ -99,7 +107,7 @@ def _fetch_backtest_groups(engine: Engine, run_id: int, test_id: str | None) -> 
             block["metrics"].setdefault(r["quantile_rank"], {})[name] = r["metric_value"]
 
     result = []
-    for (variant, factor, period), block in sorted(blocks.items()):
+    for (variant, backtest_id, factor, period), block in sorted(blocks.items()):
         rows_out = []
         for rank in sorted(block["metrics"]):
             m = block["metrics"][rank]
@@ -112,7 +120,7 @@ def _fetch_backtest_groups(engine: Engine, run_id: int, test_id: str | None) -> 
             })
         mono = block["mono"]
         result.append({
-            "label": f"{variant} · {factor} · {period}d",
+            "label": f"{backtest_id} · {variant} · {factor} · {period}d",
             "rows": rows_out,
             "mono": {
                 "corr": _f(mono.get("mean_based_corr"), 2), "p": _f(mono.get("mean_based_pvalue"), 3),

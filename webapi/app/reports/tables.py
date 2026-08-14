@@ -154,7 +154,9 @@ def monotonicity_table(groups: list[dict], L: dict) -> str:
     if not groups:
         return ""
     headers = [L["col_group"], L["col_mono_corr"], L["col_p"], L["col_mono_daily"], L["col_mono_pos"]]
-    widths = [200.0, 120.0, 120.0, 120.0, 120.0]
+    # 第一列是完整分组标签（含 backtest_id），比其余列长得多。SVG 文本没有
+    # clip-path，列宽不够不会截断，而是直接压到右边的数字上。总宽仍为 680。
+    widths = [300.0, 95.0, 95.0, 95.0, 95.0]
     aligns = ["l", "r", "r", "r", "r"]
     rows = [
         [g["label"], g["mono"]["corr"], g["mono"]["p"], g["mono"]["daily"], g["mono"]["pos"]]
