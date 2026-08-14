@@ -2,9 +2,15 @@
 FROM python:3.13-slim
 
 # WeasyPrint 需要的原生库（Pango/cairo/gdk-pixbuf/ffi）+ psql 客户端（entrypoint 探活用）
+#
+# fonts-noto-cjk 不是可选项：python:3.13-slim 只带 DejaVu，没有任何汉字字形
+# （容器里 `fc-list :lang=zh` 数量为 0）。报告模板要的是 "Noto Sans CJK SC"，
+# 字体缺失时 WeasyPrint 会静默回退到 DejaVu，中文报告整页渲染成豆腐块——
+# 接口照样 200、PDF 照样生成，只有打开看才发现。约 55 MB，是中文报告能用的
+# 最低代价。
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
-        libffi8 shared-mime-info postgresql-client \
+        libffi8 shared-mime-info postgresql-client fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir uv
