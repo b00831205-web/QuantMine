@@ -60,9 +60,11 @@ docker compose --env-file .env.docker up -d --build
 docker compose --env-file .env.docker ps
 ```
 
-Open <http://localhost:8080> and sign in with
+Open <http://localhost:8090> and sign in with
 `QUANTMINE_ADMIN_USER` / `QUANTMINE_ADMIN_PASSWORD` from `.env.docker`.
-Airflow's own UI is available at <http://localhost:8081>.
+Airflow's own UI is available at <http://localhost:8091>.
+These avoid 8080/8081, which Airflow itself and most "port already in use"
+fallbacks claim; a native Airflow can stay running alongside the stack.
 
 The generated `.env.docker` contains secrets. It is excluded from Git and from
 the Docker build context. Never paste it into issues or commit it.

@@ -1,6 +1,6 @@
 # QUANTMINE 一键部署：postgres(pgvector) + webapi + frontend + airflow。
 #   cp .env.docker.example .env   # 改密码/密钥
-#   docker compose up -d          # 打开 http://localhost:8080 登录
+#   docker compose up -d          # 打开 http://localhost:8090 登录
 #
 # 只跑核心（不含 Airflow）：docker compose up -d postgres webapi frontend
 
@@ -70,7 +70,11 @@ services:
       context: .
       dockerfile: docker/frontend/Dockerfile
     ports:
-      - "127.0.0.1:8080:80"
+      # 8090 而非 8080：8080 是 Airflow 自己的默认端口，也是 Tomcat/Jenkins 的，
+      # 在装过其中任何一个的机器上都会被占。本项目自带 Airflow，把前端放 8080
+      # 等于跟自己的调度器抢，且失败方式很隐蔽——端口被占时容器照常 Running，
+      # 只是映射悄悄丢失，浏览器打到的是另一个服务。
+      - "127.0.0.1:8090:80"
     depends_on:
       - webapi
 
@@ -98,7 +102,7 @@ services:
       - ./tmp:/app/tmp
       - airflow-logs:/opt/airflow/logs
     ports:
-      - "127.0.0.1:8081:8080"   # Airflow 自带 UI，仅绑定本机
+      - "127.0.0.1:8091:8080"   # Airflow 自带 UI，仅绑定本机；8081 同理是最常见的“备用端口”
     depends_on:
       postgres:
         condition: service_healthy

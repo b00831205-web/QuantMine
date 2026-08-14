@@ -13,8 +13,8 @@ docker compose --env-file .env.docker up -d --build
 docker compose --env-file .env.docker ps
 ```
 
-Open <http://localhost:8080> and use the admin credentials stored in
-`.env.docker`. Airflow's native UI is available at <http://localhost:8081>.
+Open <http://localhost:8090> and use the admin credentials stored in
+`.env.docker`. Airflow's native UI is available at <http://localhost:8091>.
 
 The environment generator creates URL-safe database passwords, an application
 session secret, an admin password, and a valid Fernet key. Container startup
@@ -24,10 +24,10 @@ rejects missing values and the `REPLACE_ME` template placeholder.
 
 | Service | Role | Host binding |
 |---|---|---|
-| `frontend` | Nginx static frontend and `/api` reverse proxy | `127.0.0.1:8080` |
+| `frontend` | Nginx static frontend and `/api` reverse proxy | `127.0.0.1:8090` |
 | `webapi` | FastAPI and Airflow workflow CLI | internal `8000` |
 | `postgres` | PostgreSQL 16 + pgvector; schema and roles on first boot | `127.0.0.1:5432` |
-| `airflow` | Airflow scheduler, API server, DAG processor and executor | `127.0.0.1:8081` |
+| `airflow` | Airflow scheduler, API server, DAG processor and executor | `127.0.0.1:8091` |
 
 All services use `restart: unless-stopped`. Host port bindings are loopback-only
 by default; do not change them to public bindings without authentication, TLS,
@@ -94,8 +94,8 @@ docker compose --env-file .env.docker build
 docker compose --env-file .env.docker up -d
 docker compose --env-file .env.docker ps
 
-curl http://localhost:8080/api/v1/health
-curl http://localhost:8081/api/v2/monitor/health
+curl http://localhost:8090/api/v1/health
+curl http://localhost:8091/api/v2/monitor/health
 ```
 
 A new database is intentionally empty. Sign in to the product, open Workflows,
