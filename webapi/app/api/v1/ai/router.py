@@ -32,7 +32,7 @@ from .db import(
 
 from ....ai.tools import execute_tool_call
 from ....ai.chat import build_system_prompt, complete_chat, summarize_title
-from ....ai.catalog import get_database_catalog
+from ....ai.catalog import allowed_tables_for, get_database_catalog
 from ....ai.rag import index_message, search_messages
 from ....ai.skills import discover_skills, skill_definitions
 from ....ai.secrets import resolve_api_key
@@ -159,8 +159,10 @@ def _run_agent(engine: Engine, cid: int, config: dict, capabilities: dict, model
     provider = _resolve_provider(config, model_id or config.get('defaultModel') or '')
     api_key = resolve_api_key((provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY')
     allow_db = capabilities.get('query_database', True)
+    allowed_tables = allowed_tables_for(capabilities)
 
-    catalog = get_database_catalog(engine)
+    # 系统提示词只列出 AI 当前被允许查询的表（能力开关过滤，deny-by-default）
+    catalog = [c for c in get_database_catalog(engine) if c['resource'] in allowed_tables]
     rag_context: list[dict] = []
 
     if capabilities.get('rag_corpus', False):
@@ -187,6 +189,7 @@ def _run_agent(engine: Engine, cid: int, config: dict, capabilities: dict, model
         catalog=catalog,
         rag_context=rag_context,
         attached_context=attached_context,
+        allow_query_database=allow_db,
     )
     enabled_skill_names = {
                     skill.get('name') for skill in config.get('skills') or []
@@ -233,7 +236,7 @@ def _run_agent(engine: Engine, cid: int, config: dict, capabilities: dict, model
                 content=reply.get('content') or '',
                 tool_calls=[{**first, 'status': 'done'}],
             )
-            result = execute_tool_call(engine, first)
+            result = execute_tool_call(engine, first, allowed_tables=allowed_tables)
             create_message(engine, conversation_id=cid, role='tool', content=result)
             continue
 
@@ -426,7 +429,7 @@ def confirm_action(
         )
 
     # User confirmed this (graylist) tool -> execute, persist the result, then continue the agent loop
-    result_text = execute_tool_call(engine, tool_call)
+    result_text = execute_tool_call(engine, tool_call, allowed_tables=allowed_tables_for(capabilities))
     create_message(engine, conversation_id=cid, role='tool', content=result_text)
     return _run_agent(engine, cid, config, capabilities, config.get('defaultModel'))
 

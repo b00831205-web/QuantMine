@@ -35,18 +35,25 @@ def build_system_prompt(
     catalog: list[dict] | None = None,
     rag_context: list[dict] | None = None,
     attached_context: dict |None = None,
+    allow_query_database: bool = True,
 ) -> str:
     """System prompt: base role + database catalog (dynamic) + RAG history snippets."""
-    lines = [
-        base_prompt,
-        "",
-        "你可以使用 query_database 工具对研究数据库执行只读 SQL 查询。",
-        "规则：",
-        "- 涉及数据/数字的问题，必须先调用 query_database 查询，再基于结果回答；",
-        "- 禁止只描述查询计划而不执行工具；",
-        "- 查询结果最多返回 100 行；",
-        "- 数据库表结构如下：",
-    ]
+    lines = [base_prompt, ""]
+    if allow_query_database:
+        lines += [
+            "你可以使用 query_database 工具对研究数据库执行只读 SQL 查询。",
+            "规则：",
+            "- 涉及数据/数字的问题，必须先调用 query_database 查询，再基于结果回答；",
+            "- 禁止只描述查询计划而不执行工具；",
+            "- 查询结果最多返回 100 行；",
+            "- 数据库表结构如下：",
+        ]
+    else:
+        lines += [
+            "你当前没有数据库查询权限。",
+            "- 涉及数据/数字的问题，直接说明你无法访问数据库，不要编造具体数据；",
+            "- 不要尝试调用任何查询工具。",
+        ]
     if attached_context and attached_context.get('page'):
         lines.append("")
         lines.append(
@@ -54,9 +61,10 @@ def build_system_prompt(
             '（回答时可以优先考虑该页面相关的数据）'
         )
 
-    for resource in catalog or DATA_CATALOG:
-        fields = ", ".join(field["name"] for field in resource["fields"])
-        lines.append(f"- {resource['resource']}（{resource.get('label', '')}）：{fields}")
+    if allow_query_database:
+        for resource in catalog or DATA_CATALOG:
+            fields = ", ".join(field["name"] for field in resource["fields"])
+            lines.append(f"- {resource['resource']}（{resource.get('label', '')}）：{fields}")
     if rag_context:
         lines.append("")
         lines.append("以下是从历史对话中检索到的相关片段（可能来自多个会话、包含多个问题）")

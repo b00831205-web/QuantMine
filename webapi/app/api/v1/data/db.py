@@ -223,13 +223,61 @@ def run_structured_query(
     return {"columns": selected, "rows": [dict(row) for row in rows]}
 
 
-def run_sql_query(engine: Engine, sql: str) -> dict[str, Any]:
-    """Read-only SQL: only a single SELECT is allowed, at most MAX_SQL_ROWS rows."""
+def _referenced_tables(engine: Engine, sql: str) -> set[str]:
+    """Return base table names referenced by a SELECT, via EXPLAIN (Postgres parses it).
+
+    EXPLAIN only plans the statement — it does not execute it — so this is a safe way
+    to enumerate the tables a query touches. On parse/plan errors we return an empty
+    set and let the real execution raise the actual error.
+    """
+    try:
+        with engine.connect() as connection:
+            raw = connection.execute(text(f"EXPLAIN (FORMAT JSON) {sql}")).scalar_one()
+    except Exception:
+        return set()
+    plan = json.loads(raw) if isinstance(raw, str) else raw
+    tables: set[str] = set()
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            relation = node.get("Relation Name")
+            if relation:
+                tables.add(relation)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(plan)
+    return tables
+
+
+def run_sql_query(
+    engine: Engine,
+    sql: str,
+    allowed_tables: set[str] | None = None,
+) -> dict[str, Any]:
+    """Read-only SQL: only a single SELECT is allowed, at most MAX_SQL_ROWS rows.
+
+    When ``allowed_tables`` is provided, the statement is rejected unless every base
+    table it references is in the set (used by the AI query_database tool to enforce
+    the read_market / read_research / read_reports capabilities).
+    """
     stripped = sql.strip().rstrip(";").strip()
     if not _SELECT_RE.match(stripped):
         raise HTTPException(status_code=403, detail="Only SELECT queries are allowed")
     if ";" in stripped:
         raise HTTPException(status_code=403, detail="Multiple statements are not allowed")
+
+    if allowed_tables is not None:
+        referenced = _referenced_tables(engine, stripped)
+        forbidden = referenced - set(allowed_tables)
+        if forbidden:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Table access not allowed: {', '.join(sorted(forbidden))}",
+            )
 
     with engine.connect() as connection:
         result = connection.execute(text(stripped))
