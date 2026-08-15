@@ -15,7 +15,6 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/common/PageHeader';
 import { AsyncBoundary } from '@/components/common/AsyncBoundary';
@@ -96,7 +95,6 @@ const CONDITION_OPS: Array<{ value: StructuredCondition['op']; label: string }> 
 
 export const DataExplorerPage = () => {
   const { t } = useTranslation();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<'browse' | 'query'>('browse');
   const [queryMode, setQueryMode] = useState<'structured' | 'sql'>('structured');
   const [sqlText, setSqlText] = useState('');
@@ -113,18 +111,19 @@ export const DataExplorerPage = () => {
     status: 'idle',
   });
 
-  const resourceParam = searchParams.get('resource');
   const catalog = useMemo(
     () => (catalogState.status === 'success' ? catalogState.data : []),
     [catalogState],
   );
-  const resource =
-    catalog.find((c) => c.resource === resourceParam)?.resource ?? catalog[0]?.resource ?? null;
+
+  // 资源选择存组件 state 而非 URL query：本页被 AppShell 的 KeepAlive 缓存，
+  // 切到其它页面时它并不卸载，useSearchParams 会读到新路由（query 为空），
+  // 于是 resource 落回第一个资源、还会把 ?resource=… 补写到别的页面上。
+  // 组件 state 由 KeepAlive 原样保留，切回来时选中项不变。
+  const [resource, setResourceState] = useState<DataResource | null>(null);
 
   const setResource = (r: DataResource): void => {
-    const params = new URLSearchParams(searchParams);
-    params.set('resource', r);
-    setSearchParams(params, { replace: true });
+    setResourceState(r);
     setPage(1);
     setFilters({});
     setAppliedFilters({});
@@ -194,16 +193,15 @@ export const DataExplorerPage = () => {
       });
   };
 
+  // 目录首次返回时默认选中第一个资源；若当前选中项因目录变化而失效，回落到第一个。
   useEffect(() => {
     if (catalog.length === 0) return;
-    const valid = catalog.some((c) => c.resource === resourceParam);
-    const first = catalog[0];
-    if (!valid && first) {
-      const params = new URLSearchParams(searchParams);
-      params.set('resource', first.resource);
-      setSearchParams(params, { replace: true });
-    }
-  }, [catalog, resourceParam, searchParams, setSearchParams]);
+    setResourceState((prev) =>
+      prev !== null && catalog.some((c) => c.resource === prev)
+        ? prev
+        : (catalog[0]?.resource ?? null),
+    );
+  }, [catalog]);
 
   useEffect(() => {
     if (queryResource === null && catalog.length > 0) {
