@@ -14,6 +14,9 @@ import styles from './AppShell.module.css';
  * 上一个，于是详情页显示的是上次选中的因子；顺带还会为每个访问过的参数留一份缓存。
  */
 const CACHED_PATHS = new Set(NAV_ITEMS.map((item) => item.to));
+// 数据速查页被 KeepAlive 缓存坏过：切回后 resource 下拉卡死、拿不到数据，需整页刷新
+// 才恢复。它每次进入重新拉目录/数据反而更稳，先不缓存。
+CACHED_PATHS.delete('/data');
 
 const isCacheable = (pathname: string): boolean =>
   CACHED_PATHS.has(pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname);
