@@ -15,8 +15,22 @@ def _provider_for(config: dict, model_id: str)->dict | None:
             return provider
     return None
 
+def _fast_model(config: dict) -> str:
+    """报告分析选快速模型：长 prompt 下 reasoning 模型（如 deepseek-v4-pro）会超时。"""
+    models = [
+        model
+        for provider in config.get('providers', [])
+        for model in (provider.get('models') or [])
+        if model
+    ]
+    for model in models:
+        if 'flash' in model.lower():
+            return model
+    return config.get('defaultModel') or ''
+
+
 def _call_llm(config: dict, *, system: str, prompt: str)-> str|None:
-    model_id = config.get('defaultModel') or ''
+    model_id = _fast_model(config)
     provider = _provider_for(config,model_id)
     api_key_env = (provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY'
     api_key = resolve_api_key(api_key_env)
