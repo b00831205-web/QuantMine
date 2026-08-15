@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 
 from sqlalchemy.engine import Engine
 
 from app.ai.chat import complete_chat
+from app.ai.secrets import resolve_api_key
 from app.api.v1.ai.db import get_config
 
 def _provider_for(config: dict, model_id: str)->dict | None:
@@ -19,7 +19,7 @@ def _call_llm(config: dict, *, system: str, prompt: str)-> str|None:
     model_id = config.get('defaultModel') or ''
     provider = _provider_for(config,model_id)
     api_key_env = (provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY'
-    api_key = os.environ.get(api_key_env)
+    api_key = resolve_api_key(api_key_env)
     if not model_id or not provider or not api_key:
         raise RuntimeError(
             "AI report analysis is not configured: select a default model and verify its API key"

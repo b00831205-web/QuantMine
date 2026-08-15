@@ -72,6 +72,9 @@ services:
       # 挂成只读时报告生成会 500 在 OSError: Read-only file system，而错误信息
       # 只说"请稍后重试"，看不出根因。
       - ./data:/app/data
+      # AI provider keys 热更新：把宿主机的 .env.docker 以只读方式挂进容器，
+      # 改文件几秒内生效、无需重建容器（见 app/ai/secrets.py 的 TTL 读取）。
+      - ./.env.docker:/app/.env.docker:ro
     depends_on:
       postgres:
         condition: service_healthy

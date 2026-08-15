@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
-
 import httpx
+
+from app.ai.secrets import resolve_api_key
 
 DEFAULT_BASE_URL = 'https://api.siliconflow.cn/v1'
 DEFAULT_MODEL = 'BAAI/bge-m3'
@@ -16,7 +16,7 @@ def embed_texts(texts: list[str], embedding_config: dict)->list[list[float]]:
     model = config.get('model') or DEFAULT_MODEL
     headers: dict[str, str] = {}
     if config.get('provider') == 'openai_compatible':
-        api_key = os.environ.get(config.get('apiKeyEnv') or 'SILICONFLOW_API_KEY')
+        api_key = resolve_api_key(config.get('apiKeyEnv') or 'SILICONFLOW_API_KEY')
         if not api_key:
             raise RuntimeError('Embedding API Key not configured (env SILICONFLOW_API_KEY)')
         headers['Authorization'] = f'Bearer {api_key}'

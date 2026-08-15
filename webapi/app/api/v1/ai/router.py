@@ -5,7 +5,6 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.engine import Engine
-import os
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -36,6 +35,7 @@ from ....ai.chat import build_system_prompt, complete_chat, summarize_title
 from ....ai.catalog import get_database_catalog
 from ....ai.rag import index_message, search_messages
 from ....ai.skills import discover_skills, skill_definitions
+from ....ai.secrets import resolve_api_key
 
 router = APIRouter()
 
@@ -83,7 +83,7 @@ def _resolve_provider(config: dict, model_id: str) -> dict|None:
 def _mark_configured(config: dict)->dict:
     for provider in config.get('providers', []):
         env_name = provider.get('apiKeyEnv') or 'OPENAI_API_KEY'
-        provider['configured'] = bool(os.environ.get(env_name))
+        provider['configured'] = bool(resolve_api_key(env_name))
     embedding = config.get('embeddingConfig') or {}
     if embedding.get('provider') == 'none':
         embedding['configured'] = True
@@ -91,7 +91,7 @@ def _mark_configured(config: dict)->dict:
         embedding['configured'] = bool(embedding.get('baseUrl'))
     else:
         env_name = embedding.get('apiKeyEnv') or 'SILICONFLOW_API_KEY'
-        embedding['configured'] = bool(os.environ.get(env_name))
+        embedding['configured'] = bool(resolve_api_key(env_name))
     config['embeddingConfig'] = embedding
     return config
 
@@ -157,7 +157,7 @@ def _needs_confirm(tool_name: str) -> bool:
 def _run_agent(engine: Engine, cid: int, config: dict, capabilities: dict, model_id: str | None, attached_context: dict | None = None) -> dict:
     index_rag = capabilities.get('rag_corpus', False)
     provider = _resolve_provider(config, model_id or config.get('defaultModel') or '')
-    api_key = os.environ.get((provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY')
+    api_key = resolve_api_key((provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY')
     allow_db = capabilities.get('query_database', True)
 
     catalog = get_database_catalog(engine)
@@ -326,7 +326,7 @@ def get_messages(conversation_id: str, engine: Engine = Depends(get_request_engi
 def _generate_title(engine: Engine, cid: int, config: dict, first_message: str) -> None:
     """Background task: summarize a conversation title from the first user message and write it back (fail silently, keep the default title)."""
     provider = _resolve_provider(config, config.get('defaultModel') or '')
-    api_key = os.environ.get((provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY')
+    api_key = resolve_api_key((provider or {}).get('apiKeyEnv') or 'OPENAI_API_KEY')
     title = summarize_title(
         first_message,
         model_id=config.get('defaultModel') or None,
