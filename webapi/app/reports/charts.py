@@ -14,6 +14,7 @@ import pandas as pd
 
 import matplotlib
 matplotlib.use("Agg")
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 
 _GRAYS = ["#cccccc", "#aaaaaa", "#888888", "#555555", "#111111"]
@@ -27,6 +28,7 @@ plt.rcParams.update({
 })
 
 _TICK = 9   # 刻度字号
+_TICK_SM = 7  # 日期刻度字号：YYYY-MM 比数字宽得多，用 _TICK 会横向挤在一起
 _LEG = 8    # 图例字号
 
 
@@ -118,6 +120,10 @@ def quantile_curve_png(dates: Sequence, quantiles: dict[str, Sequence[float]], s
         ax.plot(dates, spy, color="#111111", linewidth=1.0, linestyle="--", label="SPY")
     ax.margins(x=0)
     ax.tick_params(labelsize=_TICK)
+    # 两年半的回测在 4.6in 宽里会摊出 11 个季度刻度，"2024-04" 这种标签必然叠在
+    # 一起。先限制刻度数，再把日期字号调小——只调字号得压到 6pt 才不撞，印出来看不清。
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=6))
+    ax.tick_params(axis="x", labelsize=_TICK_SM)
     ax.legend(fontsize=_LEG, ncol=3, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.32))
     ax.spines[["top", "right"]].set_visible(False)
     return _to_uri(fig)
