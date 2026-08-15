@@ -36,6 +36,32 @@ describe('AppShell', () => {
     expect(container.querySelector('.ka-content')).toHaveClass(styles.keepAliveFullHeight!);
   });
 
+  it('caches the sidebar pages but not the detail routes under them', () => {
+    const routes = (
+      <Route path="/" element={<AppShell />}>
+        <Route path="research" element={<div>RESEARCH_BODY</div>} />
+        <Route path="research/factors/:factorName" element={<div>FACTOR_BODY</div>} />
+      </Route>
+    );
+
+    const cached = render(
+      <MemoryRouter initialEntries={['/research']}>
+        <Routes>{routes}</Routes>
+      </MemoryRouter>,
+    );
+    expect(cached.container.querySelector('.ka-wrapper')).toBeInTheDocument();
+
+    // 详情页留在缓存里就永不卸载，请求和 setSearchParams 会在离开后继续跑，
+    // 把地址栏拖回上一个因子
+    const detail = render(
+      <MemoryRouter initialEntries={['/research/factors/TwentyDayAvgVol']}>
+        <Routes>{routes}</Routes>
+      </MemoryRouter>,
+    );
+    expect(detail.container.textContent).toContain('FACTOR_BODY');
+    expect(detail.container.querySelector('.ka-wrapper')).not.toBeInTheDocument();
+  });
+
   it('keeps AI Config in the normal scrollable document flow', () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/ai/config']}>
