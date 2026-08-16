@@ -17,6 +17,9 @@ const CACHED_PATHS = new Set(NAV_ITEMS.map((item) => item.to));
 // 数据速查页被 KeepAlive 缓存坏过：切回后 resource 下拉卡死、拿不到数据，需整页刷新
 // 才恢复。它每次进入重新拉目录/数据反而更稳，先不缓存。
 CACHED_PATHS.delete('/data');
+// 报告页同样用 useSearchParams（runId/testId/lang/ai），被缓存后 searchParams 与地址栏
+// 脱节：AI 开关点了不亮、重新生成仍带 ai=false，报告里没 AI 分析。先不缓存。
+CACHED_PATHS.delete('/reports');
 
 const isCacheable = (pathname: string): boolean =>
   CACHED_PATHS.has(pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname);
