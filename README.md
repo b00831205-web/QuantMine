@@ -286,7 +286,7 @@ rejected at container startup.
 | `OPENAI_API_KEY` | Fallback API key when a provider names no env var of its own |
 | `SILICONFLOW_API_KEY` | Fallback API key for the embedding provider |
 | `<ANYTHING>_API_KEY` | Any name works; it just has to match the provider's `API Key env var` |
-| `http_proxy` / `https_proxy` | Optional upstream proxy for WSL market data |
+| `http_proxy` / `https_proxy` | Optional upstream proxy for market data (native `.env`, or Docker `.env.docker` with `host.docker.internal`) |
 
 ### AI API configuration
 

@@ -110,6 +110,11 @@ services:
       QUANT_CONFIG_PATH: config.example.yaml
       QUANTMINE_DATABASE_URL: postgresql+psycopg2://quantmine_pipeline:${QUANTMINE_PIPELINE_PASSWORD}@postgres:5432/quantmine
       QUANTMINE_PIPELINE_DATABASE_URL: postgresql+psycopg2://quantmine_pipeline:${QUANTMINE_PIPELINE_PASSWORD}@postgres:5432/quantmine
+      # 上游代理：国内抓 Yahoo/Wikipedia 用，留空则直连。容器里请用
+      # host.docker.internal 指宿主机上的代理（127.0.0.1 是容器自己）。
+      http_proxy: ${http_proxy:-}
+      https_proxy: ${https_proxy:-}
+      no_proxy: ${no_proxy:-localhost,127.0.0.1,::1,postgres,webapi}
     volumes:
       - ./pipelines:/app/pipelines:ro
       - ./config.example.yaml:/app/config.example.yaml:ro
