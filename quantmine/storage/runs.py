@@ -4,6 +4,13 @@ import subprocess
 
 from sqlalchemy import MetaData, Table, insert ,select
 from sqlalchemy.engine import Engine
+from typing import TYPE_CHECKING
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from ..research_config import ResearchRunConfig
 
 
 def get_current_git_commit() -> str | None:
@@ -45,6 +52,58 @@ def create_run(
         result = connection.execute(statement)
         return int(result.inserted_primary_key[0])
 
+@runtime_checkable
+class ResearchRunStore(Protocol):
+    """Persistence boundary for reproducible research-run inputs"""
+
+    def create(
+            self,
+            config: "ResearchRunConfig",
+            *,
+            git_commit: str | None = None,
+    ) -> int:
+        """Persist one research configuration and return its run ID."""
+
+    def load(self, run_id: int) -> "ResearchRunConfig":
+        """Restore one persisted research configuration"""
+
+@dataclass(frozen = True)
+class SQLAlchemyResearchRunStore:
+    """SQLAlchemy implementation backed by research_runs.config_snapshot"""
+    engine: Engine
+
+    def create(
+            self,
+            config: "ResearchRunConfig",
+            *,
+            git_commit: str | None = None
+    ) -> int:
+        return create_run(
+            self.engine,
+            config.to_snapshot(),
+            git_commit = git_commit,
+        )
+
+    def load(self, run_id: int) -> "ResearchRunConfig":
+        from ..research_config import ResearchRunConfig
+
+        metadata = MetaData()
+        research_runs = Table(
+            "research_runs",
+            metadata,
+            autoload_with=self.engine
+        )
+        statement = select(research_runs.c.config_snapshot).where(
+            research_runs.c.run_id == run_id
+        )
+        with self.engine.connect() as connection:
+            snapshot = connection.execute(statement).scalar_one_or_none()
+
+        if snapshot is None:
+            raise LookupError(f"Research run {run_id} does not exist")
+
+        return ResearchRunConfig.from_snapshot(snapshot)
+
 def find_run_id_by_airflow_batch(engine:Engine, args_batch):
     """Look up the research run an Airflow batch created.
 
@@ -64,3 +123,24 @@ def find_run_id_by_airflow_batch(engine:Engine, args_batch):
     if result is None:
         raise LookupError(f'No research run found for airflow batch {args_batch!r}')
     return int(result)
+
+def create_research_run(
+        engine: Engine,
+        config: "ResearchRunConfig",
+        *,
+        git_commit: str|None =None,
+) -> int:
+    """Persist a versioned, safe ResearchRunConfig snapshot"""
+
+    return SQLAlchemyResearchRunStore(engine).create(
+        config,
+        git_commit=git_commit
+    )
+
+def load_research_run_config(
+        engine: Engine,
+        run_id: int,
+)->"ResearchRunConfig":
+    """Load and validate the persisted input configuration of one run"""
+
+    return SQLAlchemyResearchRunStore(engine).load(run_id)

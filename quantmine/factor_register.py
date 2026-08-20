@@ -10,6 +10,7 @@ declaration order, without factors having to name their dependencies.
 import inspect
 from . import datareader as dr
 from .registry import make_registry
+from collections.abc import Iterable, Mapping
 
 FACTOR_REGISTRY, factor_registry=make_registry()
 
@@ -33,7 +34,7 @@ def call_single_factors(func, param_pool: dict):
             raise KeyError(f"missing value for '{name}'")
     return func(**kwargs)
 
-def calculate_all_factors(param_pool: dict)-> dict:
+def calculate_all_factors(param_pool: dict, factor_names: Iterable[str] | None = None)-> tuple[dict, dict]:
     """Compute every registered factor, resolving inter-factor dependencies.
 
     Returns:
@@ -41,26 +42,31 @@ def calculate_all_factors(param_pool: dict)-> dict:
         its frame, with None for factors whose dependencies never resolved;
         ``pending`` holds those unresolved names and their errors.
     """
-    result ={}
+    registry = (
+        FACTOR_REGISTRY if factor_names is None else _selected_factor_registry(factor_names)
+    )
+
+    result = {}
     failures = {}
-    for factor_name, func in FACTOR_REGISTRY.items():
+    for factor_name, func in registry.items():
         try:
             result[factor_name] = call_single_factors(func, param_pool)
-        except KeyError as e:
-            print(f'factor {factor_name} lack kwargs: {e}')
-            failures[factor_name] = str(e)
-    pending, completed = try_loop(failures, result, param_pool)
+        except KeyError as error:
+            print(f"factor {factor_name} lacks kwargs: {error}")
+            failures[factor_name] = str(error)
+    pending, completed = try_loop(
+        failures, result, param_pool, registry = registry
+    )
+
     print(f"still failure: {pending}")
-    return pending ,completed
+    return pending, completed
 
-def try_loop(failure: dict, result: dict, param_pool:dict):
-    """Retry failed factors until a full round makes no progress.
 
-    Each round adds already-completed factors to the pool, so a factor that
-    depends on another becomes computable once its input lands. A round that
-    resolves nothing means the remainder can never be satisfied, so they are
-    all marked failed at once and the loop exits.
+def try_loop(failure: dict, result: dict, param_pool:dict, *, registry : Mapping[str, object] | None = None)-> tuple[dict, dict]:
+    """Retry unresolved factors until a full round makes no progress.
     """
+
+    active_registry = FACTOR_REGISTRY if registry is None else registry
     pending = failure.copy()
     completed = result.copy()
     while pending:
@@ -68,7 +74,7 @@ def try_loop(failure: dict, result: dict, param_pool:dict):
         for factor_name in list(pending.keys()):
             param_pool_update = {**param_pool, **completed}
             try:
-                completed[factor_name] = call_single_factors(FACTOR_REGISTRY[factor_name], param_pool_update)
+                completed[factor_name] = call_single_factors(active_registry[factor_name], param_pool_update)
                 del pending[factor_name]
             except KeyError:
                 continue
@@ -121,3 +127,38 @@ def drop_intermediates(factors: dict) -> dict:
     from .factor_mining import INTERMEDIATE_FACTORS
 
     return {name: df for name, df in factors.items() if name not in INTERMEDIATE_FACTORS}
+
+def _selected_factor_registry( #根据函数签名递归找依赖，例如选择 TwentyDayVolatility 时自动加入 daily_return；也会拒绝未知因子和循环依赖。
+        factor_names: Iterable[str],
+) -> dict[str, object]:
+    """Return requested factors and all registry-defined dependencies"""
+
+    requested = tuple(dict.fromkeys(factor_names))
+    unknown = sorted(set(requested).difference(FACTOR_REGISTRY))
+    if unknown:
+        raise ValueError(f"Unknown factor names: {','.join(unknown)}")
+    selected: dict[str, object] = {}
+    visiting: set[str] = set()
+
+    def include(factor_name: str) -> None:
+        if factor_name in selected:
+            return
+
+        if factor_name in visiting:
+            raise ValueError(
+                f"Circular factor dependency detected at {factor_name!r}"
+            )
+        visiting.add(factor_name)
+        factor = FACTOR_REGISTRY[factor_name]
+
+        for parameter_name in inspect.signature(factor).parameters:
+            if parameter_name in FACTOR_REGISTRY:
+                include(parameter_name)
+
+        visiting.remove(factor_name)
+        selected[factor_name] = factor
+
+    for factor_name in requested:
+        include(factor_name)
+
+    return selected
