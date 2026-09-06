@@ -7,7 +7,10 @@ from .contracts import (
     DataSourceComponent,
     MarketDataBundle,
     MarketDataCapability,
+    UniverseComponent
 )
+
+from ..datareader import ConstituentsSource
 
 from .sources import LegacyDataSourcePlugin
 
@@ -42,6 +45,12 @@ def load_data_source_component( #检验component锁定的connection_ref与本次
     a dedicated fundamentals field in a later stage.
     """
 
+    if component.requires_connection and binding.connection_ref is None:
+        raise ValueError(
+            f"Data source component {component.id!r}"
+            "requires DataBinding.connection_ref"
+        )
+ 
     if (
         component.connection_ref is not None 
         and component.connection_ref != binding.connection_ref
@@ -67,3 +76,28 @@ def load_data_source_component( #检验component锁定的connection_ref与本次
         )
     _validate_declared_capabilities(component,bundle)
     return bundle
+
+def load_universe_component(
+        component: UniverseComponent,
+        binding: DataBinding,
+        context: SourceContext,
+) -> ConstituentsSource | None:
+    """Load an executeable point-in-time universe, if the descriptor has one"""
+
+    if component.plugin is None:
+        return None
+
+    if component.requires_connection and binding.connection_ref is None:
+        raise ValueError(
+            f"Universe component {component.id!r} "
+            "requires DataBinding.connection_ref"
+        )
+
+    universe = component.plugin.load(binding, context)
+    if not callable(getattr(universe, "get_constituents", None)):
+        raise TypeError(
+            f"Universe component {component.id!r} returned "
+            f"{type(universe).__name__}; expected get_constituents(date)"
+        )
+    return universe
+

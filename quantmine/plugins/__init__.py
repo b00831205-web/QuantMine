@@ -26,6 +26,8 @@ from .sources import(
     SqlLongFormatDataSourcePlugin
 )
 
+from .catalog import ResearchBundleCatalog, load_research_bundle_catalog
+
 
 from .loader import PluginResolutionError, resolve_plugin
 
@@ -50,6 +52,8 @@ __all__ = (
     "LegacyDataSourcePlugin",
     "ParquetWideFrameDataSourcePlugin",
     "SqlLongFormatDataSourcePlugin",
-    "load_data_source_component"
-    "resolve_research_bundle_definition"
+    "load_data_source_component",
+    "resolve_research_bundle_definition",
+    "ResearchBundleCatalog",
+    "load_research_bundle_catalog"
 )

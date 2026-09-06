@@ -81,6 +81,9 @@ from .factor_attribution import load_french_factors, carhart_attribution
 from .load_config import load_configs
 from .research import FactorResearchResult, run_factor_research, run_configured_research
 
+from .execution import execute_persisted_research
+
+
 
 __all__ = [
     "MarketData", "DataSource", "ParquetSource", "CSVSource", "ExcelSource",
@@ -99,5 +102,6 @@ __all__ = [
     "back_test_sanity_test", "back_test_senity_test",
     "load_french_factors", "carhart_attribution",
     "load_configs",
-    "FactorResearchResult", "run_factor_research", "run_configuered_research"
+    "FactorResearchResult", "run_factor_research", "run_configuered_research",
+    "execute_persisted_research"
 ]

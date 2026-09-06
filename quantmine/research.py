@@ -1,7 +1,7 @@
 """Bundle-scoped research orchestration before IC, validation, and backtests."""
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from .factor_register import build_param_pool, calculate_all_factors
@@ -28,6 +28,13 @@ from .plugins.bundles import (
 )
 
 from .research_config import ResearchRunConfig
+import pandas as pd
+from .datareader import MarketData
+from .plugins.runtime import (
+    load_data_source_component,
+    load_universe_component,
+)
+
 
 @dataclass(frozen = True)
 class FactorResearchResult:
@@ -88,6 +95,19 @@ def run_factor_research(
         binding,
         context
     )
+    active_universe = market_data.universe
+
+    if bundle.universe is not None:
+        resolved_universe = load_universe_component(
+            bundle.universe,
+            binding, 
+            context,
+        )
+        if resolved_universe is not None:
+            active_universe = resolved_universe
+
+    if active_universe is not None:
+        market_data = _apply_universe(market_data, active_universe)
 
     requested_signals = _requested_signals(bundle)
     _validate_runtime_factor_requirements(bundle, market_data)
@@ -139,5 +159,35 @@ def run_configured_research(
         factor_parameters= config.factor_parameters
     )
 
+def _membership_mask(
+        frame: pd.DataFrame,
+        universe: object,
+) -> pd.DataFrame:
+    return pd.DataFrame({
+        ticker: [
+            ticker in universe.get_constituents(pd.Timestamp(date))
+            for date in frame.index
+        ]
+        for ticker in frame.columns
+    }, index= frame.index)
 
+def _apply_universe(
+        market_data: MarketDataBundle,
+        universe: object,
+) -> MarketDataBundle:
+    market = market_data.market
 
+    def masked(frame: pd.DataFrame | None) -> pd.DataFrame | None:
+        if frame is None:
+            return None
+        return frame.where(_membership_mask(frame,universe))
+
+    return replace(
+        market_data,
+        market = MarketData(
+            close = masked(market.close),
+            volume = masked(market.volume),
+            market_cap = masked(market.market_cap),
+        ),
+        universe = universe
+    )

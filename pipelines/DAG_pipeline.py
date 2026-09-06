@@ -17,8 +17,15 @@ from datetime import datetime, timedelta, timezone
 from airflow.providers.standard.operators.bash import BashOperator
 from airflow.sdk import DAG
 
+import sys
+
+
 PROJECT_ROOT = os.environ.get("QUANT_PROJECT_ROOT",
                               os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, PROJECT_ROOT)
+
+from airflow.providers.standard.operators.python import ShortCircuitOperator
+from quantmine.workflows.trading_sessions import is_xnys_trading_session
 # 解释器在 **运行时** 由 shell 解析, 不在解析期读 os.environ。
 #
 # 原来是 os.environ.get("QUANT_PYTHON_BIN", "python")，那是在 dag-processor 解析
@@ -97,6 +104,11 @@ with DAG("quant_factor_mining",
         max_active_runs=1,
         tags=['quant_factor_mining'],
         ) as dag:
+    us_market_session_gate = ShortCircuitOperator(
+        task_id = "us_market_session_gate",
+        python_callable = is_xnys_trading_session,
+        op_kwargs = {"as_of_date": "{{ dag_run.run_after | ds }}"},
+    )
     t0 = BashOperator(
         task_id="universe_refresh",
         bash_command=task_command("task_0_universe.py"),
@@ -135,6 +147,6 @@ with DAG("quant_factor_mining",
         bash_command=task_command("task_attribution.py", uses_config=True),
     )
 
-t0 >> t1 >> t2 >> t3 >> t4
 t4 >> [task_save_market_bars, t5]
+us_market_session_gate >> t0 >> t1 >> t2 >> t3 >> t4
 t5 >> t6

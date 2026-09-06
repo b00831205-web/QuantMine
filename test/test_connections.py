@@ -95,3 +95,28 @@ def test_unknown_connection_reports_available_aliases() -> None:
 
     with pytest.raises(KeyError, match="known_lake"):
         registry.parquet_root("missing_lake")
+
+
+def test_registry_builds_one_named_connection_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("QUANTMINE_CONNECTION_CN_EQUITY_LAKE_KIND", "parquet")
+    monkeypatch.setenv(
+        "QUANTMINE_CONNECTION_CN_EQUITY_LAKE_ROOT",
+        str(tmp_path),
+    )
+
+    registry = ConnectionRegistry.from_environment(("cn_equity_lake",))
+
+    assert registry.connection_refs == ("cn_equity_lake",)
+    assert registry.parquet_root("cn_equity_lake") == tmp_path
+
+
+def test_registry_environment_loader_rejects_missing_connection_kind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("QUANTMINE_CONNECTION_MISSING_KIND_KIND", raising=False)
+
+    with pytest.raises(RuntimeError, match="_KIND"):
+        ConnectionRegistry.from_environment(("missing_kind",))

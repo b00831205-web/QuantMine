@@ -1,0 +1,162 @@
+"""YAML loading for persistent market-pipeline definitions."""
+
+from pathlib import Path
+
+import pytest
+
+from quantmine.market_pipeline_loader import (
+    load_market_pipeline_definitions,
+)
+
+
+def _write(tmp_path: Path, content: str) -> Path:
+    path = tmp_path / "pipelines.yaml"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def test_loads_multiple_market_pipeline_definitions(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        """
+market_pipelines:
+  - schema_version: 1
+    id: cn_daily
+    dag_id: quantmine_cn_daily
+    display_name: China A-share daily
+    schedule: "0 18 * * 1-5"
+    connection_refs: [cn_raw]
+    stages:
+      - id: session_gate
+        kind: session_gate
+        plugin:
+          entry_point: local_plugins:create_cn_gate
+      - id: production
+        upstream: [session_gate]
+        plugin:
+          entry_point: local_plugins:create_cn_production
+          params:
+            market: CN
+  - schema_version: 1
+    id: us_daily
+    dag_id: quantmine_us_daily
+    display_name: US equity daily
+    schedule: "0 18 * * 1-5"
+    stages:
+      - id: session_gate
+        kind: session_gate
+        plugin:
+          entry_point: local_plugins:create_us_gate
+""",
+    )
+
+    definitions = load_market_pipeline_definitions(path)
+
+    assert [definition.id for definition in definitions] == [
+        "cn_daily",
+        "us_daily",
+    ]
+    assert definitions[0].connection_refs == ("cn_raw",)
+    assert definitions[0].ordered_stage_ids == (
+        "session_gate",
+        "production",
+    )
+    assert definitions[0].stages[1].plugin.params == {"market": "CN"}
+
+
+def test_missing_market_pipelines_section_returns_empty_tuple(
+    tmp_path: Path,
+) -> None:
+    path = _write(tmp_path, "momentum:\n  day: 20\n")
+
+    assert load_market_pipeline_definitions(path) == ()
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("market_pipelines: {}\n", "must be a YAML list"),
+        (
+            """
+market_pipelines:
+  - schema_version: 1
+    id: duplicate
+    dag_id: first_dag
+    display_name: First
+    schedule: "@daily"
+    stages:
+      - id: run
+        plugin: {entry_point: local_plugins:create_run}
+  - schema_version: 1
+    id: duplicate
+    dag_id: second_dag
+    display_name: Second
+    schedule: "@daily"
+    stages:
+      - id: run
+        plugin: {entry_point: local_plugins:create_run}
+""",
+            "duplicate market pipeline id",
+        ),
+        (
+            """
+market_pipelines:
+  - schema_version: 1
+    id: first
+    dag_id: duplicate_dag
+    display_name: First
+    schedule: "@daily"
+    stages:
+      - id: run
+        plugin: {entry_point: local_plugins:create_run}
+  - schema_version: 1
+    id: second
+    dag_id: duplicate_dag
+    display_name: Second
+    schedule: "@daily"
+    stages:
+      - id: run
+        plugin: {entry_point: local_plugins:create_run}
+""",
+            "duplicate Airflow dag_id",
+        ),
+    ],
+)
+def test_rejects_invalid_pipeline_collections(
+    tmp_path: Path,
+    content: str,
+    message: str,
+) -> None:
+    with pytest.raises((TypeError, ValueError), match=message):
+        load_market_pipeline_definitions(_write(tmp_path, content))
+
+
+def test_example_config_defines_the_a_share_daily_pipeline() -> None:
+    example_path = Path(__file__).parents[1] / "config.example.yaml"
+
+    definitions = load_market_pipeline_definitions(example_path)
+    definitions_by_id = {
+        definition.id: definition for definition in definitions
+    }
+
+    definition = definitions_by_id["cn_a_share_daily"]
+    assert definition.dag_id == "quantmine_cn_a_share_daily"
+    assert definition.ordered_stage_ids == (
+        "session_gate",
+        "daily_production",
+    )
+    assert definition.connection_refs == (
+        "cn_raw",
+        "cn_reference",
+        "cn_status",
+        "cn_eligibility",
+    )
+    assert definition.stages[0].plugin.entry_point == (
+        "quantmine.plugins.market_stages:create_a_share_session_gate"
+    )
+    assert definition.stages[1].plugin.entry_point == (
+        "quantmine.plugins.market_stages:create_a_share_daily_production"
+    )
+    assert definition.stages[0].plugin.params["config"] == (
+        definition.stages[1].plugin.params["config"]
+    )

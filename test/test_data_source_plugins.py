@@ -129,6 +129,18 @@ def test_sql_long_format_plugin_returns_sorted_wide_frames(
     assert result.metadata["source_kind"] == "sql_long_format"
 
 
+def test_sql_plugin_requires_a_connection_ref(tmp_path: Path) -> None:
+    plugin = SqlLongFormatDataSourcePlugin(
+        field_columns={MarketDataCapability.CLOSE: "close"},
+    )
+
+    with pytest.raises(ValueError, match="requires DataBinding.connection_ref"):
+        plugin.load(
+            _binding(connection_ref=None),
+            _context(tmp_path, ConnectionRegistry({})),
+        )
+
+
 def test_parquet_wide_frame_plugin_slices_dates_and_tickers(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

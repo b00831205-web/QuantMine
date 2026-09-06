@@ -8,6 +8,8 @@ from threading import Lock
 from typing import Any, Mapping
 
 from os import environ
+import re
+from collections.abc import Iterable
 
 class ConnectionKind(StrEnum):
     """The resource type behind a named data connection"""
@@ -146,4 +148,74 @@ class ConnectionRegistry:
             )
         return value
 
+    @classmethod
+    def from_environment(
+        cls,
+        connection_refs: Iterable[str],
+    ) -> "ConnectionRegistry":
+        """Build named connection configs from deployment variables"""
 
+        configs: dict[str, DataConnectionConfig] = {}
+        for connection_ref in dict.fromkeys(connection_refs):
+            prefix = _connection_environment_prefix(connection_ref)
+            kind_env = f"{prefix}_KIND"
+            raw_kind = environ.get(kind_env)
+
+            if not raw_kind:
+                raise RuntimeError(
+                    f"Environment variable {kind_env!r} is not set"
+                )
+
+            try:
+                kind = ConnectionKind(raw_kind.lower())
+            except ValueError as error:
+                supported = ",".join(item.value for item in ConnectionKind)
+                raise ValueError(
+                    f"Environment varaible {kind_env!r} must be one of: "
+                    f"{supported}"
+                ) from error
+
+            read_only = _environment_boolean(
+                f"{prefix}_READ_ONLY",
+                default = True,
+            )
+
+            if kind is ConnectionKind.SQLALCHEMY:
+                configs[connection_ref] = DataConnectionConfig(
+                    kind = kind,
+                    url_env= f"{prefix}_URL",
+                    read_only=read_only
+                )
+
+            else:
+                configs[connection_ref] = DataConnectionConfig(
+                    kind = kind,
+                    root_env = f"{prefix}_ROOT",
+                    read_only=read_only
+                )
+        return cls(configs)
+
+_CONNECTION_REF_PARTTERN = re.compile(r"[a-z][a-z0-9_]*\Z")
+
+def _connection_environment_prefix(connection_ref: str) -> str:
+    if not _CONNECTION_REF_PARTTERN.fullmatch(connection_ref):
+        raise ValueError(
+            f"connection_ref must use lowercase latters, digits, and underscores: {connection_ref!r}"
+        )
+    return f"QUANTMINE_CONNECTION_{connection_ref.upper()}"
+
+def _environment_boolean(name: str, *, default: bool) -> bool:
+    value = environ.get(name)
+    if value is None:
+        return default
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes"}:
+        return True
+
+    if normalized in {"0","false", "no"}:
+        return False
+
+    raise ValueError(
+        f"Environment variable {name!r} must be true or false"
+    )

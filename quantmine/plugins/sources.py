@@ -137,7 +137,12 @@ class SqlLongFormatDataSourcePlugin: #读取 SQL 长表（每行一个日期和�
                 "Install qunatmine with its 'db' extra"
             ) from error
 
-        engine = context.connections.sqlalchemy_engine(binding.connection_ref)
+        connection_ref = _require_connection_ref(
+            binding,
+            "SqlLongFormatDataSourcePlugin"
+        )
+
+        engine = context.connections.sqlalchemy_engine(connection_ref)
         table = Table(
             binding.dataset,
             MetaData(),
@@ -236,7 +241,12 @@ class ParquetWideFrameDataSourcePlugin: #读取宽表 Parquet；它只允许访�
                 context: SourceContext
         ) -> MarketDataBundle:
 
-            lake_root = context.connections.parquet_root(binding.connection_ref)
+            connection_ref = _require_connection_ref(
+                binding,
+                "ParquetWideFrameDataSourcePlugin"
+            )
+
+            lake_root = context.connections.parquet_root(connection_ref)
             dataset_root = (lake_root/binding.dataset).resolve()
             lake_root_resolved = lake_root.resolve()
 
@@ -247,6 +257,7 @@ class ParquetWideFrameDataSourcePlugin: #读取宽表 Parquet；它只允许访�
                     f"Dataset path {binding.dataset!r} escapes the configured lake root"
                 ) from error
 
+            
             frames: dict[MarketDataCapability, pd.DataFrame] = {}
             for capability, relative_file in self.field_files.items():
                 path = (dataset_root / relative_file).resolve()
@@ -286,3 +297,9 @@ class ParquetWideFrameDataSourcePlugin: #读取宽表 Parquet；它只允许访�
                 }
             )
 
+def _require_connection_ref(binding: DataBinding, source_name: str) -> str:
+    if binding.connection_ref is None:
+        raise ValueError(
+            f"{source_name} requires DataBinding.connection_ref"
+        )
+    return binding.connection_ref

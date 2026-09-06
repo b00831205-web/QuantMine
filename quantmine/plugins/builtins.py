@@ -10,56 +10,45 @@ from .contracts import (
     UniverseComponent,
 )
 
-def create_yfinance_data_source(**params) -> DataSourceComponent:
-    """Return the existing Yahoo implementation with explicit capabilities"""
+from .us_equity import (
+    create_sp500_universe as _create_sp500_universe,
+    create_us_technical_factor_pack as _create_us_techical_factor_pack,
+    create_yfinance_data_source as _create_yfinance_data_source
+)
 
-    return DataSourceComponent(
-        id = 'yfinance',
-        source = YFinanceSource(**params),
-        capabilities = frozenset({
-            MarketDataCapability.CLOSE,
-            MarketDataCapability.VOLUME,
-        }),
-        metadata = {
-            'market': 'US',
-            'adjustment': 'provider_default',
-        },
-    )
+def create_yfinance_data_source(**params) -> DataSourceComponent:
+    return _create_yfinance_data_source(**params)
 
 def create_sp500_universe() -> UniverseComponent:
-    """Describe the existing point-in-time S&P 500 membership convention."""
-    return UniverseComponent(
-        id = 'sp500_membership',
-        metadata = {
-            'index_name' : 'SP500',
-            'benchmark_ticker': 'SPY'
-        }
-    )
+    return _create_sp500_universe()
 
 def create_us_technical_factor_pack() -> FactorPackComponent:
-    """Describe the currently registered US price/volume factors.
+    return _create_us_techical_factor_pack()
 
-    The import preserves the existing registration side effect. No factor is
-    calculated merely by resolving a research bundle.
-    """
+def create_cn_a_share_price_volume_factor_pack() -> FactorPackComponent:
+    """Describe the first A-share close-and-volume factor family"""
 
-    from .. import factor_mining
-    _ = factor_mining
+    from .. import factor_mining_cn, factor_mining
+    _ = factor_mining_cn 
+
     return FactorPackComponent(
-        id = 'us_technical_v1',
+        id = "cn_a_share_price_volume_v1",
         requires = frozenset({
             MarketDataCapability.CLOSE,
             MarketDataCapability.VOLUME
         }),
-        signals = (
-            'momentum',
-            'ShortTermReversal',
-            'TwentyDayVolatility',
-            'TwentyDayNegVotality',
-            'TwentyDayAvgVol',
-            'VolPriceCorr',
+        signals= (
+            "CNMomentum20D",
+            "CNReversal5D",
+            "CNVolatility20D",
+            "CNVolumeRatio20D",
+            "TwentyDayVolatility",
+            "TwentyDayNegVotality",
+            "TwentyDayAvgVol",
+            "VolPriceCorr"
         ),
-        metadata = {
-            'registry_module': 'quantmine.factor_mining',
-        }
+        metadata={
+            "market": "CN",
+            "family": "price_volume"
+        },
     )

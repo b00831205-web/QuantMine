@@ -7,9 +7,10 @@ import json
 from typing import Any, Mapping
 
 from .plugins.bundles import ResearchBundle, get_research_bundle
-from .plugins.contracts import DataBinding, PluginSpec
+from .plugins.contracts import DataBinding, PluginSpec, VersionedDatasetBinding
 
-RESEARCH_RUN_CONFIG_VERSION = 1
+
+RESEARCH_RUN_CONFIG_VERSION = 2
 
 @dataclass(frozen = True)
 class ResearchRunConfig:
@@ -69,6 +70,7 @@ class ResearchRunConfig:
                 "end": self.data_binding.end,
                 "tickers": list(self.data_binding.tickers),
                 "metadata": dict(self.data_binding.metadata),
+                "eligibility_binding": _versioned_dataset_binding_snapshot(self.data_binding.eligibility_binding)
             },
             "factor_parameters": dict(self.factor_parameters),
         }
@@ -84,10 +86,10 @@ class ResearchRunConfig:
         payload = _mapping(snapshot, label="PresearchRunConfig snapshot")
         version = payload.get("schema_version")
 
-        if version != RESEARCH_RUN_CONFIG_VERSION:
+        if version not in {1, RESEARCH_RUN_CONFIG_VERSION}:
             raise ValueError(
                 "Unsupported research-run config schema version "
-                f"{version!r}; expected {RESEARCH_RUN_CONFIG_VERSION}"
+                f"{version!r}; expected 1 or {RESEARCH_RUN_CONFIG_VERSION}"
             )
         bundle_payload = _mapping(payload.get("bundle"), label = "bundle")
         binding_payload = _mapping(
@@ -132,7 +134,7 @@ class ResearchRunConfig:
         )
 
         binding = DataBinding(
-            connection_ref= _string(
+            connection_ref= _optional_string(
                 binding_payload.get("connection_ref"),
                 label = "data_binding.connection_ref"
             ),
@@ -170,6 +172,9 @@ class ResearchRunConfig:
                 binding_payload.get("metadata", {}),
                 label = "data_binding.metadata",
             ),
+            eligibility_binding = _versioned_dataset_binding_from_snapshot(
+                binding_payload.get("eligibility_binding")
+            ) 
         )
 
         return cls(
@@ -227,3 +232,30 @@ def _optional_string(value:object, * ,label: str) -> str |None:
         return None
 
     return _string(value, label= label)
+
+def _versioned_dataset_binding_snapshot(
+        binding: VersionedDatasetBinding | None,
+) -> dict[str, str] | None:
+    if binding is None:
+        return None
+
+    return {
+        "connection_ref" : binding.connection_ref,
+        "dataset": binding.dataset,
+        "market": binding.market,
+        "version": binding.version
+    }
+
+def _versioned_dataset_binding_from_snapshot(
+        value: object,
+) -> VersionedDatasetBinding | None:
+    if value is None:
+        return None
+
+    payload = _mapping(value, label = "data_binding.eligibility_binding")
+    return VersionedDatasetBinding(
+        connection_ref=_string(payload.get("connection_ref"), label = "data_binding.eligibility_binding.connection_ref"),
+        dataset = _string(payload.get("dataset"), label = "data_binding.eligibility_binding.dataset"),
+        market = _string(payload.get("market"), label = "data_binding.eligibility_binding.market"),
+        version = _string(payload.get("version"), label="data_binding.eligibility_binding.version")
+    )

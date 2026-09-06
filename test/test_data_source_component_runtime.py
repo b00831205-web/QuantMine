@@ -90,6 +90,50 @@ def test_runtime_entry_loads_a_data_source_plugin(tmp_path: Path) -> None:
     assert plugin.binding == _binding()
 
 
+def test_runtime_entry_allows_an_api_plugin_without_connection_ref(
+    tmp_path: Path,
+) -> None:
+    expected = MarketDataBundle(
+        market=MarketData(
+            close=pd.DataFrame(
+                {"AAA": [10.0]},
+                index=pd.to_datetime(["2024-01-02"]),
+            )
+        )
+    )
+    component = DataSourceComponent(
+        id="api_source",
+        capabilities=frozenset({MarketDataCapability.CLOSE}),
+        plugin=StaticPlugin(expected),
+    )
+
+    actual = load_data_source_component(
+        component,
+        _binding(connection_ref=None),
+        _context(tmp_path),
+    )
+
+    assert actual is expected
+
+
+def test_runtime_entry_rejects_a_connection_backed_plugin_without_connection_ref(
+    tmp_path: Path,
+) -> None:
+    component = DataSourceComponent(
+        id="sql_source",
+        capabilities=frozenset({MarketDataCapability.CLOSE}),
+        plugin=StaticPlugin(MarketDataBundle(market=MarketData(close=pd.DataFrame()))),
+        requires_connection=True,
+    )
+
+    with pytest.raises(ValueError, match="requires DataBinding.connection_ref"):
+        load_data_source_component(
+            component,
+            _binding(connection_ref=None),
+            _context(tmp_path),
+        )
+
+
 def test_runtime_entry_adapts_a_legacy_data_source(tmp_path: Path) -> None:
     component = DataSourceComponent(
         id="legacy",

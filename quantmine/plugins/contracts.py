@@ -40,6 +40,32 @@ class PluginSpec:  #只保存入口路径和参数，不保存已创建的python
     params: Mapping[str, Any] = field(default_factory = dict)
 
 @dataclass(frozen = True)
+class VersionedDatasetBinding:
+    """Serializable reference to one immutable dataset version"""
+    connection_ref: str
+    dataset: str
+    market: str
+    version: str
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("connection_ref", self.connection_ref),
+            ("dataset", self.dataset),
+            ("market", self.market),
+            ("version", self.version)
+        ): 
+            if not value or value.strip() != value:
+                raise ValueError(
+                    f"{label} must be a non-empty trimmed string"
+                )
+
+            if "/" in value or "\\" in value or value in {".",".."}:
+                raise ValueError(
+                    f"{label} must be a safe path segment"
+                )
+
+
+@dataclass(frozen = True)
 class DataBinding: #运行配置文件
     """Serializable description of one market-data request.
 
@@ -47,7 +73,7 @@ class DataBinding: #运行配置文件
     Actual DSNs and local roots remain in environment variables and are
     resolved by ``ConnectionRegistry`` at runtime.
     """
-    connection_ref: str
+    connection_ref: str | None
     dataset: str
     universe_dataset: str | None = None
     benchmark_dataset : str | None = None
@@ -57,6 +83,7 @@ class DataBinding: #运行配置文件
     end: str | None = None
     tickers: tuple[str, ...] = ()
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    eligibility_binding: VersionedDatasetBinding | None = None
 
 @dataclass(frozen = True)
 class MarketDataBundle:  #数据源插件的统一输出，内部继续复用旧MarketData，同时可逐步加入成分股、交易日历、基准和元数据
@@ -101,11 +128,13 @@ class DataSourceComponent: #bundle中的数据源描述。source用于旧接口�
     B2 will supply adapters that implement ``DataSourcePlugin`` and turn their
     output into ``MarketDataBundle``.
     """
+
     id: str
     capabilities: frozenset[MarketDataCapability]
     source: DataSource | None = None
     plugin: DataSourcePlugin | None = None
     connection_ref: str | None = None
+    requires_connection: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -135,10 +164,18 @@ class UniverseComponent: #描述股票池规则和其提供的membership能力
     provides: frozenset[MarketDataCapability] = frozenset({
         MarketDataCapability.MEMBERSHIP
     })
-    metadata: Mapping[str, Any] = field(default_factory = dict)
+    metadata: Mapping[str, Any] = field(default_factory = dict,)
+    plugin: UniversePlugin | None = None
+    requires_connection: bool = False
     
+@runtime_checkable
+class UniversePlugin(Protocol):
+    """Load a point-in-time membership source for one research run"""
 
-
-
-
-        
+    def load(
+            self,
+            binding: DataBinding,
+            context: SourceContext,
+    ) -> ConstituentsSource:
+        ...
+ 

@@ -96,3 +96,56 @@ backtest:
 
 carhart_attribution:
   maxlags: 20               # maximum lag for HAC standard errors
+
+a_share_daily_pipeline: &a_share_daily_pipeline
+  schema_version: 1
+  raw_connection_ref: cn_raw
+  reference_binding:
+    connection_ref: cn_reference
+    dataset: cn_a_share_reference
+    market: CN
+    version: "20260830"
+  status_binding:
+    connection_ref: cn_status
+    dataset: cn_a_share_status
+    market: CN
+    version: "history_v1"
+  eligibility_binding:
+    connection_ref: cn_eligibility
+    dataset: cn_a_share_eligibility
+    market: CN
+    version: "history_v1"
+  eligibility_rule_version: cn_equity_v1
+
+market_pipelines:
+  - schema_version: 1
+    id: cn_a_share_daily
+    dag_id: quantmine_cn_a_share_daily
+    display_name: Daily A-share raw, status, and eligibility production
+    schedule: "0 18 * * 1-5"
+
+    connection_refs:
+      - cn_raw
+      - cn_reference
+      - cn_status
+      - cn_eligibility
+    stages:
+      - id: session_gate
+        kind: session_gate
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_session_gate
+          params:
+            config: *a_share_daily_pipeline
+      
+      - id: daily_production
+        kind: task
+        upstream:
+          - session_gate
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_daily_production
+          params:
+            config: *a_share_daily_pipeline
+    metadata:
+      market: CN
+      frequency: daily
+      purpose: production

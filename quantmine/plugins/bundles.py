@@ -57,14 +57,14 @@ US_EQUITY_V1 = ResearchBundle( #当前美股默认bundle
     id = 'us_equity_v1',
     display_name = 'US equities (Yahoo Finance / S&P 500)',
     data_source = PluginSpec(
-        'quantmine.plugins.builtins:create_yfinance_data_source'
+        'quantmine.plugins.us_equity:create_yfinance_data_source'
     ),
     universe = PluginSpec(
-        'quantmine.plugins.builtins:create_sp500_universe'
+        'quantmine.plugins.us_equity:create_sp500_universe'
     ),
     factor_packs = (
         PluginSpec(
-            'quantmine.plugins.builtins:create_us_technical_factor_pack'
+            'quantmine.plugins.us_equity:create_us_technical_factor_pack'
         ),
     ),
     defaults= {
@@ -74,8 +74,28 @@ US_EQUITY_V1 = ResearchBundle( #当前美股默认bundle
     },
 )
 
+CN_A_SHARE_V1 = ResearchBundle(
+    id="cn_a_share_v1",
+    display_name="China A-shares (AkShare / supplied ticker universe)",
+    data_source=PluginSpec(
+        "quantmine.plugins.akshare:create_akshare_a_stock_data_source"
+    ),
+    universe=PluginSpec("quantmine.plugins.a_share:create_cn_a_share_eligibility_universe"),  # B7c 才让股票池实际参与运行。
+    factor_packs=(
+        PluginSpec(
+            "quantmine.plugins.builtins:"
+            "create_cn_a_share_price_volume_factor_pack"
+        ),
+    ),
+    defaults={
+        "market": "CN",
+        "currency": "CNY",
+        "adjustment": "hfq",
+    },
+)
 DEFAULT_RESEARCH_BUNDLES: dict[str, ResearchBundle] = {
     US_EQUITY_V1.id: US_EQUITY_V1,
+    CN_A_SHARE_V1.id: CN_A_SHARE_V1
 }
 def get_research_bundle(bundle_id: str) -> ResearchBundle: #从已注册bundle取默认定义
     '''Return a registered bundle or raise a configuration error'''
