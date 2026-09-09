@@ -12,7 +12,48 @@ from ..workflows.a_share_daily_pipeline import(
     run_a_share_daily_pipeline
 )
 
+from ..dataset_versions import resolve_versioned_dataset_binding
+from ..workflows.a_share_reference_refresh import refresh_akshare_a_stock_reference
+
 from ..workflows.trading_sessions import ExchangeCalendarSessionGate
+
+@dataclass(frozen = True)
+class AShareReferenceRefreshStage:
+    """Publish an immutable A-share reference version for the run date."""
+
+    config: AStockDailyPipelineConfig
+
+    def run(
+            self,
+            request: PipelineStageRequest,
+    ) -> PipelineStageResult:
+        binding = resolve_versioned_dataset_binding(
+            self.config.reference_binding,
+            as_of_date = request.as_of_date,
+        )
+
+        publication = refresh_akshare_a_stock_reference(
+            request.context,
+            binding = binding,
+        )
+
+        return PipelineStageResult(
+            metadata = {
+                "reference_version": binding.version,
+                "reference_dir": str(publication.output_dir),
+                "listing_count": publication.listing_count,
+                "session_count": publication.session_count,
+                "min_session_date": (
+                    publication.min_session_date.date().isoformat()
+                ),
+                "max_session_date": (
+                    publication.max_session_date.date().isoformat()
+                ),
+                "reference_content_sha256": (
+                    publication.content_sha256
+                ),
+            }
+        )
 
 @dataclass(frozen = True)
 class ExchangeCalendarSessionStage:
@@ -109,3 +150,11 @@ def create_a_share_daily_production(
     return AShareDailyProductionStage(
         config = AStockDailyPipelineConfig.from_mapping(config)
     )
+
+def create_a_share_reference_refresh(
+        *,
+        config: Mapping[str, Any],
+        ) -> AShareReferenceRefreshStage:
+    """Create the A-share reference refresh stage."""
+
+    return AShareReferenceRefreshStage(config = AStockDailyPipelineConfig.from_mapping(config))

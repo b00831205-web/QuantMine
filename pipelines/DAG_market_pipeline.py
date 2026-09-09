@@ -56,7 +56,7 @@ CONFIG_PATH = _project_path(
 )
 
 ARTIFACT_ROOT = _project_path(
-    "QUANT_PIPELINE_ARIFACT_ROOT",
+    "QUANT_PIPELINE_ARTIFACT_ROOT",
     "data/artifacts/market_pipeline",
 )
 ENVIRONMENT_FILE = _project_path(
@@ -85,6 +85,6 @@ for _definition in PIPELINE_DEFINITIONS:
         },
         tags = (
             "quant_factor_mining",
-            "configuerd_pipeline",
+            "configured_pipeline",
         )
     )

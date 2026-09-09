@@ -43,6 +43,46 @@ def test_parquet_connection_rejects_sqlalchemy_access() -> None:
         registry.sqlalchemy_engine("lake")
 
 
+def test_writable_parquet_root_accepts_explicit_writable_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("QUANTMINE_TEST_WRITABLE_ROOT", str(tmp_path))
+    registry = ConnectionRegistry(
+        {
+            "market_data_output": DataConnectionConfig(
+                kind=ConnectionKind.PARQUET,
+                root_env="QUANTMINE_TEST_WRITABLE_ROOT",
+                read_only=False,
+            )
+        }
+    )
+
+    assert registry.writable_parquet_root("market_data_output") == tmp_path
+
+
+def test_writable_parquet_root_rejects_read_only_connection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("QUANTMINE_TEST_READ_ONLY_ROOT", str(tmp_path))
+    registry = ConnectionRegistry(
+        {
+            "market_data_input": DataConnectionConfig(
+                kind=ConnectionKind.PARQUET,
+                root_env="QUANTMINE_TEST_READ_ONLY_ROOT",
+                read_only=True,
+            )
+        }
+    )
+
+    with pytest.raises(
+        PermissionError,
+        match="market_data_input.*read-only",
+    ):
+        registry.writable_parquet_root("market_data_input")
+
+
 def test_sqlalchemy_connection_is_cached(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

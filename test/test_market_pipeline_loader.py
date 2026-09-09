@@ -143,6 +143,7 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     assert definition.dag_id == "quantmine_cn_a_share_daily"
     assert definition.ordered_stage_ids == (
         "session_gate",
+        "reference_refresh",
         "daily_production",
     )
     assert definition.connection_refs == (
@@ -152,11 +153,15 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "cn_eligibility",
     )
     assert definition.stages[0].plugin.entry_point == (
-        "quantmine.plugins.market_stages:create_a_share_session_gate"
+        "quantmine.plugins.market_stages:create_exchange_calendar_session_gate"
     )
+    assert definition.stages[0].plugin.params == {"calendar_name": "XSHG"}
     assert definition.stages[1].plugin.entry_point == (
+        "quantmine.plugins.market_stages:create_a_share_reference_refresh"
+    )
+    assert definition.stages[2].plugin.entry_point == (
         "quantmine.plugins.market_stages:create_a_share_daily_production"
     )
-    assert definition.stages[0].plugin.params["config"] == (
-        definition.stages[1].plugin.params["config"]
+    assert definition.stages[1].plugin.params["config"] == (
+        definition.stages[2].plugin.params["config"]
     )

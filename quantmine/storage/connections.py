@@ -111,6 +111,27 @@ class ConnectionRegistry:
             )
         return root
 
+    def writable_parquet_root(
+            self,
+            connection_ref: str,
+    ) -> Path:
+        """Return a Parquet root only when the connection permits writes."""
+
+        config = self._get_config(connection_ref)
+
+        if config.kind is not ConnectionKind.PARQUET:
+            raise ValueError(
+                f"Connection {connection_ref!r} is "
+                f"{config.kind.value!r}, not a Parquet connection"
+            )
+
+        if config.read_only:
+            raise PermissionError(
+                f"Connection {connection_ref!r} is read-only"
+            )
+
+        return self.parquet_root(connection_ref)
+
     def dispose(self) -> None:
         """Release all SQLAlchemy connection pools owned by this registry"""
 

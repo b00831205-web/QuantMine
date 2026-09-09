@@ -20,6 +20,11 @@ from quantmine.storage.connections import ConnectionRegistry
 from quantmine.workflows.a_share_reference_refresh import (
     refresh_akshare_a_stock_reference
 )
+from quantmine.dataset_versions import (
+    AS_OF_DATE_VERSION,
+    resolve_versioned_dataset_binding,
+)
+
 
 def _project_path(value: str) -> Path:
     path = Path(value).expanduser()
@@ -45,6 +50,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         default = ".env",
         help = "Runtime environment file",
     )
+    parser.add_argument(
+        "--date",
+        help = (
+            "Reference date in YYYY-MM-DD format; required when "
+            "reference_binding.version is {as_of_date}"
+        ),
+    )
+
     args = parser.parse_args(argv)
 
     load_environment_file(
@@ -55,6 +68,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
 
     binding = config.reference_binding
+
+    if binding.version == AS_OF_DATE_VERSION:
+        if args.date is None:
+            parser.error(
+                "--date is required when reference version is {as_of_date}"
+            )
+        binding = resolve_versioned_dataset_binding(
+            binding,
+            as_of_date = args.date
+        )
 
     connections = ConnectionRegistry.from_environment(
         (binding.connection_ref,)

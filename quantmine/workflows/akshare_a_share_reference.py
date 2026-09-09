@@ -11,6 +11,7 @@ import pandas as pd
 
 from ..plugins.a_share import AStockSecurityMaster
 from .a_share_reference import AStockReferenceData
+from ..http_resilience import retry_http_call
 
 ExchangeListLoader = Callable[[str], pd.DataFrame]
 NoArgumentFrameLoader = Callable[[], pd.DataFrame]
@@ -401,7 +402,12 @@ def _akshare() -> Any:
     return ak
 
 def _default_sh_loader(symbol: str) -> pd.DataFrame:
-    return _akshare().stock_info_sh_name_code(symbol = symbol)
+    return retry_http_call(
+        lambda: _akshare().stock_info_sh_name_code(
+            symbol = symbol
+        ),
+        label = f"AkShare SSE current listings ({symbol})"
+    )
 
 def _default_sh_delist_loader(symbol:str) -> pd.DataFrame:
     """Load SSE delisted A shares without losing the upstream stock type."""
@@ -422,31 +428,38 @@ def _default_sh_delist_loader(symbol:str) -> pd.DataFrame:
             "SSE reference collection requires the 'data' extra"
         ) from error
 
-    response = requests.get(
-        "https://query.sse.com.cn/commonQuery.do",
-        params = {
-            "sqlId": "COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L",
-            "isPagination": "true",
-            "STOCK_CODE": "",
-            "CSRC_CODE": "",
-            "REG_PROVINCE": "",
-            "STOCK_TYPE": stock_types,
-            "COMPANY_STATUS": "3",
-            "type": "inParams",
-            "pageHelp.cacheSize": "1",
-            "pageHelp.beginPage": "1",
-            "pageHelp.pageSize": "500",
-            "pageHelp.pageNo": "1",
-            "pageHelp.endPage": "1",
-        },
-        headers = {
-            "Accept": "*/*",
-            "Referer": "https://www.sse.com.cn/",
-            "User-Agent": "Mozilla/5.0",
-        },
-        timeout = 30,
+    def request_sse_delisted_list():
+        response = requests.get(
+            "https://query.sse.com.cn/commonQuery.do",
+            params = {
+                "sqlId": "COMMON_SSE_CP_GPJCTPZ_GPLB_GP_L",
+                "isPagination": "true",
+                "STOCK_CODE": "",
+                "CSRC_CODE": "",
+                "REG_PROVINCE": "",
+                "STOCK_TYPE": stock_types,
+                "COMPANY_STATUS": "3",
+                "type": "inParams",
+                "pageHelp.cacheSize": "1",
+                "pageHelp.beginPage": "1",
+                "pageHelp.pageSize": "500",
+                "pageHelp.pageNo": "1",
+                "pageHelp.endPage": "1",
+            },
+            headers = {
+                "Accept": "*/*",
+                "Referer": "https://www.sse.com.cn/",
+                "User-Agent": "Mozilla/5.0",
+            },
+            timeout = 30,
+        )
+        response.raise_for_status()
+        return response
+
+    response = retry_http_call(
+        request_sse_delisted_list,
+        label = "SSE official delisted A-share listings"
     )
-    response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, dict):
         raise TypeError(
@@ -508,13 +521,29 @@ def _default_sh_delist_loader(symbol:str) -> pd.DataFrame:
     )
 
 def _default_sz_loader(symbol: str) -> pd.DataFrame:
-    return _akshare().stock_info_sz_name_code(symbol = symbol)
+    return retry_http_call(
+        lambda: _akshare().stock_info_sz_name_code(
+            symbol = symbol
+        ),
+        label = f"AkShare SZSE current listings ({symbol})"
+    )
 
 def _default_bj_loader() -> pd.DataFrame:
-    return _akshare().stock_info_bj_name_code()
+    return retry_http_call(
+        lambda: _akshare().stock_info_bj_name_code(),
+        label= "AkShare BSE current listings"
+    )
 
 def _default_sz_delist_loader(symbol: str) -> pd.DataFrame:
-    return _akshare().stock_info_sz_delist(symbol = symbol)
+    return retry_http_call(
+        lambda: _akshare().stock_info_sz_delist(
+            symbol = symbol
+        ),
+        label = f"AkShare SZSE delisted listings ({symbol})"
+    )
 
 def _default_calendar_loader() -> pd.DataFrame:
-    return _akshare().tool_trade_date_hist_sina()
+    return retry_http_call(
+        lambda: _akshare().tool_trade_date_hist_sina(),
+        label = "AkShare trading calendar"
+    )

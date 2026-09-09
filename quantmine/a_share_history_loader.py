@@ -1,0 +1,37 @@
+"""Load persisted A-share history refresh configuration."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from pathlib import Path
+
+import yaml
+
+from .workflows.a_share_market_data_refresh import (
+    AStockHistoryRefreshConfig
+)
+
+def load_a_share_history_refresh_config(
+        yaml_path: Path | str,
+) -> AStockHistoryRefreshConfig:
+    path = Path(yaml_path)
+
+    with path.open("r", encoding = "utf-8") as file:
+        document = yaml.safe_load(file) or {}
+
+    if not isinstance(document, Mapping):
+        raise TypeError(
+            "history refresh configuration root "
+            "must be a YAML object"
+        )
+
+    try:
+        payload = document["a_share_history_refresh"]
+
+    except KeyError as error:
+        raise KeyError(
+            "Missing 'a_share_history_refresh' "
+            "section in config file"
+        ) from error
+
+    return AStockHistoryRefreshConfig.from_mapping(payload)

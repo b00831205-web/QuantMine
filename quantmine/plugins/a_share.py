@@ -136,7 +136,31 @@ class AStockSecurityMaster:
         """Return a defensive copy of the normalized security-master records"""
 
         return self._records.copy(deep = True)
-                    
+
+    def tickers_during(
+            self,
+            start_date: pd.Timestamp | str,
+            end_date: pd.Timestamp | str,
+    ) -> tuple[str, ...]:
+        """Return tickers with a listing interval overlapping the date range."""
+
+        start = pd.Timestamp(start_date).normalize()
+        end = pd.Timestamp(end_date).normalize()
+
+        if end < start:
+            raise ValueError(
+                "end_date must not be before start_date"
+            )
+
+        overlapping = self._records.loc[
+            (self._records["list_date"] <= end)
+            & (
+                self._records["delist_date"].isna()
+                | (self._records["delist_date"] > start)
+            ),
+            "ticker",
+        ]
+        return tuple(sorted(overlapping.unique()))
 
     def status_on(
             self,

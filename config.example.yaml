@@ -104,7 +104,7 @@ a_share_daily_pipeline: &a_share_daily_pipeline
     connection_ref: cn_reference
     dataset: cn_a_share_reference
     market: CN
-    version: "20260830"
+    version: "{as_of_date}"
   status_binding:
     connection_ref: cn_status
     dataset: cn_a_share_status
@@ -116,6 +116,9 @@ a_share_daily_pipeline: &a_share_daily_pipeline
     market: CN
     version: "history_v1"
   eligibility_rule_version: cn_equity_v1
+  spot_coverage:
+    max_missing_count: 5
+    max_missing_ratio: 0.001
 
 market_pipelines:
   - schema_version: 1
@@ -133,14 +136,23 @@ market_pipelines:
       - id: session_gate
         kind: session_gate
         plugin:
-          entry_point: quantmine.plugins.market_stages:create_a_share_session_gate
+          entry_point: quantmine.plugins.market_stages:create_exchange_calendar_session_gate
+          params:
+            calendar_name: XSHG
+
+      - id: reference_refresh
+        kind: task
+        upstream:
+          - session_gate
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_reference_refresh
           params:
             config: *a_share_daily_pipeline
       
       - id: daily_production
         kind: task
         upstream:
-          - session_gate
+          - reference_refresh
         plugin:
           entry_point: quantmine.plugins.market_stages:create_a_share_daily_production
           params:

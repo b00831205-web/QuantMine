@@ -6,6 +6,7 @@ from types import ModuleType
 import pandas as pd
 import pytest
 
+from quantmine.workflows import akshare_a_share_reference as reference_module
 from quantmine.workflows.akshare_a_share_reference import (
     AkShareAStockReferenceCollector,
     _default_sh_delist_loader,
@@ -260,3 +261,67 @@ def test_sse_delist_loader_rejects_incomplete_response_fields(
 
     with pytest.raises(ValueError, match="DELIST_DATE"):
         _default_sh_delist_loader("全部")
+
+
+def test_default_akshare_loaders_use_shared_http_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+    labels: list[str] = []
+
+    class _AkShare:
+        def stock_info_sh_name_code(self, *, symbol: str):
+            calls.append(("sh_current", symbol))
+            return "sh-current"
+
+        def stock_info_sz_name_code(self, *, symbol: str):
+            calls.append(("sz_current", symbol))
+            return "sz-current"
+
+        def stock_info_bj_name_code(self):
+            calls.append(("bj_current", None))
+            return "bj-current"
+
+        def stock_info_sz_delist(self, *, symbol: str):
+            calls.append(("sz_delisted", symbol))
+            return "sz-delisted"
+
+        def tool_trade_date_hist_sina(self):
+            calls.append(("calendar", None))
+            return "calendar"
+
+    monkeypatch.setattr(reference_module, "_akshare", lambda: _AkShare())
+
+    def fake_retry(operation, *, label: str):
+        labels.append(label)
+        return operation()
+
+    monkeypatch.setattr(
+        reference_module,
+        "retry_http_call",
+        fake_retry,
+    )
+
+    assert reference_module._default_sh_loader("主板A股") == "sh-current"
+    assert reference_module._default_sz_loader("A股列表") == "sz-current"
+    assert reference_module._default_bj_loader() == "bj-current"
+    assert (
+        reference_module._default_sz_delist_loader("终止上市公司")
+        == "sz-delisted"
+    )
+    assert reference_module._default_calendar_loader() == "calendar"
+
+    assert calls == [
+        ("sh_current", "主板A股"),
+        ("sz_current", "A股列表"),
+        ("bj_current", None),
+        ("sz_delisted", "终止上市公司"),
+        ("calendar", None),
+    ]
+    assert labels == [
+        "AkShare SSE current listings (主板A股)",
+        "AkShare SZSE current listings (A股列表)",
+        "AkShare BSE current listings",
+        "AkShare SZSE delisted listings (终止上市公司)",
+        "AkShare trading calendar",
+    ]

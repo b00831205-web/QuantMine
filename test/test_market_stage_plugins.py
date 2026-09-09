@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 import quantmine.plugins.market_stages as market_stages
+from quantmine.dataset_versions import AS_OF_DATE_VERSION
 from quantmine.market_pipeline_config import (
     MarketPipelineDefinition,
     PipelineStageDefinition,
@@ -16,6 +17,9 @@ from quantmine.plugins.contracts import PluginSpec
 from quantmine.storage.connections import ConnectionRegistry
 from quantmine.workflows.a_share_daily_pipeline import (
     AStockDailyPipelineResult,
+)
+from quantmine.workflows.a_share_reference_publication import (
+    AStockReferencePublication,
 )
 from quantmine.workflows.akshare_a_share_snapshot import AStockRawSnapshot
 from quantmine.workflows.eligibility import EligibilityPublication
@@ -129,6 +133,56 @@ def test_a_share_gate_builds_typed_config_and_forwards_context(
     assert observed["context"] is request.context
     assert observed["config"].raw_connection_ref == "cn_raw"
     assert observed["date"] == pd.Timestamp("2026-09-04")
+
+
+def test_a_share_reference_refresh_stage_publishes_the_run_date_version(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    observed = {}
+    output_dir = tmp_path / "reference" / "versions" / "20260904"
+
+    def fake_refresh(context, *, binding):
+        observed["context"] = context
+        observed["binding"] = binding
+        return AStockReferencePublication(
+            output_dir=output_dir,
+            security_master_path=output_dir / "security_master.parquet",
+            trading_calendar_path=output_dir / "trading_calendar.parquet",
+            manifest_path=output_dir / "manifest.json",
+            listing_count=5889,
+            session_count=8797,
+            min_session_date=pd.Timestamp("1990-12-19"),
+            max_session_date=pd.Timestamp("2026-12-31"),
+            content_sha256="reference-sha",
+        )
+
+    monkeypatch.setattr(
+        market_stages,
+        "refresh_akshare_a_stock_reference",
+        fake_refresh,
+    )
+    config = _a_share_config()
+    config["reference_binding"] = {
+        **config["reference_binding"],
+        "version": AS_OF_DATE_VERSION,
+    }
+    plugin = market_stages.create_a_share_reference_refresh(config=config)
+    request = _request(tmp_path)
+
+    result = plugin.run(request)
+
+    assert observed["context"] is request.context
+    assert observed["binding"].version == "20260904"
+    assert result.metadata == {
+        "reference_version": "20260904",
+        "reference_dir": str(output_dir),
+        "listing_count": 5889,
+        "session_count": 8797,
+        "min_session_date": "1990-12-19",
+        "max_session_date": "2026-12-31",
+        "reference_content_sha256": "reference-sha",
+    }
 
 
 def test_a_share_production_stage_returns_only_serializable_artifact_metadata(

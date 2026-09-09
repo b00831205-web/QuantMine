@@ -34,6 +34,10 @@ def _payload() -> dict[str, object]:
             "version": "history_v1",
         },
         "eligibility_rule_version": "cn_eligibility_rules_v1",
+        "spot_coverage": {
+            "max_missing_count": 5,
+            "max_missing_ratio": 0.001,
+        },
     }
 
 
@@ -46,6 +50,8 @@ def test_pipeline_config_round_trips_as_safe_json() -> None:
     assert json.loads(serialized) == _payload()
     assert config.status_binding.dataset == "daily_market_status"
     assert config.eligibility_rule_version == "cn_eligibility_rules_v1"
+    assert config.spot_coverage_policy.max_missing_count == 5
+    assert config.spot_coverage_policy.max_missing_ratio == 0.001
 
 
 def test_pipeline_config_rejects_a_non_cn_binding() -> None:
@@ -56,4 +62,25 @@ def test_pipeline_config_rejects_a_non_cn_binding() -> None:
     }
 
     with pytest.raises(ValueError, match="status_binding.market must be 'CN'"):
+        AStockDailyPipelineConfig.from_mapping(payload)
+
+
+def test_pipeline_config_defaults_to_strict_spot_coverage() -> None:
+    payload = _payload()
+    payload.pop("spot_coverage")
+
+    config = AStockDailyPipelineConfig.from_mapping(payload)
+
+    assert config.spot_coverage_policy.max_missing_count == 0
+    assert config.spot_coverage_policy.max_missing_ratio == 0.0
+
+
+def test_pipeline_config_rejects_invalid_spot_coverage() -> None:
+    payload = _payload()
+    payload["spot_coverage"] = {
+        "max_missing_count": 1,
+        "max_missing_ratio": 1.5,
+    }
+
+    with pytest.raises(ValueError, match="max_missing_ratio"):
         AStockDailyPipelineConfig.from_mapping(payload)

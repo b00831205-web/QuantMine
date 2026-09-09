@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from quantmine.dataset_versions import AS_OF_DATE_VERSION
 from quantmine.plugins.context import SourceContext
 from quantmine.plugins.contracts import VersionedDatasetBinding
 from quantmine.storage.connections import (
@@ -17,9 +19,11 @@ from quantmine.storage.connections import (
 )
 from quantmine.workflows.a_share_daily_pipeline import (
     AStockDailyPipelineConfig,
+    _load_existing_raw_snapshot,
     is_a_share_trading_session,
     run_a_share_daily_pipeline,
 )
+from quantmine.workflows.a_share_status import SpotCoveragePolicy
 from quantmine.workflows.akshare_a_share_snapshot import (
     AkShareAStockRawSnapshotCollector,
 )
@@ -50,14 +54,18 @@ def _context(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SourceContext:
     )
 
 
-def _config() -> AStockDailyPipelineConfig:
+def _config(
+    *,
+    spot_coverage_policy: SpotCoveragePolicy | None = None,
+    reference_version: str = "20260830",
+) -> AStockDailyPipelineConfig:
     return AStockDailyPipelineConfig(
         raw_connection_ref="cn_raw_lake",
         reference_binding=VersionedDatasetBinding(
             connection_ref="cn_reference_lake",
             dataset="cn_a_share_reference",
             market="CN",
-            version="20260830",
+            version=reference_version,
         ),
         status_binding=VersionedDatasetBinding(
             connection_ref="cn_status_lake",
@@ -72,11 +80,14 @@ def _config() -> AStockDailyPipelineConfig:
             version="history_v1",
         ),
         eligibility_rule_version="cn_eligibility_rules_v1",
+        spot_coverage_policy=(
+            spot_coverage_policy or SpotCoveragePolicy()
+        ),
     )
 
 
-def _write_reference_data(root: Path) -> None:
-    version_root = root / "cn_a_share_reference" / "versions" / "20260830"
+def _write_reference_data(root: Path, *, version: str = "20260830") -> None:
+    version_root = root / "cn_a_share_reference" / "versions" / version
     version_root.mkdir(parents=True)
     pd.DataFrame(
         {
@@ -103,7 +114,7 @@ def _collector(
     ),
 ) -> AkShareAStockRawSnapshotCollector:
     return AkShareAStockRawSnapshotCollector(
-        spot_loader=lambda: pd.DataFrame(
+        spot_loader=lambda _: pd.DataFrame(
             {
                 "代码": ["000001", "000002"],
                 "名称": ["平安银行", "*ST示例"],
@@ -172,3 +183,97 @@ def test_a_share_session_gate_uses_the_versioned_reference_calendar(
         config=_config(),
         as_of_date="2024-01-01",
     ) is False
+
+
+def test_daily_pipeline_resolves_the_reference_version_from_as_of_date(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    context = _context(monkeypatch, tmp_path)
+    _write_reference_data(
+        context.connections.parquet_root("cn_reference_lake"),
+        version="20240102",
+    )
+
+    result = run_a_share_daily_pipeline(
+        context,
+        config=_config(reference_version=AS_OF_DATE_VERSION),
+        as_of_date="2024-01-02",
+        collector=_collector(),
+    )
+
+    assert result.status_publication.as_of_date == pd.Timestamp("2024-01-02")
+
+
+def test_daily_pipeline_persists_an_allowed_source_gap_as_non_tradable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    context = _context(monkeypatch, tmp_path)
+    _write_reference_data(
+        context.connections.parquet_root("cn_reference_lake")
+    )
+    collector = AkShareAStockRawSnapshotCollector(
+        spot_loader=lambda _: pd.DataFrame(
+            {
+                "代码": ["000001"],
+                "名称": ["平安银行"],
+                "最新价": [11.0],
+                "涨停": [11.0],
+                "跌停": [9.0],
+                "成交量": [100_000],
+            }
+        ),
+        suspension_loader=lambda _: pd.DataFrame(
+            columns=["代码", "名称", "停牌时间"]
+        ),
+        clock=lambda: datetime(2024, 1, 2, 8, tzinfo=timezone.utc),
+    )
+
+    result = run_a_share_daily_pipeline(
+        context,
+        config=_config(
+            spot_coverage_policy=SpotCoveragePolicy(
+                max_missing_count=1,
+                max_missing_ratio=0.5,
+            )
+        ),
+        as_of_date="2024-01-02",
+        collector=collector,
+    )
+
+    status = pd.read_parquet(result.status_publication.status_path)
+    missing_status = status.set_index("ticker").loc["000002"]
+    assert bool(missing_status["is_source_missing"]) is True
+    assert bool(missing_status["is_suspended"]) is False
+    assert bool(missing_status["is_tradable"]) is False
+
+    eligibility = pd.read_parquet(result.eligibility_publication.eligibility_path)
+    missing_eligibility = eligibility.set_index("ticker").loc["000002"]
+    assert bool(missing_eligibility["is_tradable"]) is False
+
+
+def test_existing_unversioned_raw_snapshot_is_not_silently_replayed(
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "akshare_a_share_raw" / "2024-01-02"
+    output_dir.mkdir(parents=True)
+    (output_dir / "spot.parquet").touch()
+    (output_dir / "suspension.parquet").touch()
+    (output_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "as_of_date": "2024-01-02",
+                "provider": "akshare",
+                "spot_row_count": 2,
+                "suspension_row_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="unsupported raw snapshot schema version",
+    ):
+        _load_existing_raw_snapshot(tmp_path, pd.Timestamp("2024-01-02"))

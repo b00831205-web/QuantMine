@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from quantmine.dataset_versions import AS_OF_DATE_VERSION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TASK_PATH = PROJECT_ROOT / "pipelines" / "task_a_share_daily_pipeline.py"
@@ -166,3 +167,16 @@ def test_example_config_contains_valid_a_share_daily_pipeline() -> None:
     assert config.eligibility_binding.dataset == (
         "cn_a_share_eligibility"
     )
+
+
+@pytest.mark.parametrize("filename", ["config.yaml", "config.example.yaml"])
+def test_project_configs_declare_the_a_share_spot_coverage_policy(
+    filename: str,
+) -> None:
+    task = _load_task_module()
+
+    config = task.load_a_share_daily_pipeline_config(PROJECT_ROOT / filename)
+
+    assert config.spot_coverage_policy.max_missing_count == 5
+    assert config.spot_coverage_policy.max_missing_ratio == 0.001
+    assert config.reference_binding.version == AS_OF_DATE_VERSION

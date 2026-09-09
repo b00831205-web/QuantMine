@@ -1,7 +1,7 @@
 """Configuration contract for the A-share daily production pipeline"""
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from ..plugins.contracts import VersionedDatasetBinding
@@ -14,7 +14,7 @@ from .a_share_eligibility_refresh import (
 )
 
 from .a_share_reference import ParquetAStockReferenceLoader
-from .a_share_status import AStockDailyStatusNormalizer
+from .a_share_status import AStockDailyStatusNormalizer, SpotCoveragePolicy
 from .a_share_status_refresh import refresh_a_share_market_status
 from .akshare_a_share_snapshot import (
     AStockRawSnapshot,
@@ -35,6 +35,13 @@ from .market_status_publication import (
 from ..plugins.context import SourceContext
 
 from .trading_sessions import StaticCalendarSessionGate
+from .akshare_a_share_snapshot import (
+    A_SHARE_RAW_SNAPSHOT_SCHEMA_VERSION,
+    AStockRawSnapshot,
+    AkShareAStockRawSnapshotCollector
+)
+
+from ..dataset_versions import resolve_versioned_dataset_binding
 
 A_SHARE_DAILY_PIPELINE_CONFIG_VERSION = 1
 
@@ -47,6 +54,9 @@ class AStockDailyPipelineConfig:
     status_binding: VersionedDatasetBinding
     eligibility_binding: VersionedDatasetBinding
     eligibility_rule_version: str
+    spot_coverage_policy: SpotCoveragePolicy = field(
+        default_factory= SpotCoveragePolicy
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -108,6 +118,9 @@ class AStockDailyPipelineConfig:
                 payload.get("eligibility_rule_version"),
                 label = "eligibility_rule_version",
             ),
+            spot_coverage_policy = _spot_coverage_policy(
+                payload.get("spot_coverage")
+            )
         )
     def to_mapping(self) -> dict[str, object]:
         return {
@@ -117,6 +130,14 @@ class AStockDailyPipelineConfig:
             "status_binding": _binding_mapping(self.status_binding),
             "eligibility_binding": _binding_mapping(self.eligibility_binding),
             "eligibility_rule_version": self.eligibility_rule_version,
+            "spot_coverage": {
+                "max_missing_count": (
+                    self.spot_coverage_policy.max_missing_count
+                ),
+                "max_missing_ratio": (
+                    self.spot_coverage_policy.max_missing_ratio
+                )
+            }
         }
 
 def _binding_mapping(
@@ -181,6 +202,10 @@ def run_a_share_daily_pipeline(
     """Run one idempotent, scheduler-neutral A-share production day."""
 
     date = pd.Timestamp(as_of_date).normalize()
+    reference_binding = resolve_versioned_dataset_binding(
+        config.reference_binding,
+        as_of_date = date,
+    )
 
     raw_root = context.connections.parquet_root(
         config.raw_connection_ref
@@ -197,9 +222,9 @@ def run_a_share_daily_pipeline(
 
     reference = ParquetAStockReferenceLoader(
         context = context,
-        connection_ref = config.reference_binding.connection_ref,
-        dataset = config.reference_binding.dataset,
-        version = config.reference_binding.version,
+        connection_ref = reference_binding.connection_ref,
+        dataset = reference_binding.dataset,
+        version = reference_binding.version,
     ).load()
 
     status_publication = refresh_a_share_market_status(
@@ -207,6 +232,7 @@ def run_a_share_daily_pipeline(
         AStockDailyStatusNormalizer(
             security_master = reference.security_master,
             trading_calendar = reference.trading_calendar,
+            spot_coverage_policy=config.spot_coverage_policy
         ),
         as_of_date = date,
         root = context.connections.parquet_root(
@@ -255,11 +281,18 @@ def is_a_share_trading_session(
 ) -> bool:
     """Return whether a date is present in the configured A-share calendar"""
 
+    date = pd.Timestamp(as_of_date).normalize()
+
+    reference_binding = resolve_versioned_dataset_binding(
+        config.reference_binding,
+        as_of_date = date,
+    )
+
     reference = ParquetAStockReferenceLoader(
         context = context,
-        connection_ref= config.reference_binding.connection_ref,
-        dataset = config.reference_binding.dataset,
-        version = config.reference_binding.version,
+        connection_ref= reference_binding.connection_ref,
+        dataset = reference_binding.dataset,
+        version = reference_binding.version,
     ).load()
 
     return StaticCalendarSessionGate(
@@ -291,6 +324,13 @@ def _load_existing_raw_snapshot(
             )
 
     manifest = json.loads(manifest_path.read_text(encoding = "utf-8"))
+    schema_version = manifest.get("schema_version")
+    if schema_version != A_SHARE_RAW_SNAPSHOT_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported raw snapshot schema version "
+            f"{schema_version!r} expected "
+            f"{A_SHARE_RAW_SNAPSHOT_SCHEMA_VERSION!r}"
+        )
     if manifest.get("as_of_date") != date.date().isoformat():
         raise ValueError(
             "existing raw snapshot date does not match required date"
@@ -303,4 +343,15 @@ def _load_existing_raw_snapshot(
         manifest_path = manifest_path,
         spot_row_count = int(manifest["spot_row_count"]),
         suspension_row_count = int(manifest["suspension_row_count"])
+    )
+
+def _spot_coverage_policy(value: object) -> SpotCoveragePolicy:
+    if value is None:
+        return SpotCoveragePolicy()
+
+    payload = _mapping(value, label="spot_coverage")
+
+    return SpotCoveragePolicy(
+        max_missing_count=payload.get("max_missing_count", 0),
+        max_missing_ratio=payload.get("max_missing_ratio", 0.0)
     )

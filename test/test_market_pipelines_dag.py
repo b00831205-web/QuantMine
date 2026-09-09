@@ -90,11 +90,23 @@ def test_dag_file_discovers_configured_a_share_pipeline(
 
     dag = namespace["dag_cn_a_share_daily"]
     assert dag.dag_id == "quantmine_cn_a_share_daily"
-    assert dag.task_ids == ["session_gate", "daily_production"]
+    assert dag.task_ids == [
+        "session_gate",
+        "reference_refresh",
+        "daily_production",
+    ]
     tasks = {task.task_id: task for task in dag.tasks}
     assert tasks["session_gate"].downstream == [
+        tasks["reference_refresh"]
+    ]
+    assert tasks["reference_refresh"].downstream == [
         tasks["daily_production"]
     ]
     assert tasks["daily_production"].op_kwargs[
         "environment_file"
     ] == str(PROJECT_ROOT / ".env")
+    assert tasks["daily_production"].op_kwargs[
+        "artifact_root"
+    ] == str((tmp_path / "artifacts").resolve())
+    assert "configured_pipeline" in dag.kwargs["tags"]
+    assert dag.kwargs["start_date"].utcoffset().total_seconds() == 8 * 60 * 60

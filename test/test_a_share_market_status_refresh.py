@@ -32,7 +32,7 @@ def _master() -> AStockSecurityMaster:
     )
 
 
-def _spot() -> pd.DataFrame:
+def _spot(_: str | None = None) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "代码": ["000001", "000002"],
