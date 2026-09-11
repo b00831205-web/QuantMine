@@ -21,6 +21,7 @@ def _binding() -> DataBinding:
     return DataBinding(
         connection_ref="cn_equity_lake",
         dataset="daily_prices",
+        version="20260909",
         universe_dataset="index_membership",
         eligibility_binding=VersionedDatasetBinding(
             connection_ref="cn_eligibility_lake",
@@ -48,8 +49,9 @@ def test_research_run_config_round_trips_as_a_safe_json_snapshot() -> None:
     serialized = json.dumps(snapshot, sort_keys=True, allow_nan=False)
     restored = ResearchRunConfig.from_snapshot(json.loads(serialized))
 
-    assert snapshot["schema_version"] == 2
+    assert snapshot["schema_version"] == 3
     assert snapshot["data_binding"]["connection_ref"] == "cn_equity_lake"
+    assert snapshot["data_binding"]["version"] == "20260909"
     assert snapshot["data_binding"]["tickers"] == ["000001", "000002"]
     assert snapshot["data_binding"]["eligibility_binding"] == {
         "connection_ref": "cn_eligibility_lake",
@@ -86,10 +88,23 @@ def test_research_run_config_reads_a_v1_snapshot_without_eligibility_binding() -
     legacy_snapshot = config.to_snapshot()
     legacy_snapshot["schema_version"] = 1
     legacy_snapshot["data_binding"].pop("eligibility_binding")
+    legacy_snapshot["data_binding"].pop("version")
 
     restored = ResearchRunConfig.from_snapshot(legacy_snapshot)
 
     assert restored.data_binding.eligibility_binding is None
+    assert restored.data_binding.version is None
+
+
+def test_research_run_config_reads_a_v2_snapshot_without_market_data_version() -> None:
+    config = ResearchRunConfig.from_bundle_id("us_equity_v1", _binding())
+    legacy_snapshot = config.to_snapshot()
+    legacy_snapshot["schema_version"] = 2
+    legacy_snapshot["data_binding"].pop("version")
+
+    restored = ResearchRunConfig.from_snapshot(legacy_snapshot)
+
+    assert restored.data_binding.version is None
 
 
 def test_research_run_config_rejects_non_json_factor_parameters() -> None:

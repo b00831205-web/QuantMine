@@ -13,7 +13,7 @@ from ..plugins.context import SourceContext
 from .eligibility import (
     EligibilityPublication,
     EligibilityPublishSpec,
-    refresh_daily_eligibility,
+    refresh_cumulative_daily_eligibility,
 )
 
 def refresh_a_share_eligibility_from_market_status(
@@ -47,7 +47,7 @@ def refresh_a_share_eligibility_from_market_status(
         market = status_market,
         policy = policy
     )
-    return refresh_daily_eligibility(
+    return refresh_cumulative_daily_eligibility(
         builder,
         as_of_date = as_of_date,
         root = eligibility_root,

@@ -58,6 +58,7 @@ def _config(
     *,
     spot_coverage_policy: SpotCoveragePolicy | None = None,
     reference_version: str = "20260830",
+    eligibility_version: str = "history_v1",
 ) -> AStockDailyPipelineConfig:
     return AStockDailyPipelineConfig(
         raw_connection_ref="cn_raw_lake",
@@ -77,7 +78,7 @@ def _config(
             connection_ref="cn_eligibility_lake",
             dataset="cn_daily_eligibility",
             market="CN",
-            version="history_v1",
+            version=eligibility_version,
         ),
         eligibility_rule_version="cn_eligibility_rules_v1",
         spot_coverage_policy=(
@@ -203,6 +204,27 @@ def test_daily_pipeline_resolves_the_reference_version_from_as_of_date(
     )
 
     assert result.status_publication.as_of_date == pd.Timestamp("2024-01-02")
+
+
+def test_daily_pipeline_resolves_the_eligibility_version_from_as_of_date(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    context = _context(monkeypatch, tmp_path)
+    _write_reference_data(
+        context.connections.parquet_root("cn_reference_lake")
+    )
+
+    result = run_a_share_daily_pipeline(
+        context,
+        config=_config(eligibility_version=AS_OF_DATE_VERSION),
+        as_of_date="2024-01-02",
+        collector=_collector(),
+    )
+
+    assert result.eligibility_publication.output_dir.name == "20240102"
+    assert result.eligibility_publication.max_date == pd.Timestamp("2024-01-02")
+    assert result.status_publication.output_dir.name == "history_v1"
 
 
 def test_daily_pipeline_persists_an_allowed_source_gap_as_non_tradable(

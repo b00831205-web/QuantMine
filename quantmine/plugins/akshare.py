@@ -16,6 +16,8 @@ from .contracts import (
     MarketDataCapability
 )
 
+from ..http_resilience import is_transient_http_error
+
 HistoryLoader = Callable[..., pd.DataFrame]
 
 _REQUIRED_COLUMNS = ("日期", "收盘","成交量")
@@ -133,7 +135,8 @@ def create_akshare_a_stock_data_source(
             "market": "CN",
             "provider": "akshare",
             "frequency": "daily"
-        }
+        },
+        retry_classifier= is_transient_http_error,
     )
 
 def _default_history_loader(**kwargs: str) -> pd.DataFrame:

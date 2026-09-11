@@ -10,6 +10,7 @@ from uuid import uuid4
 import pandas as pd
 from typing import Protocol
 from enum import StrEnum
+from collections.abc import Mapping
 
 from ..plugins.eligibility import DailyEligibilityUniverse
 
@@ -270,3 +271,138 @@ def _assert_existing_manifest_matches(
             f"eligibility version {version!r} already exists "
             "with different provenance" 
         )
+def load_latest_eligibility_before(
+    root: Path,
+    *,
+    spec: EligibilityPublishSpec,
+    as_of_date: pd.Timestamp | str,
+) -> tuple[str, pd.DataFrame] | None:
+    """Load the latest compatible immutable version before one date."""
+
+    date = pd.Timestamp(as_of_date).normalize()
+    versions_dir = Path(root) / spec.dataset_id / "versions"
+
+    if not versions_dir.exists():
+        return None
+
+    expected_provenance = _provenance_manifest(spec)
+    candidates: list[tuple[pd.Timestamp, str, Path]] = []
+
+    for version_dir in versions_dir.iterdir():
+        if not version_dir.is_dir() or version_dir.name.startswith("."):
+            continue
+
+        manifest_path = version_dir / "manifest.json"
+        eligibility_path = version_dir / "eligibility.parquet"
+
+        if not manifest_path.is_file() or not eligibility_path.is_file():
+            raise ValueError(
+                f"eligibility version directory is incomplete: "
+                f"{version_dir}"
+            )
+
+        try:
+            manifest = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
+        except (
+            OSError,
+            UnicodeError,
+            json.JSONDecodeError,
+        ) as error:
+            raise ValueError(
+                f"eligibility manifest is invalid: {manifest_path}"
+            ) from error
+
+        if not isinstance(manifest, Mapping):
+            raise ValueError(
+                f"eligibility manifest must be a JSON object: "
+                f"{manifest_path}"
+            )
+
+        compatible = (
+            manifest.get("dataset_id") == spec.dataset_id
+            and manifest.get("market") == spec.market
+            and manifest.get("schema_version") == spec.schema_version
+            and all(
+                manifest.get(key) == value
+                for key, value in expected_provenance.items()
+            )
+        )
+        if not compatible:
+            continue
+
+        max_date = pd.Timestamp(
+            manifest.get("max_date")
+        ).normalize()
+
+        if max_date < date:
+            candidates.append(
+                (
+                    max_date,
+                    str(manifest.get("version")),
+                    eligibility_path,
+                )
+            )
+
+    if not candidates:
+        return None
+
+    _, version, eligibility_path = max(candidates)
+    return version, pd.read_parquet(eligibility_path)
+
+def refresh_cumulative_daily_eligibility(
+        builder: DailyEligibilityFrameBuilder,
+        *,
+        as_of_date: pd.Timestamp | str,
+        root: Path,
+        spec: EligibilityPublishSpec,
+) -> EligibilityPublication:
+    """Append one daily snapshot into a new immutable cumulative version."""
+
+    date = pd.Timestamp(as_of_date).normalize()
+    daily_frame = _normalize(builder.build(date))
+
+    daily_dates = pd.DatetimeIndex(
+        daily_frame["date"].drop_duplicates()
+    )
+    if (
+        len(daily_dates) != 1
+        or daily_dates[0] != date
+    ):
+        raise ValueError(
+            "daily eligibility builder must return exactly "
+            "the requested as_of_date"
+        )
+
+    previous = load_latest_eligibility_before(
+        root,
+        spec = spec,
+        as_of_date= date
+    )
+
+    if previous is None:
+        cumulative = daily_frame
+
+    else:
+        _, previous_frame = previous
+        previous_frame = _normalize(previous_frame)
+
+        cumulative = pd.concat(
+            [previous_frame, daily_frame],
+            ignore_index = True,
+            sort = False,
+        )
+
+        if cumulative.duplicated(
+            subset= ["date", "ticker"]
+        ).any():
+            raise ValueError(
+                "cumulative eligibility contains duplicate date/ticker rows"
+            )
+
+    return publish_daily_eligibility(
+        cumulative,
+        root = root,
+        spec = spec
+    )

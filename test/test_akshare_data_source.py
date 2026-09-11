@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import requests
 
 from quantmine.plugins.akshare import (
     AkShareAStockDataSourcePlugin,
@@ -112,4 +113,11 @@ def test_akshare_component_declares_api_capabilities_without_a_connection() -> N
     assert not component.requires_connection
     assert component.capabilities == frozenset(
         {MarketDataCapability.CLOSE, MarketDataCapability.VOLUME}
+    )
+    assert component.retry_classifier is not None
+    assert component.retry_classifier(
+        requests.exceptions.ConnectionError("temporary disconnect")
+    )
+    assert not component.retry_classifier(
+        ValueError("invalid provider schema")
     )

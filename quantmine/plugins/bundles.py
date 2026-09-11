@@ -76,9 +76,10 @@ US_EQUITY_V1 = ResearchBundle( #当前美股默认bundle
 
 CN_A_SHARE_V1 = ResearchBundle(
     id="cn_a_share_v1",
-    display_name="China A-shares (AkShare / supplied ticker universe)",
+    display_name="China A-shares (versioned Parquet / audited eligibility)",
     data_source=PluginSpec(
-        "quantmine.plugins.akshare:create_akshare_a_stock_data_source"
+        "quantmine.plugins.sources:"
+        "create_versioned_parquet_market_data_source"
     ),
     universe=PluginSpec("quantmine.plugins.a_share:create_cn_a_share_eligibility_universe"),  # B7c 才让股票池实际参与运行。
     factor_packs=(
@@ -91,6 +92,7 @@ CN_A_SHARE_V1 = ResearchBundle(
         "market": "CN",
         "currency": "CNY",
         "adjustment": "hfq",
+        "storage": "versioned_parquet",
     },
 )
 DEFAULT_RESEARCH_BUNDLES: dict[str, ResearchBundle] = {

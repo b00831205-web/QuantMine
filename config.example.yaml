@@ -114,7 +114,7 @@ a_share_daily_pipeline: &a_share_daily_pipeline
     connection_ref: cn_eligibility
     dataset: cn_a_share_eligibility
     market: CN
-    version: "history_v1"
+    version: "{as_of_date}"
   eligibility_rule_version: cn_equity_v1
   spot_coverage:
     max_missing_count: 5

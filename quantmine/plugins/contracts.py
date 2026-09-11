@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Mapping, TYPE_CHECKING, Protocol, runtime_checkable
 import pandas as pd
+from collections.abc import Callable
 
 from ..datareader import DataSource, ConstituentsSource, MarketData
 
@@ -75,6 +76,7 @@ class DataBinding: #运行配置文件
     """
     connection_ref: str | None
     dataset: str
+    version: str | None = None
     universe_dataset: str | None = None
     benchmark_dataset : str | None = None
     benchmark_ticker: str | None = None
@@ -136,12 +138,20 @@ class DataSourceComponent: #bundle中的数据源描述。source用于旧接口�
     connection_ref: str | None = None
     requires_connection: bool = False
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    retry_classifier: Callable[[Exception], bool] | None = field(
+        default = None,
+        repr = False,
+        compare = False,
+    )
 
     def __post_init__(self) -> None:
         if (self.source is None) == (self.plugin is None):
             raise ValueError(
                 'DataSourceComponent requires exactly one of source or plugin.'
             )
+
+        if (self.retry_classifier is not None and not callable(self.retry_classifier)):
+            raise TypeError("retry_classifier must be None or callable")
 
 
 @dataclass(frozen = True)

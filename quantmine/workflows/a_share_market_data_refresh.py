@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace, dataclass
+from dataclasses import replace, dataclass, field
 from typing import Any, Mapping
 
 import pandas as pd
@@ -19,12 +19,13 @@ from .market_data_publication import (
     MarketDataPublication,
     MarketDataPublishSpec,
 )
-from .market_data_refresh import refresh_market_data
+from .market_data_refresh import refresh_market_data, MarketDataRefreshPolicy
 
 from collections.abc import Iterable
 from ..plugins.loader import resolve_plugin
 
-A_SHARE_HISTORY_REFRESH_CONFIG_VERSION = 1
+A_SHARE_HISTORY_REFRESH_CONFIG_VERSION = 2
+_SUPPORTED_CONFIG_VERSIONS = frozenset({1,2})
 
 @dataclass(frozen = True)
 class AStockHistoryRefreshConfig:
@@ -33,6 +34,9 @@ class AStockHistoryRefreshConfig:
     reference_binding: VersionedDatasetBinding
     output_connection_ref: str
     publication: MarketDataPublishSpec
+    policy: MarketDataRefreshPolicy = field(
+        default_factory = MarketDataRefreshPolicy
+    )
 
     def __post_init__(self) -> None:
         if self.binding.start is None or self.binding.end is None:
@@ -85,11 +89,11 @@ class AStockHistoryRefreshConfig:
             label = "A-share history refresh config"
         )
         version = payload.get("schema_version")
-        if version != A_SHARE_HISTORY_REFRESH_CONFIG_VERSION:
+        if version not in _SUPPORTED_CONFIG_VERSIONS:
             raise ValueError(
                 "Unsupported A-share history refresh config "
                 f"schema version {version!r}; expected "
-                f"{A_SHARE_HISTORY_REFRESH_CONFIG_VERSION}"
+                f"{sorted(_SUPPORTED_CONFIG_VERSIONS)}"
             )
 
         source = _mapping(
@@ -107,6 +111,10 @@ class AStockHistoryRefreshConfig:
         publication = _mapping(
             payload.get("publication"),
             label = "publication",
+        )
+        policy = _mapping(
+            payload.get("policy", {}),
+            label = "policy"
         )
 
         return cls(
@@ -166,7 +174,7 @@ class AStockHistoryRefreshConfig:
             ),
             output_connection_ref = _string(
                 payload.get("output_connection_ref"),
-                label = "output_conncetion_ref",
+                label = "output_connection_ref",
             ),
             publication = MarketDataPublishSpec(
                 dataset_id = _string(
@@ -199,10 +207,28 @@ class AStockHistoryRefreshConfig:
                         "market_data_bundle_v1"
                     ),
                     label = "publication.schema_version",
-                )
-            )
-
+                ),
+            ),
+            policy = MarketDataRefreshPolicy(
+                batch_size = _integer(
+                    policy.get("batch_size", 50),
+                    label = "policy.batch_size",
+                ),
+                max_retries = _integer(
+                    policy.get("max_retries", 3),
+                    label = "policy.max_retries",
+                ),
+                checkpoint_connection_ref = _optional_string(
+                    policy.get("checkpoint_connection_ref"),
+                    label = "policy.checkpoint_connection_ref",
+                ),
+                resume = _boolean(
+                    policy.get("resume", True),
+                    label = "policy.resume"
+                ),
+            ),
         )
+
     def to_mapping(self) -> dict[str, object]:
         return {
             "schema_version": A_SHARE_HISTORY_REFRESH_CONFIG_VERSION,
@@ -233,6 +259,14 @@ class AStockHistoryRefreshConfig:
                 "frequency": self.publication.frequency,
                 "adjustment": self.publication.adjustment,
                 "schema_version": self.publication.schema_version,
+            },
+            "policy": {
+                "batch_size": self.policy.batch_size,
+                "max_retries": self.policy.max_retries,
+                "checkpoint_connection_ref": (
+                    self.policy.checkpoint_connection_ref
+                ),
+                "resume": self.policy.resume
             }
         }
 def _mapping(
@@ -371,3 +405,23 @@ def run_configured_a_share_history_refresh(
         output_connection_ref=config.output_connection_ref,
         publish_spec=config.publication
     )
+
+def _integer(
+        value: object,
+        *,
+        label: str,
+) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{label} must be an integer")
+
+    return value
+
+def _boolean(
+        value: object,
+        *,
+        label: str
+) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{label} must be a bool")
+
+    return value

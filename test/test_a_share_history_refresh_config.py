@@ -12,11 +12,12 @@ from quantmine.a_share_history_loader import (
 from quantmine.workflows.a_share_market_data_refresh import (
     AStockHistoryRefreshConfig,
 )
+from quantmine.workflows.market_data_refresh import MarketDataRefreshPolicy
 
 
 def _payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": {
             "entry_point": (
                 "quantmine.plugins.akshare:"
@@ -48,6 +49,12 @@ def _payload() -> dict[str, object]:
             "adjustment": "hfq",
             "schema_version": "market_data_bundle_v1",
         },
+        "policy": {
+            "batch_size": 50,
+            "max_retries": 3,
+            "checkpoint_connection_ref": None,
+            "resume": True,
+        },
     }
 
 
@@ -58,6 +65,7 @@ def test_history_refresh_config_round_trips_without_persisting_tickers() -> None
     assert config.binding.start == "2020-01-01"
     assert config.binding.end == "2026-09-09"
     assert config.source.params == {"default_adjustment": "hfq"}
+    assert config.policy == MarketDataRefreshPolicy()
     assert config.to_mapping() == _payload()
 
 
@@ -101,6 +109,59 @@ a_share_history_refresh:
     config = load_a_share_history_refresh_config(config_path)
 
     assert config.to_mapping() == _payload()
+
+
+def test_history_refresh_config_round_trips_custom_policy() -> None:
+    payload = _payload()
+    payload["policy"] = {
+        "batch_size": 25,
+        "max_retries": 5,
+        "checkpoint_connection_ref": "cn_market_checkpoint",
+        "resume": False,
+    }
+
+    config = AStockHistoryRefreshConfig.from_mapping(payload)
+
+    assert config.policy == MarketDataRefreshPolicy(
+        batch_size=25,
+        max_retries=5,
+        checkpoint_connection_ref="cn_market_checkpoint",
+        resume=False,
+    )
+    assert config.to_mapping() == payload
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error_type"),
+    [
+        ("batch_size", "50", TypeError),
+        ("batch_size", 0, ValueError),
+        ("max_retries", True, TypeError),
+        ("max_retries", -1, ValueError),
+        ("checkpoint_connection_ref", " checkpoint", TypeError),
+        ("resume", 1, TypeError),
+    ],
+)
+def test_history_refresh_config_rejects_invalid_policy(
+    field: str,
+    value: object,
+    error_type: type[Exception],
+) -> None:
+    payload = _payload()
+    policy = dict(payload["policy"])
+    policy[field] = value
+    payload["policy"] = policy
+
+    with pytest.raises(error_type, match=f"policy\\.{field}|{field}"):
+        AStockHistoryRefreshConfig.from_mapping(payload)
+
+
+def test_history_refresh_config_rejects_unknown_schema_version() -> None:
+    payload = _payload()
+    payload["schema_version"] = 3
+
+    with pytest.raises(ValueError, match="schema version 3"):
+        AStockHistoryRefreshConfig.from_mapping(payload)
 
 
 def test_history_refresh_config_rejects_inconsistent_adjustment() -> None:

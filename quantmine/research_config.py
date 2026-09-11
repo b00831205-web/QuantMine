@@ -10,7 +10,7 @@ from .plugins.bundles import ResearchBundle, get_research_bundle
 from .plugins.contracts import DataBinding, PluginSpec, VersionedDatasetBinding
 
 
-RESEARCH_RUN_CONFIG_VERSION = 2
+RESEARCH_RUN_CONFIG_VERSION = 3
 
 @dataclass(frozen = True)
 class ResearchRunConfig:
@@ -62,6 +62,7 @@ class ResearchRunConfig:
             "data_binding": {
                 "connection_ref": self.data_binding.connection_ref,
                 "dataset": self.data_binding.dataset,
+                "version": self.data_binding.version,
                 "universe_dataset": self.data_binding.universe_dataset,
                 "benchmark_dataset": self.data_binding.benchmark_dataset,
                 "benchmark_ticker": self.data_binding.benchmark_ticker,
@@ -86,7 +87,7 @@ class ResearchRunConfig:
         payload = _mapping(snapshot, label="PresearchRunConfig snapshot")
         version = payload.get("schema_version")
 
-        if version not in {1, RESEARCH_RUN_CONFIG_VERSION}:
+        if version not in {1, 2, RESEARCH_RUN_CONFIG_VERSION}:
             raise ValueError(
                 "Unsupported research-run config schema version "
                 f"{version!r}; expected 1 or {RESEARCH_RUN_CONFIG_VERSION}"
@@ -141,6 +142,10 @@ class ResearchRunConfig:
             dataset = _string(
                 binding_payload.get("dataset"),
                 label = "data_binding.dataset",
+            ),
+            version = _optional_string(
+                binding_payload.get("version"),
+                label = "data_binding.version"
             ),
             universe_dataset = _optional_string(
                 binding_payload.get("universe_dataset"),

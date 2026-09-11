@@ -207,6 +207,11 @@ def run_a_share_daily_pipeline(
         as_of_date = date,
     )
 
+    eligibility_binding = resolve_versioned_dataset_binding(
+        config.eligibility_binding,
+        as_of_date = date
+    )
+
     raw_root = context.connections.parquet_root(
         config.raw_connection_ref
     )
@@ -254,12 +259,12 @@ def run_a_share_daily_pipeline(
             status_dataset = config.status_binding.dataset,
             status_version = config.status_binding.version,
             eligibility_root = context.connections.parquet_root(
-                config.eligibility_binding.connection_ref
+                eligibility_binding.connection_ref
             ),
             eligibility_spec = EligibilityPublishSpec(
-                dataset_id = config.eligibility_binding.dataset,
-                version = config.eligibility_binding.version,
-                market = config.eligibility_binding.market,
+                dataset_id = eligibility_binding.dataset,
+                version = eligibility_binding.version,
+                market = eligibility_binding.market,
                 data_tier = EligibilityDataTier.RECONSTRUCTED,
                 source = "a_share_market_status",
                 rule_version = config.eligibility_rule_version,

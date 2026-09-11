@@ -116,6 +116,40 @@ def test_runtime_entry_allows_an_api_plugin_without_connection_ref(
     assert actual is expected
 
 
+def test_data_source_component_accepts_optional_retry_classifier() -> None:
+    classifier = lambda error: isinstance(error, TimeoutError)
+    component = DataSourceComponent(
+        id="retryable_api_source",
+        capabilities=frozenset({MarketDataCapability.CLOSE}),
+        plugin=StaticPlugin(MarketDataBundle(market=MarketData())),
+        retry_classifier=classifier,
+    )
+
+    assert component.retry_classifier is classifier
+    assert component.retry_classifier(TimeoutError()) is True
+    assert component.retry_classifier(ValueError()) is False
+
+
+def test_data_source_component_defaults_to_no_retry_classifier() -> None:
+    component = DataSourceComponent(
+        id="local_source",
+        capabilities=frozenset({MarketDataCapability.CLOSE}),
+        plugin=StaticPlugin(MarketDataBundle(market=MarketData())),
+    )
+
+    assert component.retry_classifier is None
+
+
+def test_data_source_component_rejects_non_callable_retry_classifier() -> None:
+    with pytest.raises(TypeError, match="retry_classifier"):
+        DataSourceComponent(
+            id="invalid_source",
+            capabilities=frozenset({MarketDataCapability.CLOSE}),
+            plugin=StaticPlugin(MarketDataBundle(market=MarketData())),
+            retry_classifier="transient",  # type: ignore[arg-type]
+        )
+
+
 def test_runtime_entry_rejects_a_connection_backed_plugin_without_connection_ref(
     tmp_path: Path,
 ) -> None:

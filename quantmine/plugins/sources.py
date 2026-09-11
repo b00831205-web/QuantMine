@@ -12,6 +12,7 @@ from ..datareader import ConstituentsSource, DataSource, MarketData
 from .context import SourceContext
 from .contracts import (
     DataBinding,
+    DataSourceComponent,
     MarketDataBundle,
     MarketDataCapability,
 )
@@ -297,9 +298,77 @@ class ParquetWideFrameDataSourcePlugin: #读取宽表 Parquet；它只允许访�
                 }
             )
 
+@dataclass(frozen = True)
+class VersionedParquetMarketDataSourcePlugin:
+    """Load one immutable close-and-volume market-data publication."""
+
+    close_file: str = "close.parquet"
+    volume_file: str = "volume.parquet"
+    metadata: Mapping[str, object] = field(default_factory=dict)
+    def load(
+            self,
+            binding: DataBinding,
+            context: SourceContext,
+    ) -> MarketDataBundle:
+        version = binding.version
+        if (
+            not isinstance(version, str)
+            or not version
+            or version.strip() != version
+            or version in {".", ".."}
+            or "/" in version
+            or "\\" in version
+        ):
+            raise ValueError(
+                "DataBinding.version must be a safe path segment"
+            )
+
+        return ParquetWideFrameDataSourcePlugin(
+            field_files = {
+                MarketDataCapability.CLOSE: (
+                    f"versions/{version}/{self.close_file}"
+                ),
+                MarketDataCapability.VOLUME:(
+                    f"versions/{version}/{self.volume_file}"
+                ),
+            },
+            metadata = {
+                **self.metadata,
+                "version": version
+            },
+        ).load(binding, context)
+
 def _require_connection_ref(binding: DataBinding, source_name: str) -> str:
     if binding.connection_ref is None:
         raise ValueError(
             f"{source_name} requires DataBinding.connection_ref"
         )
     return binding.connection_ref
+
+def create_versioned_parquet_market_data_source(
+        *,
+        close_file: str = "close.parquet",
+        volume_file: str = "volume.parquet",
+        metadata: Mapping[str, object] | None = None,
+) -> DataSourceComponent:
+    """Create the standard reader for immutable market-data publications."""
+
+    return DataSourceComponent(
+        id="versioned_parquet_market_data",
+        capabilities = frozenset(
+            {
+                MarketDataCapability.CLOSE,
+                MarketDataCapability.VOLUME,
+            }
+        ),
+        plugin = VersionedParquetMarketDataSourcePlugin(
+            close_file = close_file,
+            volume_file = volume_file,
+            metadata = dict(metadata or {}),
+        ),
+        requires_connection = True,
+        metadata = {
+            "storage": "parquet",
+            "layout": "versioned_wide_frames",
+        },
+    )
