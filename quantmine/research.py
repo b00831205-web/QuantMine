@@ -139,7 +139,7 @@ def run_configured_research(
         config: ResearchRunConfig,
         context: SourceContext,
         *,
-        allowed_module_prefixes: Iterable[str] | None = ("quantmine,"),
+        allowed_module_prefixes: Iterable[str] | None = ("quantmine",),
 ) -> FactorResearchResult:
     """Run a persisted or local config through one plugin-defined pipeline.
 

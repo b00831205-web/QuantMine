@@ -92,7 +92,7 @@ def retry_call(
 
             delay = policy.delay_after(attempt)
             _LOGGER.warning(
-                '%s failed with %s on attempt %d/%d; retyring in %.1fs',
+                '%s failed with %s on attempt %d/%d; retrying in %.1fs',
                 label,
                 type(error).__name__,
                 attempt,

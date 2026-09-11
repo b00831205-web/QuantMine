@@ -24,11 +24,14 @@ def _load_task_module():
     return module
 
 
-def _config():
+def _config(*, checkpoint_connection_ref: str | None = None):
     return SimpleNamespace(
         binding=SimpleNamespace(connection_ref="provider_input"),
         reference_binding=SimpleNamespace(connection_ref="cn_reference"),
         output_connection_ref="cn_market_data",
+        policy=SimpleNamespace(
+            checkpoint_connection_ref=checkpoint_connection_ref,
+        ),
         publication=SimpleNamespace(version="bars_v1"),
     )
 
@@ -39,6 +42,30 @@ class _Connections:
 
     def dispose(self) -> None:
         self.disposed = True
+
+
+def test_required_connection_refs_includes_checkpoint_connection() -> None:
+    task = _load_task_module()
+
+    assert task.required_connection_refs(
+        _config(checkpoint_connection_ref="cn_market_checkpoint")
+    ) == (
+        "provider_input",
+        "cn_reference",
+        "cn_market_data",
+        "cn_market_checkpoint",
+    )
+
+
+def test_required_connection_refs_omits_none_and_deduplicates() -> None:
+    task = _load_task_module()
+    config = _config(checkpoint_connection_ref=None)
+    config.output_connection_ref = "cn_reference"
+
+    assert task.required_connection_refs(config) == (
+        "provider_input",
+        "cn_reference",
+    )
 
 
 def test_main_loads_config_runs_history_refresh_and_disposes_connections(

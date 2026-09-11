@@ -161,3 +161,42 @@ market_pipelines:
       market: CN
       frequency: daily
       purpose: production
+
+a_share_history_refresh:
+  schema_version: 2
+
+  source:
+    entry_point: quantmine.plugins.akshare:create_akshare_a_stock_data_source
+    params:
+      default_adjustment: hfq
+
+  binding:
+    connection_ref: null
+    dataset: akshare_a_share_history
+    start: "2020-01-01"
+    end: "2026-09-10"
+    adjustment: hfq
+    metadata: {}
+
+  reference_binding:
+    connection_ref: cn_reference
+    dataset: cn_a_share_reference
+    market: CN
+    version: "20260910"
+
+  output_connection_ref: cn_market_data
+
+  publication:
+    dataset_id: cn_a_share_daily_bars
+    market: CN
+    version: "20260910"
+    source: akshare_stock_zh_a_hist
+    frequency: daily
+    adjustment: hfq
+    schema_version: market_data_bundle_v1
+
+  policy:
+    batch_size: 50
+    max_retries: 3
+    checkpoint_connection_ref: cn_market_checkpoint
+    resume: true

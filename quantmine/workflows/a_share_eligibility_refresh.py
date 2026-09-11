@@ -16,6 +16,8 @@ from .eligibility import (
     refresh_cumulative_daily_eligibility,
 )
 
+from collections.abc import Iterable
+
 def refresh_a_share_eligibility_from_market_status(
         context: SourceContext,
         *,
@@ -27,6 +29,7 @@ def refresh_a_share_eligibility_from_market_status(
         eligibility_spec: EligibilityPublishSpec,
         status_market: str = "CN",
         policy: AStockEligibilityPolicy | None = None,
+        trading_sessions : Iterable[pd.Timestamp | str] | None = None
 ) -> EligibilityPublication:
     """Build and publish one A-share eligibility snapshot from generic status. """
 
@@ -51,5 +54,6 @@ def refresh_a_share_eligibility_from_market_status(
         builder,
         as_of_date = as_of_date,
         root = eligibility_root,
-        spec = eligibility_spec
+        spec = eligibility_spec,
+        trading_sessions=trading_sessions,
     )

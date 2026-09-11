@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from quantmine.datareader import MarketData
+from quantmine.execution import execute_persisted_research
 from quantmine.plugins.bundles import get_research_bundle
 from quantmine.plugins.context import SourceContext
 from quantmine.plugins.contracts import (
@@ -26,6 +28,15 @@ from quantmine.storage.connections import (
     ConnectionRegistry,
     DataConnectionConfig,
 )
+
+
+class _StaticResearchRunStore:
+    def __init__(self, config: ResearchRunConfig) -> None:
+        self._config = config
+
+    def load(self, run_id: int) -> ResearchRunConfig:
+        assert run_id == 903
+        return self._config
 
 
 class ChinaFixtureSource:
@@ -254,3 +265,102 @@ def test_default_cn_bundle_runs_from_versioned_market_and_eligibility_data(
     assert result.market_data.universe is not None
     assert not result.pending
     assert set(result.factors) == set(result.requested_signals)
+
+
+def test_default_cn_bundle_publishes_factor_artifacts_through_persisted_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    market_root = tmp_path / "market"
+    eligibility_root = tmp_path / "eligibility"
+    market_version_root = (
+        market_root
+        / "cn_a_share_daily_bars"
+        / "versions"
+        / "20260909"
+    )
+    eligibility_version_root = (
+        eligibility_root
+        / "cn_a_share_eligibility"
+        / "versions"
+        / "history_v1"
+    )
+    market_version_root.mkdir(parents=True)
+    eligibility_version_root.mkdir(parents=True)
+
+    dates = pd.date_range("2024-01-02", periods=45, freq="B")
+    pd.DataFrame(
+        {
+            "000001": range(10, 55),
+            "600000": range(20, 65),
+        },
+        index=dates,
+        dtype=float,
+    ).to_parquet(market_version_root / "close.parquet")
+    pd.DataFrame(
+        {
+            "000001": range(1_000, 1_045),
+            "600000": range(2_000, 2_045),
+        },
+        index=dates,
+        dtype=float,
+    ).to_parquet(market_version_root / "volume.parquet")
+    pd.DataFrame(
+        [
+            {
+                "date": date,
+                "ticker": ticker,
+                "is_listed": True,
+                "is_st": False,
+                "is_suspended": False,
+                "listing_days": 100,
+                "is_limit_up": False,
+                "is_limit_down": False,
+            }
+            for date in dates
+            for ticker in ("000001", "600000")
+        ]
+    ).to_parquet(eligibility_version_root / "eligibility.parquet")
+
+    monkeypatch.setenv("QUANTMINE_CONNECTION_CN_MARKET_KIND", "parquet")
+    monkeypatch.setenv("QUANTMINE_CONNECTION_CN_MARKET_ROOT", str(market_root))
+    monkeypatch.setenv("QUANTMINE_CONNECTION_CN_ELIGIBILITY_KIND", "parquet")
+    monkeypatch.setenv(
+        "QUANTMINE_CONNECTION_CN_ELIGIBILITY_ROOT",
+        str(eligibility_root),
+    )
+    config = ResearchRunConfig.from_bundle_id(
+        "cn_a_share_v1",
+        DataBinding(
+            connection_ref="cn_market",
+            dataset="cn_a_share_daily_bars",
+            version="20260909",
+            start="2024-01-02",
+            end="2024-03-04",
+            tickers=("000001", "600000"),
+            eligibility_binding=VersionedDatasetBinding(
+                connection_ref="cn_eligibility",
+                dataset="cn_a_share_eligibility",
+                market="CN",
+                version="history_v1",
+            ),
+        ),
+    )
+
+    result = execute_persisted_research(
+        _StaticResearchRunStore(config),
+        903,
+        artifact_root=tmp_path / "artifacts",
+    )
+
+    publication_dir = tmp_path / "artifacts" / "factor_research" / "903"
+    manifest = json.loads(
+        (publication_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["requested_signals"] == list(result.requested_signals)
+    assert manifest["factor_count"] == 8
+    assert manifest["pending_count"] == 0
+    assert {
+        path.name
+        for path in publication_dir.glob("*.parquet")
+    } == {f"{signal}.parquet" for signal in result.requested_signals}

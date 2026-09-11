@@ -66,6 +66,64 @@ def test_plugin_resolution_requires_allow_list_match():
         )
 
 
+def test_plugin_allow_list_uses_module_boundaries():
+    with pytest.raises(PluginResolutionError, match="is not allowed"):
+        resolve_plugin(
+            PluginSpec("quantmine_evil.plugin:create_source"),
+            allowed_module_prefixes=("quantmine",),
+        )
+
+
+def test_plugin_allow_list_rejects_a_bare_string():
+    with pytest.raises(TypeError, match="not a string"):
+        resolve_plugin(
+            PluginSpec(
+                "quantmine.plugins.builtins:create_yfinance_data_source"
+            ),
+            allowed_module_prefixes="quantmine",  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ("", " quantmine", "quantmine ", "quantmine..plugins", "quantmine-plugin"),
+)
+def test_plugin_allow_list_rejects_invalid_module_prefix(prefix: str):
+    with pytest.raises(ValueError, match="valid trimmed module names"):
+        resolve_plugin(
+            PluginSpec(
+                "quantmine.plugins.builtins:create_yfinance_data_source"
+            ),
+            allowed_module_prefixes=(prefix,),
+        )
+
+
+def test_plugin_resolution_wraps_missing_module_import_error():
+    with pytest.raises(
+        PluginResolutionError,
+        match="plugin module 'missing_quantmine_plugin' could not be imported",
+    ) as raised:
+        resolve_plugin(
+            PluginSpec("missing_quantmine_plugin:create_source"),
+            allowed_module_prefixes=("missing_quantmine_plugin",),
+        )
+
+    assert isinstance(raised.value.__cause__, ImportError)
+
+
+def test_plugin_resolution_reports_missing_factory_separately():
+    with pytest.raises(
+        PluginResolutionError,
+        match="factory 'missing_factory' was not found",
+    ) as raised:
+        resolve_plugin(
+            PluginSpec("quantmine.plugins.builtins:missing_factory"),
+            allowed_module_prefixes=("quantmine",),
+        )
+
+    assert isinstance(raised.value.__cause__, AttributeError)
+
+
 def test_unknown_bundle_lists_available_bundle_ids():
     with pytest.raises(PluginResolutionError, match="us_equity_v1"):
         get_research_bundle("not_a_bundle")

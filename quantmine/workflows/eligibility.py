@@ -10,7 +10,7 @@ from uuid import uuid4
 import pandas as pd
 from typing import Protocol
 from enum import StrEnum
-from collections.abc import Mapping
+from collections.abc import Mapping, Iterable
 
 from ..plugins.eligibility import DailyEligibilityUniverse
 
@@ -351,55 +351,141 @@ def load_latest_eligibility_before(
     _, version, eligibility_path = max(candidates)
     return version, pd.read_parquet(eligibility_path)
 
+def eligibility_dates_to_build(
+        *,
+        previous_frame: pd.DataFrame | None,
+        as_of_date: pd.Timestamp | str,
+        trading_sessions: Iterable[pd.Timestamp | str],
+) -> tuple[pd.Timestamp, ...]:
+    """Return missing trading sessions needed for a cumulative version."""
+
+    date = pd.Timestamp(as_of_date).normalize()
+    sessions = pd.DatetimeIndex(
+        pd.to_datetime(
+            tuple(trading_sessions),
+            errors = "raise",
+        )
+    ).normalize()
+
+    if sessions.hasnans:
+        raise ValueError(
+            "trading_sessions contains missing dates"
+        )
+
+    if sessions.has_duplicates:
+        raise ValueError(
+            "trading_sessions contains duplicate dates"
+        )
+
+    sessions = sessions.sort_values()
+
+    if date not in sessions:
+        raise ValueError(
+            "as_of_date must be present in trading_sessions"
+        )
+
+    if previous_frame is None:
+        return (date,)
+
+    previous = _normalize(previous_frame)
+    existing_dates = pd.DatetimeIndex(
+        previous["date"].drop_duplicates()
+    ).sort_values()
+
+    if (existing_dates > date).any():
+        raise ValueError(
+            "previous eligibility contains dates after as_of_date"
+        )
+
+    first_date = existing_dates.min()
+    expected_dates = sessions[
+        (sessions >= first_date)
+        & (sessions <= date)
+    ]
+
+    non_session_dates = existing_dates.difference(sessions)
+    if not non_session_dates.empty:
+        raise ValueError(
+            "previous eligibility contains non-trading dates"
+        )
+
+    return tuple(
+        expected_dates.difference(existing_dates).sort_values()
+    )
+
 def refresh_cumulative_daily_eligibility(
         builder: DailyEligibilityFrameBuilder,
         *,
         as_of_date: pd.Timestamp | str,
         root: Path,
         spec: EligibilityPublishSpec,
+        trading_sessions: Iterable[pd.Timestamp | str] | None = None,
 ) -> EligibilityPublication:
-    """Append one daily snapshot into a new immutable cumulative version."""
+    """Fill missing sessions and publish a new cumulative immutable version"""
 
     date = pd.Timestamp(as_of_date).normalize()
-    daily_frame = _normalize(builder.build(date))
-
-    daily_dates = pd.DatetimeIndex(
-        daily_frame["date"].drop_duplicates()
-    )
-    if (
-        len(daily_dates) != 1
-        or daily_dates[0] != date
-    ):
-        raise ValueError(
-            "daily eligibility builder must return exactly "
-            "the requested as_of_date"
-        )
 
     previous = load_latest_eligibility_before(
         root,
-        spec = spec,
-        as_of_date= date
+        spec=spec,
+        as_of_date=date,
     )
 
-    if previous is None:
-        cumulative = daily_frame
+    previous_frame = None
+    if previous is not None:
+        _, loaded_previous = previous
+        previous_frame = _normalize(loaded_previous)
 
-    else:
-        _, previous_frame = previous
-        previous_frame = _normalize(previous_frame)
+    dates_to_build = (
+        (date,)
+        if trading_sessions is None
+        else eligibility_dates_to_build(
+            previous_frame = previous_frame,
+            as_of_date = date,
+            trading_sessions = trading_sessions,
+        )
+    )
 
-        cumulative = pd.concat(
-            [previous_frame, daily_frame],
-            ignore_index = True,
-            sort = False,
+    frames: list[pd.DataFrame] = []
+
+    if previous_frame is not None:
+        frames.append(previous_frame)
+
+    for build_date in dates_to_build:
+        daily_frame = _normalize(
+            builder.build(build_date)
+        )
+        daily_dates = pd.DatetimeIndex(
+            daily_frame["date"].drop_duplicates()
         )
 
-        if cumulative.duplicated(
-            subset= ["date", "ticker"]
-        ).any():
+        if (
+            len(daily_dates) != 1 or daily_dates[0] != build_date
+        ):
             raise ValueError(
-                "cumulative eligibility contains duplicate date/ticker rows"
+                "daily eligibility builder must return exactly "
+                "the requested as_of_date"
             )
+
+        frames.append(daily_frame)
+
+    if not frames:
+        raise ValueError(
+            "cumulative eligibility has no frames to publish"
+        )
+
+    cumulative = pd.concat(
+        frames,
+        ignore_index = True,
+        sort = False
+    )
+
+    if cumulative.duplicated(
+        subset = ["date", "ticker"]
+    ).any():
+        raise ValueError(
+            "cumulative eligibility contains duplicate date/ticker rows"
+        )
 
     return publish_daily_eligibility(
         cumulative,

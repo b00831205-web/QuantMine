@@ -311,6 +311,7 @@ def refresh_a_share_historical_market_data(
         reference_binding: VersionedDatasetBinding,
         output_connection_ref: str,
         publish_spec: MarketDataPublishSpec,
+        policy: MarketDataRefreshPolicy | None = None,
 ) -> MarketDataPublication:
     """Derive the historical A-share universe and publish market data"""
 
@@ -371,6 +372,7 @@ def refresh_a_share_historical_market_data(
         binding = resolved_binding,
         output_connection_ref = output_connection_ref,
         publish_spec = publish_spec,
+        policy=policy
     )
 
 def run_configured_a_share_history_refresh(
@@ -403,7 +405,8 @@ def run_configured_a_share_history_refresh(
         binding = config.binding,
         reference_binding = config.reference_binding,
         output_connection_ref=config.output_connection_ref,
-        publish_spec=config.publication
+        publish_spec=config.publication,
+        policy = config.policy,
     )
 
 def _integer(

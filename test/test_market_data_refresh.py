@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -411,8 +412,13 @@ def _multi_ticker_binding() -> DataBinding:
 
 def test_load_market_data_batches_loads_in_order_and_merges_result(
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     source = BatchSource()
+    caplog.set_level(
+        logging.INFO,
+        logger="quantmine.workflows.market_data_refresh",
+    )
 
     result = load_market_data_batches(
         _context(tmp_path, read_only=False),
@@ -434,10 +440,16 @@ def test_load_market_data_batches_loads_in_order_and_merges_result(
         "600001",
         "830001",
     ]
+    assert "market-data refresh started: source=batch_source" in caplog.text
+    assert "tickers=5 batches=3 batch_size=2 resume=True" in caplog.text
+    assert "market-data batch 1/3 started: tickers=2" in caplog.text
+    assert "market-data batch 3/3 completed" in caplog.text
+    assert "market-data refresh completed: source=batch_source batches=3" in caplog.text
 
 
 def test_load_market_data_batches_retries_only_classified_failure(
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     failing_batch = ("600000", "600001")
     source = BatchSource(
@@ -459,6 +471,10 @@ def test_load_market_data_batches_retries_only_classified_failure(
 
     assert source.calls.count(failing_batch) == 2
     assert delays == [1.0]
+    assert (
+        "market-data batch 2/3 failed with TimeoutError on attempt 1/3; "
+        "retrying in 1.0s"
+    ) in caplog.text
 
 
 def test_load_market_data_batches_does_not_retry_unclassified_failure(
@@ -514,6 +530,7 @@ def test_load_market_data_batches_zero_retries_disables_classifier(
 def test_load_market_data_batches_resumes_without_calling_source(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     context = _checkpoint_context(monkeypatch, tmp_path)
     policy = MarketDataRefreshPolicy(
@@ -529,6 +546,11 @@ def test_load_market_data_batches_resumes_without_calling_source(
         policy=policy,
         publish_spec=_spec(),
         sleeper=lambda _: None,
+    )
+    caplog.clear()
+    caplog.set_level(
+        logging.INFO,
+        logger="quantmine.workflows.market_data_refresh",
     )
     second_source = BatchSource()
     second = load_market_data_batches(
@@ -546,6 +568,9 @@ def test_load_market_data_batches_resumes_without_calling_source(
         ("830001",),
     ]
     assert second_source.calls == []
+    assert caplog.text.count("restored from checkpoint") == 3
+    assert "market-data batch 1/3 restored from checkpoint" in caplog.text
+    assert "market-data batch 3/3 restored from checkpoint" in caplog.text
     pd.testing.assert_frame_equal(second.market.close, first.market.close)
     pd.testing.assert_frame_equal(second.market.volume, first.market.volume)
 

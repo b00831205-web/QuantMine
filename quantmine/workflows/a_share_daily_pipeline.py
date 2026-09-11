@@ -269,6 +269,7 @@ def run_a_share_daily_pipeline(
                 source = "a_share_market_status",
                 rule_version = config.eligibility_rule_version,
             ),
+            trading_sessions=reference.trading_calendar
         )
     )
 

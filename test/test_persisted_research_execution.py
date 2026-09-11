@@ -7,7 +7,10 @@ from pathlib import Path
 import pandas as pd
 
 from quantmine.datareader import MarketData
-from quantmine.execution import execute_persisted_research
+from quantmine.execution import (
+    execute_persisted_research,
+    required_research_connection_refs,
+)
 from quantmine.plugins import builtins as builtin_plugins
 from quantmine.plugins import us_equity as us_equity_plugins
 from quantmine.plugins.bundles import ResearchBundle
@@ -19,6 +22,7 @@ from quantmine.plugins.contracts import (
     MarketDataBundle,
     MarketDataCapability,
     PluginSpec,
+    VersionedDatasetBinding,
 )
 from quantmine.research_config import ResearchRunConfig
 
@@ -111,6 +115,68 @@ def create_execution_test_factor_pack() -> FactorPackComponent:
     )
 
 
+def _connection_config(
+    market_connection_ref: str | None,
+    eligibility_connection_ref: str | None,
+) -> ResearchRunConfig:
+    eligibility_binding = (
+        None
+        if eligibility_connection_ref is None
+        else VersionedDatasetBinding(
+            connection_ref=eligibility_connection_ref,
+            dataset="daily_eligibility",
+            market="CN",
+            version="20260910",
+        )
+    )
+    return ResearchRunConfig(
+        bundle=ResearchBundle(
+            id="connection_test_bundle",
+            display_name="Connection test bundle",
+            data_source=PluginSpec(
+                "test_persisted_research_execution:create_execution_test_source"
+            ),
+            universe=None,
+            factor_packs=(
+                PluginSpec(
+                    "test_persisted_research_execution:"
+                    "create_execution_test_factor_pack"
+                ),
+            ),
+        ),
+        data_binding=DataBinding(
+            connection_ref=market_connection_ref,
+            dataset="prices",
+            eligibility_binding=eligibility_binding,
+        ),
+        factor_parameters={},
+    )
+
+
+def test_required_research_connections_supports_connection_free_source() -> None:
+    assert required_research_connection_refs(
+        _connection_config(None, None)
+    ) == ()
+
+
+def test_required_research_connections_includes_market_connection() -> None:
+    assert required_research_connection_refs(
+        _connection_config("cn_market", None)
+    ) == ("cn_market",)
+
+
+def test_required_research_connections_includes_eligibility_connection() -> None:
+    assert required_research_connection_refs(
+        _connection_config("cn_market", "cn_eligibility")
+    ) == ("cn_market", "cn_eligibility")
+
+
+def test_required_research_connections_deduplicates_aliases() -> None:
+    assert required_research_connection_refs(
+        _connection_config("cn_lake", "cn_lake")
+    ) == ("cn_lake",)
+
+
 def test_persisted_run_execution_uses_env_connections_and_configured_plugins(
     monkeypatch,
     tmp_path: Path,
@@ -153,6 +219,9 @@ def test_persisted_run_execution_uses_env_connections_and_configured_plugins(
 
     assert set(result.factors) == {"momentum"}
     assert (tmp_path / "artifacts" / "701").is_dir()
+    publication_dir = tmp_path / "artifacts" / "factor_research" / "701"
+    assert (publication_dir / "manifest.json").is_file()
+    assert (publication_dir / "momentum.parquet").is_file()
 
 
 def test_default_us_bundle_runs_end_to_end_with_the_legacy_source_adapter(
@@ -204,3 +273,12 @@ def test_default_us_bundle_runs_end_to_end_with_the_legacy_source_adapter(
     assert not result.pending
     assert set(result.factors) == set(result.requested_signals)
     assert (tmp_path / "artifacts" / "701").is_dir()
+    publication_dir = tmp_path / "artifacts" / "factor_research" / "701"
+    assert (publication_dir / "manifest.json").is_file()
+    assert {
+        path.name
+        for path in publication_dir.glob("*.parquet")
+    } == {
+        f"{signal}.parquet"
+        for signal in result.requested_signals
+    }

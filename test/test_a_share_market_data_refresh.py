@@ -30,6 +30,7 @@ from quantmine.workflows.a_share_market_data_refresh import (
 from quantmine.plugins.contracts import PluginSpec
 from quantmine.workflows import a_share_market_data_refresh as refresh_module
 from quantmine.workflows.market_data_publication import MarketDataPublishSpec
+from quantmine.workflows.market_data_refresh import MarketDataRefreshPolicy
 
 
 class RecordingAStockSource:
@@ -222,6 +223,86 @@ def test_a_share_refresh_requires_a_bounded_history_window(
     assert source.bindings == []
 
 
+def test_a_share_refresh_forwards_policy_to_generic_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    reference_root = tmp_path / "reference_lake"
+    _write_reference(reference_root)
+    monkeypatch.setenv("QUANTMINE_TEST_CN_REFERENCE_ROOT", str(reference_root))
+    context = SourceContext(
+        connections=ConnectionRegistry(
+            {
+                "cn_reference": DataConnectionConfig(
+                    kind=ConnectionKind.PARQUET,
+                    root_env="QUANTMINE_TEST_CN_REFERENCE_ROOT",
+                    read_only=True,
+                ),
+            }
+        ),
+        run_id=205,
+        artifact_dir=tmp_path / "artifacts",
+    )
+    component = DataSourceComponent(
+        id="configured_source",
+        capabilities=frozenset(
+            {
+                MarketDataCapability.CLOSE,
+                MarketDataCapability.VOLUME,
+            }
+        ),
+        plugin=RecordingAStockSource(),
+    )
+    binding = DataBinding(
+        connection_ref=None,
+        dataset="provider_request",
+        start="2024-01-02",
+        end="2024-01-31",
+        adjustment="hfq",
+    )
+    publish_spec = MarketDataPublishSpec(
+        dataset_id="cn_a_share_daily_bars",
+        market="CN",
+        version="bars_v1",
+        source="fixture",
+        frequency="daily",
+        adjustment="hfq",
+    )
+    policy = MarketDataRefreshPolicy(
+        batch_size=25,
+        max_retries=4,
+        checkpoint_connection_ref="cn_checkpoint",
+        resume=False,
+    )
+    marker = SimpleNamespace(name="publication")
+    dispatched: list[dict[str, object]] = []
+
+    def fake_refresh(context_arg, **kwargs):
+        dispatched.append({"context": context_arg, **kwargs})
+        return marker
+
+    monkeypatch.setattr(refresh_module, "refresh_market_data", fake_refresh)
+
+    result = refresh_a_share_historical_market_data(
+        context,
+        source_component=component,
+        binding=binding,
+        reference_binding=VersionedDatasetBinding(
+            connection_ref="cn_reference",
+            dataset="cn_reference",
+            market="CN",
+            version="reference_v1",
+        ),
+        output_connection_ref="cn_market_data",
+        publish_spec=publish_spec,
+        policy=policy,
+    )
+
+    assert result is marker
+    assert dispatched[0]["policy"] is policy
+    assert dispatched[0]["binding"].tickers == ("000001", "000004")
+
+
 def test_configured_history_refresh_resolves_source_then_dispatches(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -307,6 +388,7 @@ def test_configured_history_refresh_resolves_source_then_dispatches(
             "reference_binding": config.reference_binding,
             "output_connection_ref": config.output_connection_ref,
             "publish_spec": config.publication,
+            "policy": config.policy,
         }
     ]
 

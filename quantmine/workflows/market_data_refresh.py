@@ -34,6 +34,9 @@ import time
 from ..resilience import RetryPolicy, Sleeper, retry_call
 from hashlib import sha256
 import json
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen = True)
 class MarketDataRefreshPolicy:
@@ -186,6 +189,18 @@ def load_market_data_batches(
         batch_size = policy.batch_size,
     )
 
+    total_batches = len(batch_bindings)
+
+    _LOGGER.info(
+        "market-data refresh started: source=%s tickers=%d batches=%d "
+        "batch_size=%d resume=%s",
+        source_component.id,
+        len(binding.tickers),
+        total_batches,
+        policy.batch_size,
+        policy.resume
+    )
+
     checkpoint_root = None
     checkpoint_id = None
 
@@ -207,10 +222,18 @@ def load_market_data_batches(
 
     loaded_batches: list[MarketDataBundle] = []
 
+
+
     for batch_number, batch_binding in enumerate(
         batch_bindings,
         start = 1,
     ):
+        _LOGGER.info(
+                "market-data batch %d/%d started: tickers=%d",
+                batch_number,
+                total_batches,
+                len(batch_binding.tickers)
+            )
 
         bundle = None
 
@@ -225,6 +248,14 @@ def load_market_data_batches(
                 batch_number = batch_number,
                 binding = batch_binding,
             )
+
+        if bundle is not None:
+            _LOGGER.info(
+                "market-data batch %d/%d restored from checkpoint",
+                batch_number,
+                total_batches,
+            )
+
         if bundle is None:
         
             def load_batch(
@@ -269,7 +300,19 @@ def load_market_data_batches(
 
         loaded_batches.append(bundle)
 
-    return merge_market_data_batches(loaded_batches)
+        _LOGGER.info(
+            "market-data batch %d/%d completed",
+            batch_number,
+            total_batches,
+        )
+
+    merged = merge_market_data_batches(loaded_batches)
+    _LOGGER.info(
+        "market-data refresh completed: source=%s batches=%d",
+        source_component.id,
+        total_batches,
+    )
+    return merged
 
 
 

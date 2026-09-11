@@ -52,7 +52,8 @@ def required_connection_refs(
     candidates= (
         config.binding.connection_ref,
         config.reference_binding.connection_ref,
-        config.output_connection_ref
+        config.output_connection_ref,
+        config.policy.checkpoint_connection_ref
     )
 
     return tuple(

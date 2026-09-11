@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import quantmine.workflows.a_share_eligibility_refresh as eligibility_refresh
 from quantmine.plugins.context import SourceContext
 from quantmine.storage.connections import (
     ConnectionKind,
@@ -105,6 +106,39 @@ def test_refresh_publishes_policy_adjusted_a_share_eligibility(
     assert saved["ticker"].tolist() == ["000001", "000002"]
     assert saved["is_tradable"].tolist() == [True, False]
     assert saved["is_st"].tolist() == [False, True]
+
+
+def test_refresh_forwards_trading_sessions_to_cumulative_publication(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    context = _context(monkeypatch, tmp_path)
+    _publish_status(context.connections.parquet_root("status_lake"))
+    original_refresh = eligibility_refresh.refresh_cumulative_daily_eligibility
+    observed: dict[str, object] = {}
+
+    def spy_refresh(*args: object, **kwargs: object):
+        observed["trading_sessions"] = kwargs["trading_sessions"]
+        return original_refresh(*args, **kwargs)
+
+    monkeypatch.setattr(
+        eligibility_refresh,
+        "refresh_cumulative_daily_eligibility",
+        spy_refresh,
+    )
+
+    refresh_a_share_eligibility_from_market_status(
+        context,
+        as_of_date="2024-01-02",
+        status_connection_ref="status_lake",
+        status_dataset="daily_market_status",
+        status_version="history_v1",
+        eligibility_root=tmp_path / "eligibility-lake",
+        eligibility_spec=_eligibility_spec(),
+        trading_sessions=("2024-01-02",),
+    )
+
+    assert tuple(observed["trading_sessions"]) == ("2024-01-02",)
 
 
 def test_refresh_rejects_a_non_cn_eligibility_spec(

@@ -11,6 +11,7 @@ import pytest
 from quantmine.workflows.eligibility import (
     EligibilityDataTier,
     EligibilityPublishSpec,
+    eligibility_dates_to_build,
     load_latest_eligibility_before,
     publish_daily_eligibility,
     refresh_cumulative_daily_eligibility,
@@ -249,6 +250,113 @@ def test_load_latest_eligibility_before_rejects_incomplete_version(
         )
 
 
+def test_eligibility_dates_to_build_uses_only_current_date_without_history() -> None:
+    assert eligibility_dates_to_build(
+        previous_frame=None,
+        as_of_date="2024-01-04",
+        trading_sessions=("2024-01-02", "2024-01-03", "2024-01-04"),
+    ) == (pd.Timestamp("2024-01-04"),)
+
+
+def test_eligibility_dates_to_build_finds_internal_and_current_gaps() -> None:
+    previous = pd.concat(
+        (
+            _frame_for_date("2024-01-02"),
+            _frame_for_date("2024-01-04"),
+        ),
+        ignore_index=True,
+    )
+
+    assert eligibility_dates_to_build(
+        previous_frame=previous,
+        as_of_date="2024-01-05",
+        trading_sessions=(
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+        ),
+    ) == (
+        pd.Timestamp("2024-01-03"),
+        pd.Timestamp("2024-01-05"),
+    )
+
+
+def test_eligibility_dates_to_build_returns_current_after_continuous_history() -> None:
+    previous = pd.concat(
+        (
+            _frame_for_date("2024-01-02"),
+            _frame_for_date("2024-01-03"),
+        ),
+        ignore_index=True,
+    )
+
+    assert eligibility_dates_to_build(
+        previous_frame=previous,
+        as_of_date="2024-01-04",
+        trading_sessions=("2024-01-02", "2024-01-03", "2024-01-04"),
+    ) == (pd.Timestamp("2024-01-04"),)
+
+
+@pytest.mark.parametrize(
+    ("sessions", "message"),
+    (
+        (("2024-01-02", pd.NaT), "contains missing dates"),
+        (("2024-01-02", "2024-01-02"), "contains duplicate dates"),
+        (("2024-01-02", "2024-01-03"), "must be present"),
+    ),
+)
+def test_eligibility_dates_to_build_rejects_invalid_calendar(
+    sessions,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        eligibility_dates_to_build(
+            previous_frame=None,
+            as_of_date="2024-01-04",
+            trading_sessions=sessions,
+        )
+
+
+def test_eligibility_dates_to_build_rejects_non_session_history() -> None:
+    previous = pd.concat(
+        (
+            _frame_for_date("2024-01-02"),
+            _frame_for_date("2024-01-03"),
+        ),
+        ignore_index=True,
+    )
+
+    with pytest.raises(ValueError, match="non-trading dates"):
+        eligibility_dates_to_build(
+            previous_frame=previous,
+            as_of_date="2024-01-04",
+            trading_sessions=("2024-01-02", "2024-01-04"),
+        )
+
+
+def test_eligibility_dates_to_build_rejects_future_history() -> None:
+    previous = pd.concat(
+        (
+            _frame_for_date("2024-01-02"),
+            _frame_for_date("2024-01-05"),
+        ),
+        ignore_index=True,
+    )
+
+    with pytest.raises(ValueError, match="dates after as_of_date"):
+        eligibility_dates_to_build(
+            previous_frame=previous,
+            as_of_date="2024-01-04",
+            trading_sessions=(
+                "2024-01-02",
+                "2024-01-03",
+                "2024-01-04",
+                "2024-01-05",
+            ),
+        )
+
+
 class _DailyBuilder:
     def __init__(self, *, returned_date: str | None = None) -> None:
         self.returned_date = returned_date
@@ -316,6 +424,44 @@ def test_refresh_cumulative_daily_eligibility_can_roll_from_legacy_version(
     assert rolled.max_date == pd.Timestamp("2024-01-03")
     assert legacy.output_dir.is_dir()
     assert pd.read_parquet(legacy.eligibility_path).shape[0] == 2
+
+
+def test_refresh_cumulative_daily_eligibility_backfills_missing_sessions(
+    tmp_path,
+) -> None:
+    publish_daily_eligibility(
+        _frame_for_date("2024-01-02"),
+        root=tmp_path,
+        spec=replace(_spec(), version="history_v1"),
+    )
+    builder = _DailyBuilder()
+
+    publication = refresh_cumulative_daily_eligibility(
+        builder,
+        as_of_date="2024-01-04",
+        root=tmp_path,
+        spec=replace(_spec(), version="20240104"),
+        trading_sessions=(
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+        ),
+    )
+
+    assert builder.requested_dates == [
+        pd.Timestamp("2024-01-03"),
+        pd.Timestamp("2024-01-04"),
+    ]
+    assert publication.row_count == 6
+    assert publication.min_date == pd.Timestamp("2024-01-02")
+    assert publication.max_date == pd.Timestamp("2024-01-04")
+
+    saved = pd.read_parquet(publication.eligibility_path)
+    assert saved.groupby("date").size().to_dict() == {
+        pd.Timestamp("2024-01-02"): 2,
+        pd.Timestamp("2024-01-03"): 2,
+        pd.Timestamp("2024-01-04"): 2,
+    }
 
 
 def test_refresh_cumulative_daily_eligibility_is_idempotent(

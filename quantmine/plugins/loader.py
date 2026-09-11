@@ -28,9 +28,30 @@ def _module_is_allowed(
 ) -> bool:
     if allowed_module_prefixes is None:
         return True
+    if isinstance(allowed_module_prefixes, (str, bytes)):
+        raise TypeError(
+            "allowed_module_prefixes must be an iterable of module prefixes, "
+            "not a string"
+        )
+
+    prefixes = tuple(allowed_module_prefixes)
+
+    for prefix in prefixes:
+        if (
+            not isinstance(prefix, str)
+            or not prefix
+            or prefix.strip() != prefix
+            or not all(
+                part.isidentifier() for part in prefix.split(".")
+            )
+        ):
+            raise ValueError(
+                "allowed module prefixes must be valid trimmed module names"
+            )
+
     return any(
-        module_name == prefix or module_name.startswith(f"{prefix}")
-        for prefix in allowed_module_prefixes
+        module_name == prefix or module_name.startswith(f"{prefix}.")
+        for prefix in prefixes
     )
 
 def resolve_plugin( #动态导入工厂、传入PluginSpec.params、获取组件实例
@@ -50,9 +71,9 @@ def resolve_plugin( #动态导入工厂、传入PluginSpec.params、获取组件
         )
     try: 
         module = import_module(module_name)
-    except AttributeError as error:
+    except ImportError as error:
         raise PluginResolutionError(
-            f"plugin factory '{attribute_name}' was not found in '{module_name}'"
+            f"plugin module '{module_name}' could not be imported"
         ) from error
 
     try:

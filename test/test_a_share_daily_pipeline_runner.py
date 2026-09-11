@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import quantmine.workflows.a_share_daily_pipeline as daily_pipeline
 from quantmine.dataset_versions import AS_OF_DATE_VERSION
 from quantmine.plugins.context import SourceContext
 from quantmine.plugins.contracts import VersionedDatasetBinding
@@ -163,6 +164,41 @@ def test_daily_pipeline_is_idempotent_and_publishes_versioned_outputs(
     eligibility = pd.read_parquet(first.eligibility_publication.eligibility_path)
     assert eligibility["ticker"].tolist() == ["000001", "000002"]
     assert eligibility["is_tradable"].tolist() == [True, False]
+
+
+def test_daily_pipeline_forwards_reference_calendar_to_eligibility_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    context = _context(monkeypatch, tmp_path)
+    _write_reference_data(
+        context.connections.parquet_root("cn_reference_lake")
+    )
+    original_refresh = (
+        daily_pipeline.refresh_a_share_eligibility_from_market_status
+    )
+    observed: dict[str, object] = {}
+
+    def spy_refresh(*args: object, **kwargs: object):
+        observed["trading_sessions"] = kwargs["trading_sessions"]
+        return original_refresh(*args, **kwargs)
+
+    monkeypatch.setattr(
+        daily_pipeline,
+        "refresh_a_share_eligibility_from_market_status",
+        spy_refresh,
+    )
+
+    run_a_share_daily_pipeline(
+        context,
+        config=_config(),
+        as_of_date="2024-01-02",
+        collector=_collector(),
+    )
+
+    assert pd.DatetimeIndex(observed["trading_sessions"]).tolist() == [
+        pd.Timestamp("2024-01-02")
+    ]
 
 
 def test_a_share_session_gate_uses_the_versioned_reference_calendar(
