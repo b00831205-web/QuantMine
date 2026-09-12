@@ -13,6 +13,7 @@ from uuid import uuid4
 import pandas as pd
 
 from ..plugins.contracts import MarketDataBundle
+from ..datareader import MarketData
 
 
 _SAFE_SEGMENT = re.compile(r"[A-Za-z0-9_.-]+\Z")
@@ -77,6 +78,109 @@ class MarketDataPublication:
     date_count: int
     ticker_count: int
     content_sha256: str
+
+def load_latest_market_data_before(
+        root: Path,
+        *,
+        dataset_id: str,
+        as_of_date: pd.Timestamp | str,
+) -> tuple[MarketDataPublication, MarketDataBundle] | None:
+    """Load the newest complete date-versioned market-data publication before a date."""
+
+    if (
+        not isinstance(dataset_id, str)
+        or not dataset_id
+        or not _SAFE_SEGMENT.fullmatch(dataset_id)
+    ):
+        raise ValueError("dataset_id must be a safe non-empty path segment")
+
+    date = pd.Timestamp(as_of_date).normalize()
+    if pd.isna(date):
+        raise ValueError("as_of_date must not be NaT")
+
+    versions_dir = Path(root) / dataset_id /"versions"
+    if not versions_dir.is_dir():
+        return None
+
+    candidates: list[tuple[pd.Timestamp, Path, dict[str, object]]] = []
+
+    for output_dir in versions_dir.iterdir():
+        if not output_dir.is_dir() or output_dir.name.startswith("."):
+            continue
+
+        try:
+            version_date = pd.to_datetime(
+                output_dir.name,
+                format = "%Y%m%d",
+                errors = "raise"
+            ).normalize()
+        except (TypeError, ValueError):
+            continue
+
+        if (
+            output_dir.name != version_date.strftime("%Y%m%d")
+            or version_date >= date
+        ):
+            continue
+
+        close_path = output_dir / "close.parquet"
+        volume_path = output_dir / "volume.parquet"
+        manifest_path = output_dir / "manifest.json"
+        if not (
+            close_path.is_file()
+            and volume_path.is_file()
+            and manifest_path.is_file()
+        ):
+            raise ValueError(
+                f"market-data version directory is incomplete: {output_dir}"
+            )
+
+        try:
+            manifest = json.loads(
+                manifest_path.read_text(encoding = "utf-8")
+            )
+
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise ValueError(
+                f"market-data manifest is invalid: {manifest_path}"
+            ) from error
+
+        if not isinstance(manifest, dict):
+            raise ValueError(
+                f"market-data manifest must be a JSON object: {manifest_path}"
+            )
+
+        if (
+            manifest.get("dataset_id") != dataset_id
+            or manifest.get("version") != output_dir.name
+        ):
+            raise ValueError(
+                f"market-data manifest does not match its version directory: "
+                f"{output_dir}"
+            )
+
+        candidates.append((version_date, output_dir, manifest))
+
+    if not candidates:
+        return None
+
+    _, output_dir, manifest = max(candidates, key = lambda item: item[0])
+    close = pd.read_parquet(output_dir / "close.parquet")
+    volume = pd.read_parquet(output_dir / "volume.parquet")
+
+    return (
+        _publication_from_manifest(output_dir, manifest),
+        MarketDataBundle(
+            market= MarketData(close= close, volume = volume),
+            calendar = pd.DatetimeIndex(close.index),
+            metadata = {
+                "version": manifest["version"],
+                "source": manifest["source"],
+                "frequency": manifest["frequency"],
+                "adjustment": manifest["adjustment"]
+            }
+        )
+    )
 
 def publish_market_data_bundle(
         bundle: MarketDataBundle,

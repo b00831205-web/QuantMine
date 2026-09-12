@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import pandas as pd
+
+from .dataset_versions import (
+    AS_OF_DATE_VERSION,
+    resolve_versioned_dataset_binding
+)
 import json
 from typing import Any, Mapping
 
@@ -187,6 +193,41 @@ class ResearchRunConfig:
             data_binding = binding,
             factor_parameters = factor_parameters
         )
+
+def resolve_research_run_config_for_as_of_date(
+        config: ResearchRunConfig,
+        *,
+        as_of_date: pd.Timestamp | str,
+) -> ResearchRunConfig:
+    """Resolve date-version selectors before one scheduled research run."""
+
+    if not isinstance(config, ResearchRunConfig):
+        raise TypeError("config must be a ResearchRunConfig")
+
+    date = pd.Timestamp(as_of_date)
+    if pd.isna(date):
+        raise ValueError("as_of_date must not be NaT")
+
+    binding = config.data_binding
+    resolved_eligibility = (
+        None
+        if binding.eligibility_binding is None
+        else resolve_versioned_dataset_binding(
+            binding.eligibility_binding,
+            as_of_date=date,
+        )
+    )
+    resolved_version = (
+        date.strftime("%Y%m%d")
+        if binding.version == AS_OF_DATE_VERSION
+        else binding.version
+    )
+    return replace(
+        config,
+        data_binding = replace(
+            binding, version = resolved_version, eligibility_binding = resolved_eligibility
+        )
+    )
 
 def _plugin_spec_snapshot(spec: PluginSpec)-> dict[str, Any]:
     return {

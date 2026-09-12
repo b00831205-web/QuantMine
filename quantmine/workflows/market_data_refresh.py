@@ -154,6 +154,177 @@ def merge_market_data_batches(
         metadata = dict(first.metadata)
     )
 
+def _normalize_history_field(
+        frame: pd.DataFrame | None,
+        *,
+        label: str,
+) -> pd.DataFrame | None:
+    if frame is None:
+        return None
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError(f"{label} must be a pandas DataFrame")
+
+    normalized = frame.copy()
+    normalized.index = pd.DatetimeIndex(
+        pd.to_datetime(normalized.index, errors="raise")
+    )
+    if normalized.index.tz is not None:
+        normalized.index = normalized.index.tz_localize(None)
+
+    if normalized.index.hasnans:
+        raise ValueError(f"{label} contains missing dates")
+
+    if normalized.index.has_duplicates:
+        raise ValueError(f"{label} contains duplicate dates")
+
+    normalized.columns = pd.Index(
+        str(column).strip() for column in normalized.columns
+    )
+    if any(not column for column in normalized.columns):
+        raise ValueError(f"{label} contains an empty ticker")
+
+    if normalized.columns.has_duplicates:
+        raise ValueError(f"{label} contains duplicate tickers")
+
+    try:
+        normalized = normalized.apply(pd.to_numeric, errors="raise")
+
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} contains non-numeric values") from error
+
+    return normalized.sort_index().sort_index(axis = 1)
+
+def _append_history_field(
+        history: pd.DataFrame | None,
+        delta: pd.DataFrame | None,
+        *,
+        label: str,
+        history_dates: pd.DatetimeIndex,
+        delta_dates: pd.DatetimeIndex,
+) -> pd.DataFrame | None:
+    if (history is None) != (delta is None):
+        raise ValueError(
+            f"history and delta have inconsistent {label} availability"
+        )
+
+    if history is None:
+        return None
+
+    if not history.index.equals(history_dates):
+        raise ValueError(
+            f"history {label} dates must match history close dates"
+        )
+
+    if not delta.index.equals(delta_dates):
+        raise ValueError(
+            f"delta {label} dates must match delta close dates"
+        )
+
+    columns = history.columns.union(delta.columns).sort_values()
+    return pd.concat(
+        [
+            history.reindex(columns = columns),
+            delta.reindex(columns = columns),
+        ],
+        axis = 0
+    )
+
+def append_market_data_history(
+        history: MarketDataBundle,
+        delta: MarketDataBundle,
+) -> MarketDataBundle:
+    """Append a strictly later market-data dekta to one historical bundle."""
+
+    if not isinstance(history, MarketDataBundle):
+        raise TypeError("history must be a MarketDataBundle")
+
+    if not isinstance(delta, MarketDataBundle):
+        raise TypeError("delta must be a MarketDataBundle")
+
+    if (
+        history.universe is not None or delta.universe is not None
+    ):
+        raise ValueError(
+            "history append does not merge universe objects"
+        )
+
+    if (
+        history.benchmark is not None or delta.benchmark is not None
+    ):
+        raise ValueError(
+            "history append does not merge benchmark series"
+        )
+
+    history_close = _normalize_history_field(
+        history.market.close,
+        label = "history close"
+    )
+    delta_close = _normalize_history_field(
+        delta.market.close,
+        label = "delta close"
+    )
+    if history_close is None or delta_close is None:
+        raise ValueError("history and delta both require close data")
+
+    if history_close.empty or delta_close.empty:
+        raise ValueError("history and delta close data must not be empty")
+
+    overlapping_dates = history_close.index.intersection(delta_close.index)
+    if not overlapping_dates.empty:
+        raise ValueError(
+            "history and delta contain overlapping dates: "
+            f"{overlapping_dates.strftime('%Y-%m-%d').tolist()}"
+        )
+    if delta_close.index.min() <= history_close.index.max():
+        raise ValueError(
+            "delta market data must begin after history market data"
+        )
+    history_volume = _normalize_history_field(
+        history.market.volume,
+        label ="history volume"
+    )
+    delta_volume = _normalize_history_field(
+        delta.market.volume,
+        label = "delta volumn",
+    )
+    history_market_cap = _normalize_history_field(
+        history.market.market_cap,
+        label = "history market_cap"
+    )
+    delta_market_cap = _normalize_history_field(
+        delta.market.market_cap,
+        label = "delta market_cap",
+    )
+    return MarketDataBundle(
+        market = MarketData(
+            close=_append_history_field(
+                history_close,
+                delta_close,
+                label = "close",
+                history_dates = history_close.index,
+                delta_dates = delta_close.index
+            ),
+            volume = _append_history_field(
+                history_volume,
+                delta_volume,
+                label="volume",
+                history_dates = history_close.index,
+                delta_dates = delta_close.index,
+            ),
+            market_cap = _append_history_field(
+                history_market_cap,
+                delta_market_cap,
+                label = "market_cap",
+                history_dates = history_close.index,
+                delta_dates = delta_close.index,
+            ),
+        ),
+        calendar = pd.DatetimeIndex(
+            history_close.index.append(delta_close.index)
+        ),
+        metadata = dict(history.metadata)
+    )
+
 def load_market_data_batches(
         context: SourceContext,
         *,

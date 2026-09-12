@@ -25,6 +25,7 @@ from quantmine.storage.connections import (
 from quantmine.workflows.market_data_publication import MarketDataPublishSpec
 from quantmine.workflows.market_data_refresh import (
     MarketDataRefreshPolicy,
+    append_market_data_history,
     load_market_data_batches,
     market_data_checkpoint_id,
     merge_market_data_batches,
@@ -378,6 +379,66 @@ def test_merge_market_data_batches_rejects_universe_and_benchmark() -> None:
         merge_market_data_batches((with_universe,))
     with pytest.raises(ValueError, match="benchmark"):
         merge_market_data_batches((with_benchmark,))
+
+
+def _daily_market_delta(
+    date: str,
+    *,
+    tickers: tuple[str, ...] = ("000001", "600000"),
+) -> MarketDataBundle:
+    index = pd.DatetimeIndex(pd.to_datetime([date]))
+    values = {ticker: [position + 10.0] for position, ticker in enumerate(tickers)}
+    return MarketDataBundle(
+        market=MarketData(
+            close=pd.DataFrame(values, index=index),
+            volume=pd.DataFrame(
+                {ticker: [value[0] * 100] for ticker, value in values.items()},
+                index=index,
+            ),
+            market_cap=pd.DataFrame(
+                {ticker: [value[0] * 1_000] for ticker, value in values.items()},
+                index=index,
+            ),
+        ),
+        calendar=index,
+        metadata={"provider": "fixture"},
+    )
+
+
+def test_append_market_data_history_appends_a_daily_delta_and_new_ticker() -> None:
+    combined = append_market_data_history(
+        _market_batch("000001", ["2024-01-02", "2024-01-03"]),
+        _daily_market_delta("2024-01-04"),
+    )
+
+    expected_dates = pd.DatetimeIndex(
+        pd.to_datetime(["2024-01-02", "2024-01-03", "2024-01-04"])
+    )
+    assert combined.market.close.index.equals(expected_dates)
+    assert combined.market.close.columns.tolist() == ["000001", "600000"]
+    assert pd.isna(combined.market.close.loc["2024-01-02", "600000"])
+    assert combined.market.close.loc["2024-01-04", "600000"] == 11.0
+    assert combined.market.volume.columns.tolist() == ["000001", "600000"]
+    assert combined.market.market_cap.columns.tolist() == ["000001", "600000"]
+    assert combined.calendar.equals(expected_dates)
+    assert combined.metadata == {"provider": "fixture"}
+
+
+def test_append_market_data_history_rejects_overlapping_dates() -> None:
+    with pytest.raises(ValueError, match="overlapping dates"):
+        append_market_data_history(
+            _market_batch("000001", ["2024-01-02", "2024-01-03"]),
+            _daily_market_delta("2024-01-03", tickers=("000001",)),
+        )
+
+
+def test_append_market_data_history_rejects_delta_before_history_end() -> None:
+    with pytest.raises(ValueError, match="must begin after"):
+        append_market_data_history(
+            _market_batch("000001", ["2024-01-02", "2024-01-03"]),
+            _daily_market_delta("2024-01-01", tickers=("000001",)),
+        )
+
 
 
 def _batch_component(

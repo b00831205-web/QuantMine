@@ -27,6 +27,7 @@ class PipelineStageRequest:
     context: SourceContext = field(repr = False, compare = False)
     as_of_date: pd.Timestamp
     batch_id:str
+    allowed_module_prefixes: tuple[str, ...] | None = ("quantmine",)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -79,6 +80,9 @@ def run_pipeline_stage(
         context,
         as_of_date,
         batch_id,
+        allowed_module_prefixes=(
+            None if allowed_module_prefixes is None else tuple(allowed_module_prefixes)
+        )
     )
     plugin = resolve_plugin(
         stage.plugin,

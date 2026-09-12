@@ -52,6 +52,60 @@ def create_run(
         result = connection.execute(statement)
         return int(result.inserted_primary_key[0])
 
+def get_or_create_research_run_for_batch(
+        engine: Engine,
+        config: "ResearchRunConfig",
+        *,
+        batch_id: str,
+        git_commit: str | None = None
+) -> int:
+    """Return the one persisted research run associated with an Airflow batch."""
+
+    if not isinstance(batch_id, str) or not batch_id.strip():
+        raise ValueError("batch_id must be a non-empty string")
+
+    normalized_batch = batch_id.strip()
+    snapshot = config.to_snapshot()
+    snapshot["airflow_batch"] = normalized_batch
+
+    metadata = MetaData()
+    research_runs = Table("research_runs", metadata, autoload_with=engine)
+    statement = (
+        select(
+            research_runs.c.run_id,
+            research_runs.c.config_snapshot,
+        )
+        .where(
+            research_runs.c.config_snapshot["airflow_batch"].as_string() == normalized_batch
+        )
+        .order_by(research_runs.c.run_id.desc())
+        .limit(1)
+    )
+
+    with engine.begin() as connection:
+        existing = connection.execute(statement).mappings().first()
+        if existing is not None:
+            from ..research_config import ResearchRunConfig
+
+            existing_config = ResearchRunConfig.from_snapshot(
+                existing["config_snapshot"]
+            )
+            if existing_config != config:
+                raise ValueError(
+                    "Airflow batch already belongs to a different "
+                    "research configuration"
+                )
+
+            return int(existing["run_id"])
+
+        result = connection.execute(
+            insert(research_runs).values(
+                config_snapshot = snapshot,
+                git_commit = git_commit or get_current_git_commit(),
+            )
+        )
+        return int(result.inserted_primary_key[0])
+
 @runtime_checkable
 class ResearchRunStore(Protocol):
     """Persistence boundary for reproducible research-run inputs"""

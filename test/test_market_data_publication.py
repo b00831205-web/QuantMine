@@ -23,6 +23,7 @@ from quantmine.storage.connections import (
 )
 from quantmine.workflows.market_data_publication import (
     MarketDataPublishSpec,
+    load_latest_market_data_before,
     publish_market_data_bundle,
 )
 
@@ -117,6 +118,58 @@ def test_publish_market_data_bundle_is_idempotent_for_identical_content(
     second = publish_market_data_bundle(_bundle(), root=tmp_path, spec=_spec())
 
     assert second == first
+
+
+def test_load_latest_market_data_before_returns_latest_prior_version(
+    tmp_path: Path,
+) -> None:
+    first = publish_market_data_bundle(
+        _bundle(),
+        root=tmp_path,
+        spec=MarketDataPublishSpec(
+            dataset_id="cn_a_share_daily_bars",
+            market="CN",
+            version="20240102",
+            source="fixture",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+    )
+    second = publish_market_data_bundle(
+        _bundle(close_shift=2.0),
+        root=tmp_path,
+        spec=MarketDataPublishSpec(
+            dataset_id="cn_a_share_daily_bars",
+            market="CN",
+            version="20240103",
+            source="fixture",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+    )
+
+    loaded = load_latest_market_data_before(
+        tmp_path,
+        dataset_id="cn_a_share_daily_bars",
+        as_of_date="2024-01-04",
+    )
+
+    assert loaded is not None
+    publication, bundle = loaded
+    assert publication == second
+    assert publication != first
+    assert bundle.market.close.loc["2024-01-02", "000001"] == 22.0
+    assert bundle.market.volume.loc["2024-01-03", "600000"] == 1_100
+
+
+def test_load_latest_market_data_before_returns_none_without_prior_version(
+    tmp_path: Path,
+) -> None:
+    assert load_latest_market_data_before(
+        tmp_path,
+        dataset_id="cn_a_share_daily_bars",
+        as_of_date="2024-01-04",
+    ) is None
 
 
 def test_publish_market_data_bundle_rejects_changed_existing_version(

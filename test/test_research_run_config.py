@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 
 import pytest
 from sqlalchemy import Column, Integer, JSON, MetaData, String, Table, create_engine
 
 from quantmine.plugins.contracts import DataBinding, VersionedDatasetBinding
-from quantmine.research_config import ResearchRunConfig
+from quantmine.research_config import (
+    ResearchRunConfig,
+    resolve_research_run_config_for_as_of_date,
+)
 from quantmine.storage.runs import (
     ResearchRunStore,
     SQLAlchemyResearchRunStore,
     create_research_run,
+    get_or_create_research_run_for_batch,
     load_research_run_config,
 )
 
@@ -107,6 +112,32 @@ def test_research_run_config_reads_a_v2_snapshot_without_market_data_version() -
     assert restored.data_binding.version is None
 
 
+def test_research_run_config_resolves_as_of_date_dataset_versions() -> None:
+    config = ResearchRunConfig.from_bundle_id(
+        "cn_a_share_v1",
+        replace(
+            _binding(),
+            version="{as_of_date}",
+            eligibility_binding=VersionedDatasetBinding(
+                connection_ref="cn_eligibility_lake",
+                dataset="cn_daily_eligibility",
+                market="CN",
+                version="{as_of_date}",
+            ),
+        ),
+    )
+
+    resolved = resolve_research_run_config_for_as_of_date(
+        config,
+        as_of_date="2026-09-14 18:00:00+08:00",
+    )
+
+    assert config.data_binding.version == "{as_of_date}"
+    assert config.data_binding.eligibility_binding.version == "{as_of_date}"
+    assert resolved.data_binding.version == "20260914"
+    assert resolved.data_binding.eligibility_binding.version == "20260914"
+
+
 def test_research_run_config_rejects_non_json_factor_parameters() -> None:
     config = ResearchRunConfig.from_bundle_id(
         "us_equity_v1",
@@ -168,3 +199,75 @@ def test_sqlalchemy_store_implements_the_research_run_store_contract() -> None:
 
     assert isinstance(store, ResearchRunStore)
     assert store.load(store.create(config, git_commit="test-commit")) == config
+
+
+def _research_run_engine():
+    engine = create_engine("sqlite://")
+    metadata = MetaData()
+    Table(
+        "research_runs",
+        metadata,
+        Column("run_id", Integer, primary_key=True, autoincrement=True),
+        Column("config_snapshot", JSON, nullable=False),
+        Column("git_commit", String),
+    )
+    metadata.create_all(engine)
+    return engine
+
+
+def test_get_or_create_research_run_for_batch_reuses_one_matching_run() -> None:
+    engine = _research_run_engine()
+    config = ResearchRunConfig.from_bundle_id("us_equity_v1", _binding())
+
+    first = get_or_create_research_run_for_batch(
+        engine,
+        config,
+        batch_id="scheduled__2026-09-14",
+        git_commit="test-commit",
+    )
+    second = get_or_create_research_run_for_batch(
+        engine,
+        config,
+        batch_id="scheduled__2026-09-14",
+        git_commit="test-commit",
+    )
+
+    assert first == second == 1
+    metadata = MetaData()
+    table = Table("research_runs", metadata, autoload_with=engine)
+    with engine.connect() as connection:
+        snapshots = connection.execute(
+            table.select()
+        ).mappings().all()
+    assert len(snapshots) == 1
+    assert snapshots[0]["config_snapshot"]["airflow_batch"] == (
+        "scheduled__2026-09-14"
+    )
+
+
+def test_get_or_create_research_run_for_batch_rejects_changed_config() -> None:
+    engine = _research_run_engine()
+    original = ResearchRunConfig.from_bundle_id(
+        "us_equity_v1",
+        _binding(),
+        factor_parameters={"day": 5},
+    )
+    changed = ResearchRunConfig.from_bundle_id(
+        "us_equity_v1",
+        _binding(),
+        factor_parameters={"day": 10},
+    )
+    get_or_create_research_run_for_batch(
+        engine,
+        original,
+        batch_id="manual__same-batch",
+        git_commit="test-commit",
+    )
+
+    with pytest.raises(ValueError, match="different research configuration"):
+        get_or_create_research_run_for_batch(
+            engine,
+            changed,
+            batch_id="manual__same-batch",
+            git_commit="test-commit",
+        )
