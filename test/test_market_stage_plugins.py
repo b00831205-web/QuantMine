@@ -26,6 +26,7 @@ from quantmine.workflows.eligibility import EligibilityPublication
 from quantmine.workflows.market_status_publication import (
     MarketStatusPublication,
 )
+from quantmine.workflows.market_data_publication import MarketDataPublication
 
 
 def _request(tmp_path: Path) -> PipelineStageRequest:
@@ -77,6 +78,49 @@ def _a_share_config() -> dict[str, object]:
             "version": "history_v1",
         },
         "eligibility_rule_version": "cn_equity_v1",
+    }
+
+
+def _a_share_daily_market_data_config() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "source": {
+            "entry_point": (
+                "quantmine.plugins.akshare:"
+                "create_akshare_a_stock_data_source"
+            ),
+            "params": {"default_adjustment": "hfq"},
+        },
+        "binding": {
+            "connection_ref": None,
+            "dataset": "akshare_a_share_history",
+            "start": AS_OF_DATE_VERSION,
+            "end": AS_OF_DATE_VERSION,
+            "adjustment": "hfq",
+            "metadata": {},
+        },
+        "reference_binding": {
+            "connection_ref": "cn_reference",
+            "dataset": "cn_a_share_reference",
+            "market": "CN",
+            "version": AS_OF_DATE_VERSION,
+        },
+        "output_connection_ref": "cn_market_data",
+        "publication": {
+            "dataset_id": "cn_a_share_daily_bars",
+            "market": "CN",
+            "version": AS_OF_DATE_VERSION,
+            "source": "akshare_stock_zh_a_hist",
+            "frequency": "daily",
+            "adjustment": "hfq",
+            "schema_version": "market_data_bundle_v1",
+        },
+        "policy": {
+            "batch_size": 50,
+            "max_retries": 3,
+            "checkpoint_connection_ref": "cn_market_checkpoint",
+            "resume": True,
+        },
     }
 
 
@@ -254,4 +298,60 @@ def test_a_share_production_stage_returns_only_serializable_artifact_metadata(
         ),
         "eligibility_row_count": 100000,
         "eligibility_content_sha256": "eligibility-sha",
+    }
+
+
+def test_a_share_cumulative_market_data_stage_forwards_runtime_controls(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    output_dir = tmp_path / "market_data" / "versions" / "20260904"
+    publication = MarketDataPublication(
+        output_dir=output_dir,
+        close_path=output_dir / "close.parquet",
+        volume_path=output_dir / "volume.parquet",
+        manifest_path=output_dir / "manifest.json",
+        date_count=1600,
+        ticker_count=5200,
+        content_sha256="market-data-sha",
+    )
+    observed = {}
+
+    def fake_run(
+        context,
+        *,
+        config,
+        as_of_date,
+        allowed_module_prefixes,
+    ):
+        observed["context"] = context
+        observed["config"] = config
+        observed["date"] = as_of_date
+        observed["allowed_module_prefixes"] = allowed_module_prefixes
+        return publication
+
+    monkeypatch.setattr(
+        market_stages,
+        "run_configured_a_share_cumulative_refresh",
+        fake_run,
+    )
+    plugin = market_stages.create_a_share_cumulative_market_data_refresh(
+        config=_a_share_daily_market_data_config()
+    )
+    request = _request(tmp_path)
+
+    result = plugin.run(request)
+
+    assert observed["context"] is request.context
+    assert observed["config"].binding.start == AS_OF_DATE_VERSION
+    assert observed["date"] == pd.Timestamp("2026-09-04")
+    assert observed["allowed_module_prefixes"] == ("quantmine",)
+    assert result.metadata == {
+        "market_data_version": "20260904",
+        "market_data_dir": str(output_dir),
+        "close_path": str(output_dir / "close.parquet"),
+        "volume_path": str(output_dir / "volume.parquet"),
+        "date_count": 1600,
+        "ticker_count": 5200,
+        "market_data_content_sha256": "market-data-sha",
     }

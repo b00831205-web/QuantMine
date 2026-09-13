@@ -120,6 +120,45 @@ a_share_daily_pipeline: &a_share_daily_pipeline
     max_missing_count: 5
     max_missing_ratio: 0.001
 
+a_share_daily_market_data_refresh: &a_share_daily_market_data_refresh
+  schema_version: 1
+
+  source:
+    entry_point: quantmine.plugins.akshare:create_akshare_a_stock_data_source
+    params:
+      default_adjustment: hfq
+
+  binding:
+    connection_ref: null
+    dataset: akshare_a_share_history
+    start: "{as_of_date}"
+    end: "{as_of_date}"
+    adjustment: hfq
+    metadata: {}
+
+  reference_binding:
+    connection_ref: cn_reference
+    dataset: cn_a_share_reference
+    market: CN
+    version: "{as_of_date}"
+
+  output_connection_ref: cn_market_data
+
+  publication:
+    dataset_id: cn_a_share_daily_bars
+    market: CN
+    version: "{as_of_date}"
+    source: akshare_stock_zh_a_hist
+    frequency: daily
+    adjustment: hfq
+    schema_version: market_data_bundle_v1
+
+  policy:
+    batch_size: 50
+    max_retries: 3
+    checkpoint_connection_ref: cn_market_checkpoint
+    resume: true
+
 market_pipelines:
   - schema_version: 1
     id: cn_a_share_daily
@@ -132,6 +171,8 @@ market_pipelines:
       - cn_reference
       - cn_status
       - cn_eligibility
+      - cn_market_data
+      - cn_market_checkpoint
     stages:
       - id: session_gate
         kind: session_gate
@@ -157,6 +198,15 @@ market_pipelines:
           entry_point: quantmine.plugins.market_stages:create_a_share_daily_production
           params:
             config: *a_share_daily_pipeline
+
+      - id: market_data_refresh
+        kind: task
+        upstream:
+          - daily_production
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_cumulative_market_data_refresh
+          params:
+            config: *a_share_daily_market_data_refresh
     metadata:
       market: CN
       frequency: daily

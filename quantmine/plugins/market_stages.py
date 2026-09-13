@@ -14,6 +14,7 @@ from ..workflows.a_share_daily_pipeline import(
 
 from ..dataset_versions import resolve_versioned_dataset_binding
 from ..workflows.a_share_reference_refresh import refresh_akshare_a_stock_reference
+from ..workflows.a_share_market_data_refresh import (AStockDailyMarketDataRefreshConfig, run_configured_a_share_cumulative_refresh)
 
 from ..workflows.trading_sessions import ExchangeCalendarSessionGate
 
@@ -52,6 +53,39 @@ class AShareReferenceRefreshStage:
                 "reference_content_sha256": (
                     publication.content_sha256
                 ),
+            }
+        )
+
+@dataclass(frozen=True)
+class AShareCumulativeMarketDataRefreshStage:
+    """Publish one cumulative A-share market-data version."""
+
+    config: AStockDailyMarketDataRefreshConfig
+
+    def run(
+            self,
+            request: PipelineStageRequest,
+    ) -> PipelineStageResult:
+        publication = run_configured_a_share_cumulative_refresh(
+            request.context,
+            config = self.config,
+            as_of_date= request.as_of_date,
+            allowed_module_prefixes=request.allowed_module_prefixes,
+        )
+
+        return PipelineStageResult(
+            metadata={
+                "market_data_version": (
+                    request.as_of_date.strftime("%Y%m%d")
+                ),
+                "market_data_dir": str(publication.output_dir),
+                "close_path": str(publication.close_path),
+                "volume_path": str(publication.volume_path),
+                "date_count": publication.date_count,
+                "ticker_count": publication.ticker_count,
+                "market_data_content_sha256": (
+                    publication.content_sha256
+                )
             }
         )
 
@@ -158,3 +192,13 @@ def create_a_share_reference_refresh(
     """Create the A-share reference refresh stage."""
 
     return AShareReferenceRefreshStage(config = AStockDailyPipelineConfig.from_mapping(config))
+
+def create_a_share_cumulative_market_data_refresh(
+        *,
+        config: Mapping[str, Any],
+) -> AShareCumulativeMarketDataRefreshStage:
+    """Create the configured cumulative A-share market-data stage."""
+
+    return AShareCumulativeMarketDataRefreshStage(
+        config = AStockDailyMarketDataRefreshConfig.from_mapping(config)
+    )

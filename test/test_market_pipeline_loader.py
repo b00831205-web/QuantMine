@@ -145,12 +145,15 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "session_gate",
         "reference_refresh",
         "daily_production",
+        "market_data_refresh",
     )
     assert definition.connection_refs == (
         "cn_raw",
         "cn_reference",
         "cn_status",
         "cn_eligibility",
+        "cn_market_data",
+        "cn_market_checkpoint",
     )
     assert definition.stages[0].plugin.entry_point == (
         "quantmine.plugins.market_stages:create_exchange_calendar_session_gate"
@@ -162,6 +165,18 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     assert definition.stages[2].plugin.entry_point == (
         "quantmine.plugins.market_stages:create_a_share_daily_production"
     )
+    assert definition.stages[3].plugin.entry_point == (
+        "quantmine.plugins.market_stages:"
+        "create_a_share_cumulative_market_data_refresh"
+    )
+    assert definition.stages[3].upstream == ("daily_production",)
     assert definition.stages[1].plugin.params["config"] == (
         definition.stages[2].plugin.params["config"]
     )
+    market_data_config = definition.stages[3].plugin.params["config"]
+    assert market_data_config["binding"]["start"] == "{as_of_date}"
+    assert market_data_config["binding"]["end"] == "{as_of_date}"
+    assert market_data_config["reference_binding"]["version"] == (
+        "{as_of_date}"
+    )
+    assert market_data_config["publication"]["version"] == "{as_of_date}"
