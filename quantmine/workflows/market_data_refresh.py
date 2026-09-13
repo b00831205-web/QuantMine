@@ -25,6 +25,13 @@ from ..plugins.contracts import (
     MarketDataBundle
 )
 
+from .market_data_publication import (
+    MarketDataPublication,
+    MarketDataPublishSpec,
+    load_latest_market_data_before,
+    publish_market_data_bundle,
+)
+
 from .market_data_checkpoints import (
     load_market_data_batch_checkpoint,
     save_market_data_batch_checkpoint,
@@ -323,6 +330,63 @@ def append_market_data_history(
             history_close.index.append(delta_close.index)
         ),
         metadata = dict(history.metadata)
+    )
+
+def publish_cumulative_market_data(
+        context: SourceContext,
+        *,
+        delta: MarketDataBundle,
+        output_connection_ref: str,
+        spec: MarketDataPublishSpec,
+        as_of_date: pd.Timestamp | str,
+) -> MarketDataPublication:
+    """Publish a new immutable full-history version from one market-data delta."""
+
+    if not isinstance(context, SourceContext):
+        raise TypeError("context must be a SourceContext")
+
+    if not isinstance(delta, MarketDataBundle):
+        raise TypeError("delta must be a MarketDataBundle")
+
+    if not isinstance(spec, MarketDataPublishSpec):
+        raise TypeError("spec must be a MarketDataPublishSpec")
+
+    if (
+        not isinstance(output_connection_ref, str)
+        or not output_connection_ref
+        or output_connection_ref.strip() != output_connection_ref
+    ):
+        raise ValueError(
+            "output_connection_ref must be a non-empty trimmed string"
+        )
+
+    output_root = context.connections.writable_parquet_root(
+        output_connection_ref
+    )
+
+    publication_delta = MarketDataBundle(
+        market = MarketData(
+            close = delta.market.close,
+            volume = delta.market.volume,
+        ),
+        calendar = delta.calendar,
+        metadata = dict(delta.metadata),
+    )
+
+    previous = load_latest_market_data_before(
+        output_root,
+        dataset_id= spec.dataset_id,
+        as_of_date=as_of_date
+    )
+    cumulative = (
+        publication_delta if previous is None
+        else append_market_data_history(previous[1], publication_delta)
+    )
+
+    return publish_market_data_bundle(
+        cumulative,
+        root = output_root,
+        spec = spec,
     )
 
 def load_market_data_batches(

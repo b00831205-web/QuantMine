@@ -24,6 +24,7 @@ from quantmine.storage.connections import (
 )
 from quantmine.workflows.a_share_market_data_refresh import (
     AStockHistoryRefreshConfig,
+    refresh_a_share_cumulative_market_data,
     refresh_a_share_historical_market_data,
     run_configured_a_share_history_refresh,
 )
@@ -64,6 +65,39 @@ class RecordingAStockSource:
         )
 
 
+class DailyRecordingAStockSource:
+    """Return exactly the requested single-session panel."""
+
+    def __init__(self) -> None:
+        self.bindings: list[DataBinding] = []
+
+    def load(
+        self,
+        binding: DataBinding,
+        context: SourceContext,
+    ) -> MarketDataBundle:
+        del context
+        self.bindings.append(binding)
+        date = pd.Timestamp(binding.start).normalize()
+        close = pd.DataFrame(
+            {
+                ticker: [10.0 + offset + date.day]
+                for offset, ticker in enumerate(binding.tickers)
+            },
+            index=pd.DatetimeIndex([date], name="date"),
+        )
+        volume = pd.DataFrame(
+            {
+                ticker: [1_000 + offset]
+                for offset, ticker in enumerate(binding.tickers)
+            },
+            index=pd.DatetimeIndex([date], name="date"),
+        )
+        return MarketDataBundle(
+            market=MarketData(close=close, volume=volume)
+        )
+
+
 def _write_reference(root: Path) -> None:
     version_root = root / "cn_reference" / "versions" / "reference_v1"
     version_root.mkdir(parents=True)
@@ -92,6 +126,17 @@ def _write_reference(root: Path) -> None:
     pd.DataFrame(
         {"date": pd.to_datetime(["2024-01-02", "2024-01-03"])}
     ).to_parquet(version_root / "trading_calendar.parquet", index=False)
+
+
+def _publish_spec(*, version: str) -> MarketDataPublishSpec:
+    return MarketDataPublishSpec(
+        dataset_id="cn_a_share_daily_bars",
+        market="CN",
+        version=version,
+        source="fixture",
+        frequency="daily",
+        adjustment="hfq",
+    )
 
 
 def test_a_share_refresh_derives_window_tickers_then_uses_generic_refresh(
@@ -172,6 +217,90 @@ def test_a_share_refresh_derives_window_tickers_then_uses_generic_refresh(
         / "versions"
         / "bars_v1"
     )
+
+
+def test_a_share_cumulative_refresh_publishes_full_history_from_daily_delta(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    reference_root = tmp_path / "reference_lake"
+    output_root = tmp_path / "market_data_lake"
+    output_root.mkdir()
+    _write_reference(reference_root)
+    monkeypatch.setenv("QUANTMINE_TEST_CN_REFERENCE_ROOT", str(reference_root))
+    monkeypatch.setenv("QUANTMINE_TEST_CN_MARKET_DATA_ROOT", str(output_root))
+    context = SourceContext(
+        connections=ConnectionRegistry(
+            {
+                "cn_reference": DataConnectionConfig(
+                    kind=ConnectionKind.PARQUET,
+                    root_env="QUANTMINE_TEST_CN_REFERENCE_ROOT",
+                    read_only=True,
+                ),
+                "cn_market_data": DataConnectionConfig(
+                    kind=ConnectionKind.PARQUET,
+                    root_env="QUANTMINE_TEST_CN_MARKET_DATA_ROOT",
+                    read_only=False,
+                ),
+            }
+        ),
+        run_id=202,
+        artifact_dir=tmp_path / "artifacts",
+    )
+    source = DailyRecordingAStockSource()
+    component = DataSourceComponent(
+        id="daily_recording_a_stock_source",
+        capabilities=frozenset(
+            {MarketDataCapability.CLOSE, MarketDataCapability.VOLUME}
+        ),
+        plugin=source,
+    )
+    reference_binding = VersionedDatasetBinding(
+        connection_ref="cn_reference",
+        dataset="cn_reference",
+        market="CN",
+        version="reference_v1",
+    )
+
+    first = refresh_a_share_cumulative_market_data(
+        context,
+        source_component=component,
+        binding=DataBinding(
+            connection_ref=None,
+            dataset="provider_request",
+            start="2024-01-02",
+            end="2024-01-02",
+            adjustment="hfq",
+        ),
+        reference_binding=reference_binding,
+        output_connection_ref="cn_market_data",
+        publish_spec=_publish_spec(version="20240102"),
+    )
+    second = refresh_a_share_cumulative_market_data(
+        context,
+        source_component=component,
+        binding=DataBinding(
+            connection_ref=None,
+            dataset="provider_request",
+            start="2024-01-03",
+            end="2024-01-03",
+            adjustment="hfq",
+        ),
+        reference_binding=reference_binding,
+        output_connection_ref="cn_market_data",
+        publish_spec=_publish_spec(version="20240103"),
+    )
+
+    assert first.date_count == 1
+    assert second.date_count == 2
+    assert source.bindings[0].tickers == ("000001",)
+    assert source.bindings[1].tickers == ("000001", "000004")
+    close = pd.read_parquet(second.close_path)
+    assert close.index.equals(
+        pd.DatetimeIndex(["2024-01-02", "2024-01-03"], name="date")
+    )
+    assert close.columns.tolist() == ["000001", "000004"]
+    assert pd.isna(close.loc[pd.Timestamp("2024-01-02"), "000004"])
 
 
 def test_a_share_refresh_requires_a_bounded_history_window(

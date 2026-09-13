@@ -30,6 +30,7 @@ from quantmine.workflows.market_data_refresh import (
     market_data_checkpoint_id,
     merge_market_data_batches,
     partition_data_binding,
+    publish_cumulative_market_data,
     refresh_market_data,
 )
 
@@ -438,6 +439,53 @@ def test_append_market_data_history_rejects_delta_before_history_end() -> None:
             _market_batch("000001", ["2024-01-02", "2024-01-03"]),
             _daily_market_delta("2024-01-01", tickers=("000001",)),
         )
+
+
+def test_publish_cumulative_market_data_appends_to_latest_prior_version(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path, read_only=False)
+    monkeypatch.setenv(
+        "QUANTMINE_TEST_REFRESH_ROOT",
+        str(tmp_path / "lake"),
+    )
+    first = publish_cumulative_market_data(
+        context,
+        delta=_daily_market_delta("2024-01-02", tickers=("000001",)),
+        output_connection_ref="market_data_output",
+        spec=MarketDataPublishSpec(
+            dataset_id="cn_a_share_daily_bars",
+            market="CN",
+            version="20240102",
+            source="fixture",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+        as_of_date="2024-01-02",
+    )
+    second = publish_cumulative_market_data(
+        context,
+        delta=_daily_market_delta("2024-01-03", tickers=("000001",)),
+        output_connection_ref="market_data_output",
+        spec=MarketDataPublishSpec(
+            dataset_id="cn_a_share_daily_bars",
+            market="CN",
+            version="20240103",
+            source="fixture",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+        as_of_date="2024-01-03",
+    )
+
+    assert first.date_count == 1
+    assert second.date_count == 2
+    combined = pd.read_parquet(second.close_path)
+    assert combined.index.equals(
+        pd.DatetimeIndex(["2024-01-02", "2024-01-03"], name="date")
+    )
+    assert combined["000001"].tolist() == [10.0, 10.0]
 
 
 
