@@ -127,6 +127,7 @@ a_share_daily_market_data_refresh: &a_share_daily_market_data_refresh
     entry_point: quantmine.plugins.akshare:create_akshare_a_stock_data_source
     params:
       default_adjustment: hfq
+      request_interval_seconds: 0.5
 
   binding:
     connection_ref: null
@@ -219,6 +220,7 @@ a_share_history_refresh:
     entry_point: quantmine.plugins.akshare:create_akshare_a_stock_data_source
     params:
       default_adjustment: hfq
+      request_interval_seconds: 0.5
 
   binding:
     connection_ref: null

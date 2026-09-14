@@ -121,3 +121,73 @@ def test_akshare_component_declares_api_capabilities_without_a_connection() -> N
     assert not component.retry_classifier(
         ValueError("invalid provider schema")
     )
+
+
+def test_akshare_plugin_throttles_between_ticker_requests(
+    tmp_path: Path,
+) -> None:
+    sleeps: list[float] = []
+
+    def history_loader(**kwargs: str) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "日期": ["2024-01-02"],
+                "收盘": [10.0],
+                "成交量": [100.0],
+            }
+        )
+
+    plugin = AkShareAStockDataSourcePlugin(
+        history_loader=history_loader,
+        request_interval_seconds=0.5,
+        sleeper=sleeps.append,
+    )
+
+    plugin.load(_binding(), _context(tmp_path))
+
+    assert sleeps == [0.5]
+
+
+def test_akshare_plugin_retries_only_the_failed_ticker_request(
+    tmp_path: Path,
+) -> None:
+    attempts: list[str] = []
+    sleeps: list[float] = []
+
+    def history_loader(**kwargs: str) -> pd.DataFrame:
+        attempts.append(kwargs["symbol"])
+        if len(attempts) == 1:
+            raise requests.exceptions.ConnectionError(
+                "temporary provider disconnect"
+            )
+        return pd.DataFrame(
+            {
+                "日期": ["2024-01-02"],
+                "收盘": [10.0],
+                "成交量": [100.0],
+            }
+        )
+
+    plugin = AkShareAStockDataSourcePlugin(
+        history_loader=history_loader,
+        sleeper=sleeps.append,
+    )
+
+    result = plugin.load(
+        _binding(tickers=("000001",)),
+        _context(tmp_path),
+    )
+
+    assert attempts == ["000001", "000001"]
+    assert sleeps == [1.0]
+    assert result.market.close.loc[
+        pd.Timestamp("2024-01-02"), "000001"
+    ] == 10.0
+
+
+@pytest.mark.parametrize("value", [-0.1, True, "0.5"])
+def test_akshare_plugin_rejects_invalid_request_interval(value: object) -> None:
+    with pytest.raises((TypeError, ValueError), match="request_interval_seconds"):
+        AkShareAStockDataSourcePlugin(
+            request_interval_seconds=value,
+        )

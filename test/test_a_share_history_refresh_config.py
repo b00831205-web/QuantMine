@@ -111,6 +111,17 @@ a_share_history_refresh:
     assert config.to_mapping() == _payload()
 
 
+def test_example_history_refresh_enables_provider_throttling() -> None:
+    example_path = Path(__file__).parents[1] / "config.example.yaml"
+
+    config = load_a_share_history_refresh_config(example_path)
+
+    assert config.source.params == {
+        "default_adjustment": "hfq",
+        "request_interval_seconds": 0.5,
+    }
+
+
 def test_history_refresh_config_round_trips_custom_policy() -> None:
     payload = _payload()
     payload["policy"] = {

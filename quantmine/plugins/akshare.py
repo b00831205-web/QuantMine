@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import pandas as pd
+import time
+
 
 from ..datareader import MarketData
 from .context import SourceContext
@@ -16,7 +18,8 @@ from .contracts import (
     MarketDataCapability
 )
 
-from ..http_resilience import is_transient_http_error
+from ..http_resilience import is_transient_http_error, retry_http_call
+from ..resilience import Sleeper
 
 HistoryLoader = Callable[..., pd.DataFrame]
 
@@ -31,6 +34,12 @@ class AkShareAStockDataSourcePlugin:
         repr = False,
         compare = False
     )
+    request_interval_seconds: float = 0.0
+    sleeper: Sleeper = field(
+        default = time.sleep,
+        repr=False,
+        compare=False,
+    )
 
     default_adjustment: str = "hfq"
 
@@ -39,6 +48,17 @@ class AkShareAStockDataSourcePlugin:
             raise ValueError(
                 "default_adjustment must be one of: '', qfq, hfq"
             )
+        if (not isinstance(self.request_interval_seconds, (int, float)) or isinstance(self.request_interval_seconds, bool)):
+            raise TypeError(
+                "request_interval_seconds must be a number"
+            )
+
+        if self.request_interval_seconds < 0:
+            raise ValueError(
+                "request_interval_seconds must be non-negative"
+            )
+        if not callable(self.sleeper):
+            raise TypeError("sleeper must be callable")
 
     def load(
             self,
@@ -73,13 +93,23 @@ class AkShareAStockDataSourcePlugin:
         close_frames : dict[str, pd.Series] = {}
         volume_frames: dict[str, pd.Series] = {}
 
-        for ticker in binding.tickers:
-            frame = loader(
-                symbol = ticker,
-                period = 'daily',
-                start_date = start_date,
-                end_date = end_date,
-                adjust = adjustment,
+        for position, ticker in enumerate(binding.tickers):
+            if position >0 and self.request_interval_seconds > 0:
+                self.sleeper(float(self.request_interval_seconds))
+
+            def load_ticker() -> pd.DataFrame:
+                return loader(
+                    symbol = ticker,
+                    period = "daily",
+                    start_date = start_date,
+                    end_date = end_date,
+                    adjust = adjustment
+                )
+
+            frame = retry_http_call(
+                load_ticker,
+                label = f"AkShare history request for {ticker}",
+                sleeper = self.sleeper
             )
 
             _validate_provider_frame(frame, ticker)

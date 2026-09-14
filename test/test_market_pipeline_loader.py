@@ -174,6 +174,10 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         definition.stages[2].plugin.params["config"]
     )
     market_data_config = definition.stages[3].plugin.params["config"]
+    assert market_data_config["source"]["params"] == {
+        "default_adjustment": "hfq",
+        "request_interval_seconds": 0.5,
+    }
     assert market_data_config["binding"]["start"] == "{as_of_date}"
     assert market_data_config["binding"]["end"] == "{as_of_date}"
     assert market_data_config["reference_binding"]["version"] == (
