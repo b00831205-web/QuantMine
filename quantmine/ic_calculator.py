@@ -20,6 +20,16 @@ from .registry import make_registry
 import inspect
 from pathlib import Path
 
+from .plugins.context import SourceContext
+from .plugins.ic_engines import (
+    ICCalculationComponent,
+    ICCalculationRequest,
+    ICScopeInput,
+    calculate_ic_component,
+    create_python_ic_calculation_engine,
+)
+from .storage.connections import ConnectionRegistry
+
 # IC data models and factor selectors now live in ic_models; re-exported here so
 # existing `from quantmine.ic_calculator import ICVariant/TestResult/...` keep working.
 from .ic_models import (
@@ -573,32 +583,50 @@ def prepare_ic_inputs(close: pd.DataFrame, factors: dict[str, pd.DataFrame], tra
         'forward_returns': split_train_test(forward_returns, train_end, test_start)
     }
 
-def calculate_ic(prepared_input, output_path: str | Path | None = None):
-    """Compute the cross-sectional IC series for each scope.
+def calculate_ic(prepared_input, output_path: str | Path | None = None, component: ICCalculationComponent | None = None, context: SourceContext | None = None):
+    """Compute IC through a replaceable engine while preserving the old result."""
 
-    Args:
-        prepared_input: Output of ``prepare_ic_inputs``.
-        output_path: Optional parquet path; the scope name is inserted so
-            train and test never overwrite each other.
 
-    Returns:
-        Per-scope IC results keyed by ``train`` and ``test``.
-    """
-    results = {}
-    path = Path(output_path) if output_path is not None else None
-    for scope in ('train', 'test'):
-        scope_output_path = None
-        if path is not None:
-            scope_output_path = str(
-                path.parent / f'{path.stem}_{scope}{path.suffix}'
+    request = ICCalculationRequest(
+        scopes = {
+            scope: ICScopeInput(
+                factors = prepared_input["factors"][scope],
+                forward_returns = prepared_input["forward_returns"][scope],
             )
+            for scope in ("train", "test")
+        },
+        method = "pearson",
+    )
 
-        cs_ic, _ = CS_Information_Correlation(
-            prepared_input['factors'][scope],
-            prepared_input['forward_returns'][scope],
-            scope_output_path,
+    path = Path(output_path) if output_path is not None else None
+
+    active_component = (
+        component if component is not None else create_python_ic_calculation_engine()
+    )
+    active_context = (
+        context if context is not None
+        else SourceContext(
+            connections = ConnectionRegistry({}),
+            run_id = 0,
+            artifact_dir = (
+                path.parent if path is not None else Path.cwd() / "artifacts"
+            ),
         )
-        results[scope] = cs_ic
+    )
+
+    calculation_result = calculate_ic_component(
+        active_component,
+        request,
+        active_context
+    )
+
+    results = dict(calculation_result.scopes)
+
+    if path is not None:
+        for scope, frame in results.items():
+            scope_path = path.parent / (f"{path.stem}_{scope}{path.suffix}")
+            frame.to_parquet(scope_path)
+
     return results
 
 @register_variant_processor('orthogonalize')
@@ -606,6 +634,9 @@ def orthogonalize_analysis(
     raw_variant: ICVariant,
     periods: list[int],
     output_path: str | Path | None = None,
+    *,
+    component: ICCalculationComponent | None = None,
+    context: SourceContext | None = None,
 ):
     """Derive an orthogonalized variant from the raw one.
 
@@ -645,6 +676,8 @@ def orthogonalize_analysis(
     orth_ic_result = calculate_ic(
         orth_ic_input,
         output_path = output_path,
+        component = component,
+        context = context,
     )
 
     return ICVariant(
@@ -781,6 +814,9 @@ def prepare_raw_variant(
     periods: list[int] | int,
     output_path: str | Path | None = None,
     membership: pd.DataFrame | None = None,
+    *,
+    component: ICCalculationComponent | None = None,
+    context: SourceContext | None = None
 ):
     split_result = prepare_ic_inputs(
         close = close,
@@ -793,7 +829,9 @@ def prepare_raw_variant(
 
     ic_result = calculate_ic(
         split_result,
-        output_path= output_path
+        output_path= output_path,
+        component = component,
+        context = context,
     )
 
     _, acf_test, yearly_test, _ = time_series_stationary_test((ic_result['test'].copy(), False))

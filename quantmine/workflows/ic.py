@@ -1,11 +1,20 @@
 """Configuration-driven IC variant and test orchestration."""
 
+import inspect
+from collections.abc import Iterable
+
 from ..ic_calculator import (
     TEST_METHOD,
     VARIANT_PROCESSORS,
     prepare_raw_variant,
     run_test,
 )
+from ..plugins.context import SourceContext
+from ..plugins.ic_engines import (
+    ICCalculationComponent,
+    resolve_ic_calculation_component,
+)
+from ..research_config import ResearchRunConfig
 
 
 def _require_registered(name: str, registry: dict, kind: str):
@@ -20,6 +29,9 @@ def run_ic_workflow(
     factors,
     research_config: dict,
     membership=None,
+    *,
+    ic_component: ICCalculationComponent | None = None,
+    context: SourceContext | None = None
 ):
     """Build configured variants and run configured tests.
 
@@ -36,6 +48,8 @@ def run_ic_workflow(
         test_start=research_config["test_start"],
         periods=periods,
         membership=membership,
+        component = ic_component,
+        context = context,
     )
 
     variants = {"raw": raw_variant}
@@ -56,7 +70,15 @@ def run_ic_workflow(
             VARIANT_PROCESSORS,
             "variant processor",
         )
-        params = processor_spec.get("params", {})
+        params = dict(processor_spec.get("params", {}))
+        processor_parameters = inspect.signature(processor).parameters
+
+        if "component" in processor_parameters:
+            params["component"] = ic_component
+
+        if "context" in processor_parameters:
+            params["context"] = context
+
         variants[processor_id] = processor(variants[input_name], **params)
 
     test_results: dict[str, dict] = {}
@@ -91,3 +113,37 @@ def run_ic_workflow(
         }
 
     return variants, test_results
+
+def run_persisted_ic_workflow(
+        *,
+        config: ResearchRunConfig,
+        close,
+        factors,
+        context: SourceContext,
+        membership = None,
+        allowed_module_prefixes: Iterable[str] | None = ("quantmine",),
+):
+    """Run IC using the engine stored in a research-run snapshot."""
+
+    if not isinstance(config, ResearchRunConfig):
+        raise TypeError("config must be a ResearchRunConfig")
+
+    if not isinstance(context, SourceContext):
+        raise TypeError("context must be a SourceContext")
+
+    if not config.ic_research:
+        raise ValueError("persisted research config does not contain ic_research")
+
+    component = resolve_ic_calculation_component(
+        config.ic_engine,
+        allowed_module_prefixes= allowed_module_prefixes,
+    )
+
+    return run_ic_workflow(
+        close= close,
+        factors= factors,
+        research_config=dict(config.ic_research),
+        membership= membership,
+        ic_component= component,
+        context =context
+    )

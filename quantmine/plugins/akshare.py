@@ -2,24 +2,26 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 import pandas as pd
-import time
-
 
 from ..datareader import MarketData
+from ..http_resilience import (
+    DEFAULT_HTTP_RETRY_POLICY,
+    is_transient_http_error,
+    retry_http_call,
+)
+from ..resilience import RetryPolicy, Sleeper
 from .context import SourceContext
 from .contracts import (
     DataBinding,
     DataSourceComponent,
     MarketDataBundle,
-    MarketDataCapability
+    MarketDataCapability,
 )
-
-from ..http_resilience import is_transient_http_error, retry_http_call
-from ..resilience import Sleeper
 
 HistoryLoader = Callable[..., pd.DataFrame]
 
@@ -40,6 +42,7 @@ class AkShareAStockDataSourcePlugin:
         repr=False,
         compare=False,
     )
+    retry_policy: RetryPolicy = DEFAULT_HTTP_RETRY_POLICY
 
     default_adjustment: str = "hfq"
 
@@ -59,6 +62,9 @@ class AkShareAStockDataSourcePlugin:
             )
         if not callable(self.sleeper):
             raise TypeError("sleeper must be callable")
+
+        if not isinstance(self.retry_policy, RetryPolicy):
+            raise TypeError("retry_policy must be a RetryPolicy")
 
     def load(
             self,
@@ -97,9 +103,9 @@ class AkShareAStockDataSourcePlugin:
             if position >0 and self.request_interval_seconds > 0:
                 self.sleeper(float(self.request_interval_seconds))
 
-            def load_ticker() -> pd.DataFrame:
+            def load_ticker(current_ticker: str = ticker) -> pd.DataFrame:
                 return loader(
-                    symbol = ticker,
+                    symbol = current_ticker,
                     period = "daily",
                     start_date = start_date,
                     end_date = end_date,
@@ -109,6 +115,7 @@ class AkShareAStockDataSourcePlugin:
             frame = retry_http_call(
                 load_ticker,
                 label = f"AkShare history request for {ticker}",
+                policy = self.retry_policy,
                 sleeper = self.sleeper
             )
 
@@ -151,6 +158,11 @@ def create_akshare_a_stock_data_source(
         **params: object,
 ) -> DataSourceComponent:
     """Create the standard connection-free Akshare A-share source component"""
+
+    retry_policy = params.get("retry_policy")
+
+    if isinstance(retry_policy, Mapping):
+        params["retry_policy"] = RetryPolicy(**dict(retry_policy))
 
     return DataSourceComponent(
         id = "akshare_a_stock_daily",

@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 import json
+from dataclasses import replace
 
 import pytest
-from sqlalchemy import Column, Integer, JSON, MetaData, String, Table, create_engine
+from sqlalchemy import JSON, Column, Integer, MetaData, String, Table, create_engine
 
-from quantmine.plugins.contracts import DataBinding, VersionedDatasetBinding
+from quantmine.plugins.contracts import (
+    DataBinding,
+    PluginSpec,
+    VersionedDatasetBinding,
+)
 from quantmine.research_config import (
     ResearchRunConfig,
     resolve_research_run_config_for_as_of_date,
@@ -54,7 +58,7 @@ def test_research_run_config_round_trips_as_a_safe_json_snapshot() -> None:
     serialized = json.dumps(snapshot, sort_keys=True, allow_nan=False)
     restored = ResearchRunConfig.from_snapshot(json.loads(serialized))
 
-    assert snapshot["schema_version"] == 3
+    assert snapshot["schema_version"] == 4
     assert snapshot["data_binding"]["connection_ref"] == "cn_equity_lake"
     assert snapshot["data_binding"]["version"] == "20260909"
     assert snapshot["data_binding"]["tickers"] == ["000001", "000002"]
@@ -67,8 +71,58 @@ def test_research_run_config_round_trips_as_a_safe_json_snapshot() -> None:
     assert snapshot["bundle"]["data_source"]["entry_point"] == (
         "quantmine.plugins.us_equity:create_yfinance_data_source"
     )
+    assert snapshot["ic_engine"]["entry_point"] == (
+        "quantmine.plugins.ic_engines:"
+        "create_python_ic_calculation_engine"
+    )
     assert "postgresql://" not in serialized
     assert restored == config
+
+
+def test_research_run_config_round_trips_an_overridden_ic_engine() -> None:
+    config = ResearchRunConfig.from_bundle_id(
+        "us_equity_v1",
+        _binding(),
+        ic_engine=PluginSpec(
+            "vendor_acceleration:create_cuda_ic_engine",
+            params={"device": 1},
+        ),
+        ic_research={
+            "train_end": "2023-12-31",
+            "test_start": "2024-02-01",
+            "periods": [1, 5, 20],
+            "processors": [],
+            "tests": [],
+        },
+    )
+
+    restored = ResearchRunConfig.from_snapshot(config.to_snapshot())
+
+    assert restored.ic_engine == PluginSpec(
+        "vendor_acceleration:create_cuda_ic_engine",
+        params={"device": 1},
+    )
+    assert restored.ic_research == {
+        "train_end": "2023-12-31",
+        "test_start": "2024-02-01",
+        "periods": [1, 5, 20],
+        "processors": [],
+        "tests": [],
+    }
+
+
+def test_research_run_config_reads_v3_without_an_ic_engine() -> None:
+    config = ResearchRunConfig.from_bundle_id("us_equity_v1", _binding())
+    legacy_snapshot = config.to_snapshot()
+    legacy_snapshot["schema_version"] = 3
+    legacy_snapshot.pop("ic_engine")
+
+    restored = ResearchRunConfig.from_snapshot(legacy_snapshot)
+
+    assert restored.ic_engine == PluginSpec(
+        "quantmine.plugins.ic_engines:"
+        "create_python_ic_calculation_engine"
+    )
 
 
 def test_research_run_config_allows_an_api_source_without_connection_ref() -> None:

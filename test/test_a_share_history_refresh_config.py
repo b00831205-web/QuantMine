@@ -111,7 +111,7 @@ a_share_history_refresh:
     assert config.to_mapping() == _payload()
 
 
-def test_example_history_refresh_enables_provider_throttling() -> None:
+def test_example_history_refresh_enables_throttling_and_long_retry_backoff() -> None:
     example_path = Path(__file__).parents[1] / "config.example.yaml"
 
     config = load_a_share_history_refresh_config(example_path)
@@ -119,7 +119,20 @@ def test_example_history_refresh_enables_provider_throttling() -> None:
     assert config.source.params == {
         "default_adjustment": "hfq",
         "request_interval_seconds": 0.5,
+        "retry_policy": {
+            "attempts": 6,
+            "initial_delay_seconds": 15.0,
+            "backoff_multiplier": 2.0,
+            "max_delay_seconds": 120.0,
+        },
     }
+    assert config.policy == MarketDataRefreshPolicy(
+        batch_size=5,
+        max_retries=0,
+        checkpoint_connection_ref="cn_market_checkpoint",
+        resume=True,
+    )
+    assert config.publication.source == "akshare_routed_history"
 
 
 def test_history_refresh_config_round_trips_custom_policy() -> None:

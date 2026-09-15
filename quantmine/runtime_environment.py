@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+
 def load_environment_file(
         environment_file: Path | str | None,
 ) -> bool:
@@ -37,5 +38,33 @@ def load_environment_file(
         if key:
             os.environ.setdefault(key,value)
 
+    _merge_proxy_bypass_hosts()
+
     return True
+
+def _merge_proxy_bypass_hosts() -> None:
+    """Merge configured bypass hosts into both proxy variable spellings."""
+
+    values = (
+        os.environ.get("NO_PROXY", ""),
+        os.environ.get("no_proxy", ""),
+        os.environ.get("QUANTMINE_NO_PROXY_HOSTS", "")
+    )
+
+    hosts: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        for raw_host in value.split(","):
+            host = raw_host.strip()
+            if host and host not in seen:
+                hosts.append(host)
+                seen.add(host)
+
+    if not hosts:
+        return
+
+    merged = ",".join(hosts)
+    os.environ["NO_PROXY"] = merged
+    os.environ["no_proxy"] = merged
 

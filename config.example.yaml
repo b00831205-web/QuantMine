@@ -217,10 +217,15 @@ a_share_history_refresh:
   schema_version: 2
 
   source:
-    entry_point: quantmine.plugins.akshare:create_akshare_a_stock_data_source
+    entry_point: quantmine.plugins.akshare_routed:create_akshare_routed_a_stock_data_source
     params:
       default_adjustment: hfq
       request_interval_seconds: 0.5
+      retry_policy:
+        attempts: 6
+        initial_delay_seconds: 15.0
+        backoff_multiplier: 2.0
+        max_delay_seconds: 120.0
 
   binding:
     connection_ref: null
@@ -242,13 +247,13 @@ a_share_history_refresh:
     dataset_id: cn_a_share_daily_bars
     market: CN
     version: "20260910"
-    source: akshare_stock_zh_a_hist
+    source: akshare_routed_history
     frequency: daily
     adjustment: hfq
     schema_version: market_data_bundle_v1
 
   policy:
-    batch_size: 50
-    max_retries: 3
+    batch_size: 5
+    max_retries: 0
     checkpoint_connection_ref: cn_market_checkpoint
     resume: true

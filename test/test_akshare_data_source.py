@@ -17,6 +17,7 @@ from quantmine.plugins.contracts import (
     DataBinding,
     MarketDataCapability,
 )
+from quantmine.resilience import RetryPolicy
 from quantmine.storage.connections import ConnectionRegistry
 
 
@@ -183,6 +184,64 @@ def test_akshare_plugin_retries_only_the_failed_ticker_request(
     assert result.market.close.loc[
         pd.Timestamp("2024-01-02"), "000001"
     ] == 10.0
+
+
+def test_akshare_plugin_uses_configured_http_retry_policy(
+    tmp_path: Path,
+) -> None:
+    attempts: list[str] = []
+    sleeps: list[float] = []
+
+    def history_loader(**kwargs: str) -> pd.DataFrame:
+        attempts.append(kwargs["symbol"])
+        if len(attempts) < 3:
+            raise requests.exceptions.ConnectionError(
+                "temporary provider disconnect"
+            )
+        return pd.DataFrame(
+            {
+                "日期": ["2024-01-02"],
+                "收盘": [10.0],
+                "成交量": [100.0],
+            }
+        )
+
+    plugin = AkShareAStockDataSourcePlugin(
+        history_loader=history_loader,
+        retry_policy=RetryPolicy(
+            attempts=4,
+            initial_delay_seconds=10.0,
+            backoff_multiplier=3.0,
+            max_delay_seconds=60.0,
+        ),
+        sleeper=sleeps.append,
+    )
+
+    plugin.load(
+        _binding(tickers=("000001",)),
+        _context(tmp_path),
+    )
+
+    assert attempts == ["000001", "000001", "000001"]
+    assert sleeps == [10.0, 30.0]
+
+
+def test_akshare_factory_converts_retry_policy_mapping() -> None:
+    component = create_akshare_a_stock_data_source(
+        retry_policy={
+            "attempts": 5,
+            "initial_delay_seconds": 15.0,
+            "backoff_multiplier": 2.0,
+            "max_delay_seconds": 120.0,
+        }
+    )
+
+    assert component.plugin.retry_policy == RetryPolicy(
+        attempts=5,
+        initial_delay_seconds=15.0,
+        backoff_multiplier=2.0,
+        max_delay_seconds=120.0,
+    )
 
 
 @pytest.mark.parametrize("value", [-0.1, True, "0.5"])

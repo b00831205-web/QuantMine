@@ -2,21 +2,32 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import json
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
+from typing import Any
+
 import pandas as pd
 
 from .dataset_versions import (
     AS_OF_DATE_VERSION,
-    resolve_versioned_dataset_binding
+    resolve_versioned_dataset_binding,
 )
-import json
-from typing import Any, Mapping
-
 from .plugins.bundles import ResearchBundle, get_research_bundle
-from .plugins.contracts import DataBinding, PluginSpec, VersionedDatasetBinding
+from .plugins.contracts import (
+    DataBinding,
+    PluginSpec,
+    VersionedDatasetBinding,
+)
 
+RESEARCH_RUN_CONFIG_VERSION = 4
 
-RESEARCH_RUN_CONFIG_VERSION = 3
+def _default_ic_engine_spec() -> PluginSpec:
+    return PluginSpec(
+        entry_point=(
+            "quantmine.plugins.ic_engines:create_python_ic_calculation_engine"
+        )
+    )
 
 @dataclass(frozen = True)
 class ResearchRunConfig:
@@ -29,6 +40,8 @@ class ResearchRunConfig:
     bundle: ResearchBundle
     data_binding: DataBinding
     factor_parameters: Mapping[str, Any]
+    ic_engine: PluginSpec = field(default_factory=_default_ic_engine_spec)
+    ic_research: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_bundle_id(
@@ -36,12 +49,18 @@ class ResearchRunConfig:
         bundle_id: str,
         data_binding: DataBinding,
         *,
-        factor_parameters: Mapping[str, Any] | None = None
+        factor_parameters: Mapping[str, Any] | None = None,
+        ic_engine: PluginSpec | None = None,
+        ic_research: Mapping[str, Any] | None = None,
     )-> ResearchRunConfig:
         return cls(
             bundle = get_research_bundle(bundle_id),
             data_binding = data_binding,
             factor_parameters = dict(factor_parameters or {}),
+            ic_engine = (
+                ic_engine if ic_engine is not None else _default_ic_engine_spec()
+            ),
+            ic_research = dict(ic_research or {})
         )
 
     def to_snapshot(self) -> dict[str, Any]:
@@ -80,6 +99,8 @@ class ResearchRunConfig:
                 "eligibility_binding": _versioned_dataset_binding_snapshot(self.data_binding.eligibility_binding)
             },
             "factor_parameters": dict(self.factor_parameters),
+            "ic_engine": _plugin_spec_snapshot(self.ic_engine),
+            "ic_research": dict(self.ic_research),
         }
         return _json_copy(snap_shot, label = "ResearchRunConfig")
 
@@ -92,8 +113,9 @@ class ResearchRunConfig:
 
         payload = _mapping(snapshot, label="PresearchRunConfig snapshot")
         version = payload.get("schema_version")
+        ic_research = _mapping(payload.get("ic_research", {}), label = "ic_research")
 
-        if version not in {1, 2, RESEARCH_RUN_CONFIG_VERSION}:
+        if version not in {1, 2, 3, RESEARCH_RUN_CONFIG_VERSION}:
             raise ValueError(
                 "Unsupported research-run config schema version "
                 f"{version!r}; expected 1 or {RESEARCH_RUN_CONFIG_VERSION}"
@@ -188,10 +210,25 @@ class ResearchRunConfig:
             ) 
         )
 
+        ic_engine_payload = payload.get("ic_engine")
+
+        if ic_engine_payload is None:
+            if version in {1,2,3}:
+                ic_engine = _default_ic_engine_spec()
+            else:
+                raise TypeError(
+                    "version-4 research-run config requires ic_engine"
+                )
+
+        else:
+            ic_engine = _plugin_spec_from_snapshot(ic_engine_payload)
+
         return cls(
             bundle = bundle,
             data_binding = binding,
-            factor_parameters = factor_parameters
+            factor_parameters = factor_parameters,
+            ic_engine = ic_engine,
+            ic_research = ic_research,
         )
 
 def resolve_research_run_config_for_as_of_date(
