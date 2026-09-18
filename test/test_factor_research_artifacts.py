@@ -8,14 +8,16 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from quantmine.research import FactorResearchResult
 from quantmine.workflows.factor_research_artifacts import (
+    FactorResearchArtifacts,
     FactorResearchPublication,
     _build_factor_manifest,
     _factor_content_sha256,
     _normalize_factor_frame,
+    load_factor_research_artifacts,
     publish_factor_research_artifacts,
 )
-from quantmine.research import FactorResearchResult
 
 
 def _publication(tmp_path: Path, **overrides) -> FactorResearchPublication:
@@ -340,3 +342,66 @@ def test_publish_factor_research_artifacts_cleans_staging_output_on_failure(
 
     assert not (root / "702").exists()
     assert not list(root.glob(".702.staging-*"))
+
+
+def test_load_factor_research_artifacts_verifies_and_returns_frames(
+    tmp_path: Path,
+) -> None:
+    result = _research_result()
+    root = tmp_path / "factor-research"
+    publication = publish_factor_research_artifacts(
+        result,
+        run_id=702,
+        root=root,
+    )
+
+    loaded = load_factor_research_artifacts(root=root, run_id=702)
+
+    assert isinstance(loaded, FactorResearchArtifacts)
+    assert loaded.publication == publication
+    assert loaded.requested_signals == ("momentum", "reversal")
+    assert loaded.pending == {"reversal": "not ready"}
+    assert set(loaded.factors) == {"momentum"}
+    pd.testing.assert_frame_equal(
+        loaded.factors["momentum"],
+        _normalize_factor_frame("momentum", result.factors["momentum"]),
+    )
+
+
+def test_load_factor_research_artifacts_rejects_tampered_factor_content(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "factor-research"
+    publication = publish_factor_research_artifacts(
+        _research_result(),
+        run_id=702,
+        root=root,
+    )
+    tampered = pd.read_parquet(publication.factor_paths["momentum"])
+    tampered.iloc[0, 0] = 999.0
+    tampered.to_parquet(publication.factor_paths["momentum"])
+
+    with pytest.raises(ValueError, match="content hash"):
+        load_factor_research_artifacts(root=root, run_id=702)
+
+
+def test_load_factor_research_artifacts_rejects_unsafe_manifest_path(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "factor-research"
+    publication = publish_factor_research_artifacts(
+        _research_result(),
+        run_id=702,
+        root=root,
+    )
+    manifest = json.loads(
+        publication.manifest_path.read_text(encoding="utf-8")
+    )
+    manifest["factors"]["momentum"]["path"] = "../momentum.parquet"
+    publication.manifest_path.write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="safe|path"):
+        load_factor_research_artifacts(root=root, run_id=702)

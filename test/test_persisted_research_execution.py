@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import ClassVar
 
 import pandas as pd
+import pytest
 
+from quantmine import execution as execution_module
 from quantmine.datareader import MarketData
 from quantmine.execution import (
     execute_persisted_research,
@@ -62,10 +66,18 @@ class InMemoryPlugin:
         )
 
 
+class DisposableConnections:
+    def __init__(self) -> None:
+        self.disposed = False
+
+    def dispose(self) -> None:
+        self.disposed = True
+
+
 class FixtureYFinanceSource:
     """Offline replacement that records the legacy Yahoo source request."""
 
-    calls: list[tuple[tuple[str, ...], str, str]] = []
+    calls: ClassVar[list[tuple[tuple[str, ...], str, str]]] = []
 
     def __init__(self, **_: object) -> None:
         pass
@@ -282,3 +294,193 @@ def test_default_us_bundle_runs_end_to_end_with_the_legacy_source_adapter(
         f"{signal}.parquet"
         for signal in result.requested_signals
     }
+
+
+def test_persisted_ic_execution_loads_one_run_snapshot_and_verified_inputs(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config = _connection_config("cn_market", "cn_eligibility")
+    config = ResearchRunConfig(
+        bundle=config.bundle,
+        data_binding=config.data_binding,
+        factor_parameters=config.factor_parameters,
+        ic_engine=config.ic_engine,
+        ic_research={
+            "train_end": "2026-06-30",
+            "test_start": "2026-07-01",
+            "periods": [1, 5],
+            "processors": [],
+            "tests": [],
+        },
+    )
+    connections = DisposableConnections()
+    dates = pd.date_range("2026-01-02", periods=5, freq="B")
+    close = pd.DataFrame(
+        {"000001": [10.0, 10.2, 10.1, 10.4, 10.5]},
+        index=dates,
+    )
+    factor = close.pct_change()
+    resolved_bundle = object()
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        execution_module.ConnectionRegistry,
+        "from_environment",
+        lambda refs: observed.update(connection_refs=refs) or connections,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "resolve_research_bundle_definition",
+        lambda definition, *, allowed_module_prefixes: (
+            observed.update(
+                bundle_definition=definition,
+                bundle_allowlist=allowed_module_prefixes,
+            )
+            or resolved_bundle
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "load_research_market_data",
+        lambda bundle, binding, context: (
+            observed.update(
+                resolved_bundle=bundle,
+                binding=binding,
+                market_context=context,
+            )
+            or MarketDataBundle(market=MarketData(close=close))
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "load_factor_research_artifacts",
+        lambda *, root, run_id: (
+            observed.update(factor_root=root, factor_run_id=run_id)
+            or SimpleNamespace(factors={"momentum": factor})
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "run_persisted_ic_workflow",
+        lambda **kwargs: (
+            observed.update(workflow_kwargs=kwargs)
+            or ({"raw": object()}, {"newey_raw": object()})
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "publish_ic_research_artifacts",
+        lambda variants, test_results, *, run_id, root: observed.update(
+            published_variants=variants,
+            published_test_results=test_results,
+            publication_run_id=run_id,
+            publication_root=root,
+        ),
+        raising=False,
+    )
+
+    variants, test_results = execution_module.execute_persisted_ic_research(
+        InMemoryStore(config),
+        701,
+        artifact_root=tmp_path / "artifacts",
+        allowed_module_prefixes=("quantmine", "vendor_ic"),
+    )
+
+    assert set(variants) == {"raw"}
+    assert set(test_results) == {"newey_raw"}
+    assert observed["connection_refs"] == (
+        "cn_market",
+        "cn_eligibility",
+    )
+    assert observed["bundle_definition"] == config.bundle
+    assert observed["bundle_allowlist"] == ("quantmine", "vendor_ic")
+    assert observed["resolved_bundle"] is resolved_bundle
+    assert observed["binding"] == config.data_binding
+    assert observed["factor_root"] == tmp_path / "artifacts" / "factor_research"
+    assert observed["factor_run_id"] == 701
+
+    workflow_kwargs = observed["workflow_kwargs"]
+    assert workflow_kwargs["config"] == config
+    assert workflow_kwargs["close"] is close
+    assert workflow_kwargs["factors"]["momentum"] is factor
+    assert workflow_kwargs["context"] is observed["market_context"]
+    assert workflow_kwargs["membership"] is None
+    assert workflow_kwargs["allowed_module_prefixes"] == (
+        "quantmine",
+        "vendor_ic",
+    )
+    assert observed["published_variants"] is variants
+    assert observed["published_test_results"] is test_results
+    assert observed["publication_run_id"] == 701
+    assert observed["publication_root"] == (
+        tmp_path / "artifacts" / "ic_research"
+    )
+    assert connections.disposed is True
+
+
+def test_persisted_ic_execution_disposes_connections_when_workflow_fails(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config = _connection_config(None, None)
+    config = ResearchRunConfig(
+        bundle=config.bundle,
+        data_binding=config.data_binding,
+        factor_parameters=config.factor_parameters,
+        ic_engine=config.ic_engine,
+        ic_research={"periods": [1]},
+    )
+    connections = DisposableConnections()
+
+    monkeypatch.setattr(
+        execution_module.ConnectionRegistry,
+        "from_environment",
+        lambda refs: connections,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "resolve_research_bundle_definition",
+        lambda *args, **kwargs: object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "load_research_market_data",
+        lambda *args, **kwargs: MarketDataBundle(
+            market=MarketData(
+                close=pd.DataFrame(
+                    {"AAA": [1.0]},
+                    index=pd.date_range("2026-01-02", periods=1),
+                )
+            )
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "load_factor_research_artifacts",
+        lambda **kwargs: SimpleNamespace(
+            factors={"momentum": pd.DataFrame({"AAA": [1.0]})}
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "run_persisted_ic_workflow",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("IC failed")),
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="IC failed"):
+        execution_module.execute_persisted_ic_research(
+            InMemoryStore(config),
+            701,
+            artifact_root=tmp_path / "artifacts",
+        )
+
+    assert connections.disposed is True

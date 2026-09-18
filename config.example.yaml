@@ -24,7 +24,7 @@ time_series_stationary_test:
   rolling_period: 126       # rolling IC window (~half a year)
   periods: [1, 5, 20]       # ACF lags
 
-ic_research:
+ic_research: &ic_research_config
   train_end: "2023-12-31"
   test_start: "2024-02-01"
   periods: [1, 5, 20]
@@ -45,6 +45,53 @@ ic_research:
       input: orthogonalized
       params:
         lag_multiplier: 2
+
+a_share_research_run: &a_share_research_run
+  schema_version: 4
+
+  bundle:
+    id: cn_a_share_v1
+    display_name: China A-shares (versioned Parquet / audited eligibility)
+    data_source:
+      entry_point: quantmine.plugins.sources:create_versioned_parquet_market_data_source
+      params: {}
+    universe:
+      entry_point: quantmine.plugins.a_share:create_cn_a_share_eligibility_universe
+      params: {}
+    factor_packs:
+      - entry_point: quantmine.plugins.builtins:create_cn_a_share_price_volume_factor_pack
+        params: {}
+    defaults:
+      market: CN
+      currency: CNY
+      adjustment: hfq
+      storage: versioned_parquet
+
+  data_binding:
+    connection_ref: cn_market_data
+    dataset: cn_a_share_daily_bars
+    version: "{as_of_date}"
+    universe_dataset: null
+    benchmark_dataset: null
+    benchmark_ticker: null
+    adjustment: hfq
+    start: "2020-01-01"
+    end: null
+    tickers: []
+    metadata: {}
+    eligibility_binding:
+      connection_ref: cn_eligibility
+      dataset: cn_a_share_eligibility
+      market: CN
+      version: "{as_of_date}"
+
+  factor_parameters: {}
+
+  ic_engine:
+    entry_point: quantmine.plugins.ic_engines:create_python_ic_calculation_engine
+    params: {}
+
+  ic_research: *ic_research_config
 
 backtest:
   jobs:
@@ -174,6 +221,7 @@ market_pipelines:
       - cn_eligibility
       - cn_market_data
       - cn_market_checkpoint
+      - research_db
     stages:
       - id: session_gate
         kind: session_gate
@@ -208,6 +256,24 @@ market_pipelines:
           entry_point: quantmine.plugins.market_stages:create_a_share_cumulative_market_data_refresh
           params:
             config: *a_share_daily_market_data_refresh
+      - id: factor_research
+        kind: task
+        upstream:
+          - market_data_refresh
+        plugin:
+          entry_point: quantmine.plugins.research_stages:create_persisted_factor_research_stage
+          params:
+            research_run_connection_ref: research_db
+            config: *a_share_research_run
+
+      - id: ic_research
+        kind: task
+        upstream:
+          - factor_research
+        plugin:
+          entry_point: quantmine.plugins.ic_stages:create_persisted_ic_research_stage
+          params:
+            research_run_connection_ref: research_db
     metadata:
       market: CN
       frequency: daily

@@ -7,6 +7,7 @@ import pytest
 from quantmine.market_pipeline_loader import (
     load_market_pipeline_definitions,
 )
+from quantmine.research_config import ResearchRunConfig
 
 
 def _write(tmp_path: Path, content: str) -> Path:
@@ -146,6 +147,8 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "reference_refresh",
         "daily_production",
         "market_data_refresh",
+        "factor_research",
+        "ic_research",
     )
     assert definition.connection_refs == (
         "cn_raw",
@@ -154,6 +157,7 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "cn_eligibility",
         "cn_market_data",
         "cn_market_checkpoint",
+        "research_db",
     )
     assert definition.stages[0].plugin.entry_point == (
         "quantmine.plugins.market_stages:create_exchange_calendar_session_gate"
@@ -170,6 +174,47 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "create_a_share_cumulative_market_data_refresh"
     )
     assert definition.stages[3].upstream == ("daily_production",)
+    assert definition.stages[4].plugin.entry_point == (
+        "quantmine.plugins.research_stages:"
+        "create_persisted_factor_research_stage"
+    )
+    assert definition.stages[4].upstream == ("market_data_refresh",)
+    assert definition.stages[5].plugin.entry_point == (
+        "quantmine.plugins.ic_stages:create_persisted_ic_research_stage"
+    )
+    assert definition.stages[5].upstream == ("factor_research",)
+    assert definition.stages[4].plugin.params[
+        "research_run_connection_ref"
+    ] == "research_db"
+    assert definition.stages[5].plugin.params == {
+        "research_run_connection_ref": "research_db"
+    }
+
+    research_config = definition.stages[4].plugin.params["config"]
+    assert research_config["schema_version"] == 4
+    assert research_config["bundle"]["id"] == "cn_a_share_v1"
+    assert research_config["data_binding"]["connection_ref"] == (
+        "cn_market_data"
+    )
+    assert research_config["data_binding"]["version"] == "{as_of_date}"
+    assert research_config["data_binding"]["eligibility_binding"] == {
+        "connection_ref": "cn_eligibility",
+        "dataset": "cn_a_share_eligibility",
+        "market": "CN",
+        "version": "{as_of_date}",
+    }
+    assert research_config["ic_engine"]["entry_point"] == (
+        "quantmine.plugins.ic_engines:"
+        "create_python_ic_calculation_engine"
+    )
+    assert research_config["ic_research"]["periods"] == [1, 5, 20]
+
+    restored_research_config = ResearchRunConfig.from_snapshot(
+        research_config
+    )
+    assert restored_research_config.bundle.id == "cn_a_share_v1"
+    assert restored_research_config.data_binding.version == "{as_of_date}"
+    assert restored_research_config.ic_research["periods"] == [1, 5, 20]
     assert definition.stages[1].plugin.params["config"] == (
         definition.stages[2].plugin.params["config"]
     )

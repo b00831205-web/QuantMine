@@ -95,6 +95,8 @@ def test_dag_file_discovers_configured_a_share_pipeline(
         "reference_refresh",
         "daily_production",
         "market_data_refresh",
+        "factor_research",
+        "ic_research",
     ]
     tasks = {task.task_id: task for task in dag.tasks}
     assert tasks["session_gate"].downstream == [
@@ -106,6 +108,13 @@ def test_dag_file_discovers_configured_a_share_pipeline(
     assert tasks["daily_production"].downstream == [
         tasks["market_data_refresh"]
     ]
+    assert tasks["market_data_refresh"].downstream == [
+        tasks["factor_research"]
+    ]
+    assert tasks["factor_research"].downstream == [
+        tasks["ic_research"]
+    ]
+    assert tasks["ic_research"].downstream == []
     assert tasks["market_data_refresh"].op_kwargs[
         "environment_file"
     ] == str(PROJECT_ROOT / ".env")

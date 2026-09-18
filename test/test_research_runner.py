@@ -19,7 +19,7 @@ from quantmine.plugins.contracts import (
     MarketDataCapability,
     PluginSpec,
 )
-from quantmine.research import run_factor_research
+from quantmine.research import load_research_market_data, run_factor_research
 from quantmine.storage.connections import ConnectionRegistry
 
 
@@ -141,6 +141,48 @@ def test_research_runner_loads_bundle_data_and_returns_only_pack_signals(
     assert result.requested_signals == ("momentum",)
     assert set(result.factors) == {"momentum"}
     assert result.factors["momentum"].shape == (25, 2)
+
+
+def test_load_research_market_data_reuses_the_bundle_source_without_factors(
+    tmp_path: Path,
+) -> None:
+    market = _market_data()
+    resolved = ResolvedResearchBundle(
+        definition=ResearchBundle(
+            id="market_only_bundle",
+            display_name="Market-only bundle",
+            data_source=PluginSpec("test:source"),
+            universe=None,
+            factor_packs=(PluginSpec("test:pack"),),
+        ),
+        data_source=DataSourceComponent(
+            id="in_memory",
+            capabilities=frozenset(
+                {
+                    MarketDataCapability.CLOSE,
+                    MarketDataCapability.VOLUME,
+                }
+            ),
+            plugin=StaticPlugin(market),
+        ),
+        universe=None,
+        factor_packs=(
+            FactorPackComponent(
+                id="unused_by_market_loader",
+                requires=frozenset({MarketDataCapability.CLOSE}),
+                signals=("momentum",),
+            ),
+        ),
+    )
+
+    loaded = load_research_market_data(
+        resolved,
+        _binding(),
+        _context(tmp_path),
+    )
+
+    assert loaded.market is market
+    assert loaded.universe is None
 
 
 def test_research_runner_rejects_an_unknown_pack_signal(tmp_path: Path) -> None:

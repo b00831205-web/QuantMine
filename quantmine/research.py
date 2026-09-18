@@ -2,25 +2,17 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, replace
-from typing import Any, Mapping
+from typing import Any
 
 from .factor_register import build_param_pool, calculate_all_factors
-from .plugins.bundles import ResolvedResearchBundle
 from .plugins.context import SourceContext
 from .plugins.contracts import (
     DataBinding,
     MarketDataBundle,
     MarketDataCapability,
 )
-from .plugins.runtime import load_data_source_component
 
-_DIRECT_MARKET_FIELDS: dict[MarketDataCapability, str] ={
-    MarketDataCapability.CLOSE: 'close',
-    MarketDataCapability.VOLUME: 'volume',
-    MarketDataCapability.MARKET_CAP: 'market_cap',
-}
-
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from .plugins.bundles import (
     ResolvedResearchBundle,
@@ -35,6 +27,11 @@ from .plugins.runtime import (
     load_universe_component,
 )
 
+_DIRECT_MARKET_FIELDS: dict[MarketDataCapability, str] ={
+    MarketDataCapability.CLOSE: 'close',
+    MarketDataCapability.VOLUME: 'volume',
+    MarketDataCapability.MARKET_CAP: 'market_cap',
+}
 
 @dataclass(frozen = True)
 class FactorResearchResult:
@@ -80,6 +77,26 @@ def _validate_runtime_factor_requirements(
     if fields:
         market_data.require(*fields)
 
+def load_research_market_data(
+        bundle: ResolvedResearchBundle,
+        binding: DataBinding,
+        context: SourceContext
+) -> MarketDataBundle:
+    """Load and universe-filter market data without calculating factors."""
+
+    market_data = load_data_source_component(bundle.data_source, binding, context)
+
+    active_universe = market_data.universe
+    if bundle.universe is not None:
+        resolved_universe = load_universe_component(bundle.universe, binding, context)
+        if resolved_universe is not None:
+            active_universe = resolved_universe
+
+    if active_universe is not None:
+        market_data = _apply_universe(market_data, active_universe)
+
+    return market_data
+
 
 def run_factor_research(
         bundle: ResolvedResearchBundle,
@@ -90,8 +107,8 @@ def run_factor_research(
 ) -> FactorResearchResult:
     """Load bundle data and compute only its requested factor_pack signals"""
 
-    market_data = load_data_source_component(
-        bundle.data_source,
+    market_data = load_research_market_data(
+        bundle,
         binding,
         context
     )
