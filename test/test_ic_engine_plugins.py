@@ -22,6 +22,9 @@ from quantmine.plugins.ic_engines import (
     create_python_ic_calculation_engine,
     resolve_ic_calculation_component,
 )
+from quantmine.plugins.ic_validators import (
+    create_python_ic_validation_engine,
+)
 from quantmine.research_config import ResearchRunConfig
 from quantmine.storage.connections import ConnectionRegistry
 from quantmine.workflows import ic as ic_workflow_module
@@ -288,6 +291,9 @@ def test_persisted_ic_workflow_resolves_the_snapshotted_engine_with_allowlist(
     )
     factors = {"momentum": close.pct_change()}
     engine_spec = PluginSpec("vendor_ic:create_cuda_engine")
+    validation_spec = PluginSpec(
+        "vendor_validation:create_bootstrap_validator"
+    )
     run_config = ResearchRunConfig(
         bundle=ResearchBundle(
             id="fixture",
@@ -302,6 +308,7 @@ def test_persisted_ic_workflow_resolves_the_snapshotted_engine_with_allowlist(
         ),
         factor_parameters={},
         ic_engine=engine_spec,
+        validation_engine=validation_spec,
         ic_research={
             "train_end": str(dates[9].date()),
             "test_start": str(dates[10].date()),
@@ -311,18 +318,31 @@ def test_persisted_ic_workflow_resolves_the_snapshotted_engine_with_allowlist(
         },
     )
     observed = {}
-    component = create_python_ic_calculation_engine()
+    ic_component = create_python_ic_calculation_engine()
+    validation_component = create_python_ic_validation_engine()
 
-    def fake_resolve(spec, *, allowed_module_prefixes):
-        observed["spec"] = spec
-        observed["allowed_module_prefixes"] = allowed_module_prefixes
-        return component
+    def fake_resolve_ic(spec, *, allowed_module_prefixes):
+        observed["ic_spec"] = spec
+        observed["ic_allowed_module_prefixes"] = allowed_module_prefixes
+        return ic_component
+
+    def fake_resolve_validation(spec, *, allowed_module_prefixes):
+        observed["validation_spec"] = spec
+        observed["validation_allowed_module_prefixes"] = (
+            allowed_module_prefixes
+        )
+        return validation_component
 
     monkeypatch.setattr(
         ic_workflow_module,
         "resolve_ic_calculation_component",
-        fake_resolve,
+        fake_resolve_ic,
         raising=False,
+    )
+    monkeypatch.setattr(
+        ic_workflow_module,
+        "resolve_ic_validation_component",
+        fake_resolve_validation,
     )
     context = _context(tmp_path)
 
@@ -331,12 +351,88 @@ def test_persisted_ic_workflow_resolves_the_snapshotted_engine_with_allowlist(
         close=close,
         factors=factors,
         context=context,
-        allowed_module_prefixes=("quantmine", "vendor_ic"),
+        allowed_module_prefixes=(
+            "quantmine",
+            "vendor_ic",
+            "vendor_validation",
+        ),
     )
 
     assert observed == {
-        "spec": engine_spec,
-        "allowed_module_prefixes": ("quantmine", "vendor_ic"),
+        "ic_spec": engine_spec,
+        "ic_allowed_module_prefixes": (
+            "quantmine",
+            "vendor_ic",
+            "vendor_validation",
+        ),
+        "validation_spec": validation_spec,
+        "validation_allowed_module_prefixes": (
+            "quantmine",
+            "vendor_ic",
+            "vendor_validation",
+        ),
     }
     assert set(variants) == {"raw"}
     assert test_results == {}
+
+
+def test_persisted_ic_workflow_reuses_pre_resolved_components(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config = ResearchRunConfig(
+        bundle=ResearchBundle(
+            id="fixture",
+            display_name="Fixture",
+            data_source=PluginSpec("fixture:create_source"),
+            universe=None,
+            factor_packs=(PluginSpec("fixture:create_factors"),),
+        ),
+        data_binding=DataBinding(
+            connection_ref=None,
+            dataset="fixture_prices",
+        ),
+        factor_parameters={},
+        ic_research={"periods": [1]},
+    )
+    ic_component = create_python_ic_calculation_engine()
+    validation_component = create_python_ic_validation_engine()
+    observed: dict[str, object] = {}
+
+    def fail_resolve(*args, **kwargs):
+        del args, kwargs
+        raise AssertionError("pre-resolved component was resolved again")
+
+    def fake_run_ic_workflow(*args, **kwargs):
+        del args
+        observed.update(kwargs)
+        return {}, {}
+
+    monkeypatch.setattr(
+        ic_workflow_module,
+        "resolve_ic_calculation_component",
+        fail_resolve,
+    )
+    monkeypatch.setattr(
+        ic_workflow_module,
+        "resolve_ic_validation_component",
+        fail_resolve,
+    )
+    monkeypatch.setattr(
+        ic_workflow_module,
+        "run_ic_workflow",
+        fake_run_ic_workflow,
+    )
+
+    result = run_persisted_ic_workflow(
+        config=config,
+        close=object(),
+        factors={},
+        context=_context(tmp_path),
+        ic_component=ic_component,
+        validation_component=validation_component,
+    )
+
+    assert result == ({}, {})
+    assert observed["ic_component"] is ic_component
+    assert observed["validation_component"] is validation_component

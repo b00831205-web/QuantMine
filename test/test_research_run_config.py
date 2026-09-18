@@ -58,7 +58,7 @@ def test_research_run_config_round_trips_as_a_safe_json_snapshot() -> None:
     serialized = json.dumps(snapshot, sort_keys=True, allow_nan=False)
     restored = ResearchRunConfig.from_snapshot(json.loads(serialized))
 
-    assert snapshot["schema_version"] == 4
+    assert snapshot["schema_version"] == 5
     assert snapshot["data_binding"]["connection_ref"] == "cn_equity_lake"
     assert snapshot["data_binding"]["version"] == "20260909"
     assert snapshot["data_binding"]["tickers"] == ["000001", "000002"]
@@ -74,6 +74,10 @@ def test_research_run_config_round_trips_as_a_safe_json_snapshot() -> None:
     assert snapshot["ic_engine"]["entry_point"] == (
         "quantmine.plugins.ic_engines:"
         "create_python_ic_calculation_engine"
+    )
+    assert snapshot["validation_engine"]["entry_point"] == (
+        "quantmine.plugins.ic_validators:"
+        "create_python_ic_validation_engine"
     )
     assert "postgresql://" not in serialized
     assert restored == config
@@ -111,11 +115,30 @@ def test_research_run_config_round_trips_an_overridden_ic_engine() -> None:
     }
 
 
+def test_research_run_config_round_trips_an_overridden_validation_engine() -> None:
+    config = ResearchRunConfig.from_bundle_id(
+        "us_equity_v1",
+        _binding(),
+        validation_engine=PluginSpec(
+            "vendor_validation:create_bootstrap_validator",
+            params={"samples": 2_000},
+        ),
+    )
+
+    restored = ResearchRunConfig.from_snapshot(config.to_snapshot())
+
+    assert restored.validation_engine == PluginSpec(
+        "vendor_validation:create_bootstrap_validator",
+        params={"samples": 2_000},
+    )
+
+
 def test_research_run_config_reads_v3_without_an_ic_engine() -> None:
     config = ResearchRunConfig.from_bundle_id("us_equity_v1", _binding())
     legacy_snapshot = config.to_snapshot()
     legacy_snapshot["schema_version"] = 3
     legacy_snapshot.pop("ic_engine")
+    legacy_snapshot.pop("validation_engine")
 
     restored = ResearchRunConfig.from_snapshot(legacy_snapshot)
 
@@ -123,6 +146,39 @@ def test_research_run_config_reads_v3_without_an_ic_engine() -> None:
         "quantmine.plugins.ic_engines:"
         "create_python_ic_calculation_engine"
     )
+    assert restored.validation_engine == PluginSpec(
+        "quantmine.plugins.ic_validators:"
+        "create_python_ic_validation_engine"
+    )
+
+
+def test_research_run_config_reads_v4_without_a_validation_engine() -> None:
+    config = ResearchRunConfig.from_bundle_id("us_equity_v1", _binding())
+    legacy_snapshot = config.to_snapshot()
+    legacy_snapshot["schema_version"] = 4
+    legacy_snapshot.pop("validation_engine")
+
+    restored = ResearchRunConfig.from_snapshot(legacy_snapshot)
+
+    assert restored.ic_engine == config.ic_engine
+    assert restored.validation_engine == PluginSpec(
+        "quantmine.plugins.ic_validators:"
+        "create_python_ic_validation_engine"
+    )
+
+
+@pytest.mark.parametrize("missing", ["ic_engine", "validation_engine"])
+def test_research_run_config_v5_requires_both_engine_specs(
+    missing: str,
+) -> None:
+    snapshot = ResearchRunConfig.from_bundle_id(
+        "us_equity_v1",
+        _binding(),
+    ).to_snapshot()
+    snapshot.pop(missing)
+
+    with pytest.raises(TypeError, match=missing):
+        ResearchRunConfig.from_snapshot(snapshot)
 
 
 def test_research_run_config_allows_an_api_source_without_connection_ref() -> None:

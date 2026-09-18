@@ -4,15 +4,20 @@ import inspect
 from collections.abc import Iterable
 
 from ..ic_calculator import (
-    TEST_METHOD,
     VARIANT_PROCESSORS,
     prepare_raw_variant,
-    run_test,
 )
 from ..plugins.context import SourceContext
 from ..plugins.ic_engines import (
     ICCalculationComponent,
     resolve_ic_calculation_component,
+)
+from ..plugins.ic_validators import (
+    ICValidationComponent,
+    ICValidationRequest,
+    create_python_ic_validation_engine,
+    resolve_ic_validation_component,
+    validate_ic_component,
 )
 from ..research_config import ResearchRunConfig
 
@@ -31,7 +36,8 @@ def run_ic_workflow(
     membership=None,
     *,
     ic_component: ICCalculationComponent | None = None,
-    context: SourceContext | None = None
+    context: SourceContext | None = None,
+    validation_component : ICValidationComponent | None = None
 ):
     """Build configured variants and run configured tests.
 
@@ -81,38 +87,19 @@ def run_ic_workflow(
 
         variants[processor_id] = processor(variants[input_name], **params)
 
-    test_results: dict[str, dict] = {}
-    for test_spec in research_config.get("tests", []):
-        test_id = test_spec["id"]
-        if test_id in test_results:
-            raise ValueError(f"Duplicate test id '{test_id}'")
+    resolved_validation_component = (
+        validation_component if validation_component is not None else create_python_ic_validation_engine()
+    )
+    validation_result = validate_ic_component(
+        resolved_validation_component,
+        ICValidationRequest(
+            variants = variants,
+            tests = tuple(research_config.get("tests" ,[]))
+        ),
+        context,
+    )
 
-        variant_name = test_spec["input"]
-        if variant_name not in variants:
-            raise ValueError(
-                f"Test '{test_id}' uses unavailable variant '{variant_name}'"
-            )
-        test_method = test_spec["name"]
-        _require_registered(test_method, TEST_METHOD, "test method")
-
-        test_output, corrected_output = run_test(
-            variant=variants[variant_name],
-            test_method=test_method,
-            TEST_METHOD=TEST_METHOD,
-            test_params=test_spec.get("params", {}),
-        )
-        summary_payload, _ = test_output
-        summary_df, _ = summary_payload
-        multiple_testing_df, _ = corrected_output
-        test_results[test_id] = {
-            "variant_name": variant_name,
-            "test_method": test_method,
-            "sample_scope": "train",
-            "summary": summary_df,
-            "multiple_testing": multiple_testing_df,
-        }
-
-    return variants, test_results
+    return variants, dict(validation_result.test_results)
 
 def run_persisted_ic_workflow(
         *,
@@ -122,6 +109,8 @@ def run_persisted_ic_workflow(
         context: SourceContext,
         membership = None,
         allowed_module_prefixes: Iterable[str] | None = ("quantmine",),
+        ic_component: ICCalculationComponent | None = None,
+        validation_component: ICValidationComponent | None = None
 ):
     """Run IC using the engine stored in a research-run snapshot."""
 
@@ -134,9 +123,16 @@ def run_persisted_ic_workflow(
     if not config.ic_research:
         raise ValueError("persisted research config does not contain ic_research")
 
-    component = resolve_ic_calculation_component(
-        config.ic_engine,
-        allowed_module_prefixes= allowed_module_prefixes,
+
+    resolved_ic_component = (
+        ic_component if ic_component is not None else resolve_ic_calculation_component(config.ic_engine, allowed_module_prefixes= allowed_module_prefixes)
+    )
+
+    resolved_validation_component = (
+        validation_component if validation_component is not None else resolve_ic_validation_component(
+            config.validation_engine,
+            allowed_module_prefixes= allowed_module_prefixes
+        )
     )
 
     return run_ic_workflow(
@@ -144,6 +140,7 @@ def run_persisted_ic_workflow(
         factors= factors,
         research_config=dict(config.ic_research),
         membership= membership,
-        ic_component= component,
+        ic_component= resolved_ic_component,
+        validation_component= resolved_validation_component,
         context =context
     )

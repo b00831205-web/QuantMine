@@ -5,6 +5,11 @@ from pathlib import Path
 
 from .plugins.bundles import resolve_research_bundle_definition
 from .plugins.context import SourceContext
+from .plugins.ic_engines import ICCalculationComponent, resolve_ic_calculation_component
+from .plugins.ic_validators import (
+    ICValidationComponent,
+    resolve_ic_validation_component,
+)
 from .research import (
     FactorResearchResult,
     load_research_market_data,
@@ -19,6 +24,7 @@ from .workflows.factor_research_artifacts import (
 )
 from .workflows.ic import run_persisted_ic_workflow
 from .workflows.ic_research_artifacts import publish_ic_research_artifacts
+
 
 def execute_persisted_research(
         store: ResearchRunStore,
@@ -76,8 +82,17 @@ def execute_persisted_ic_research(
     config = store.load(run_id)
     artifact_dir = artifact_root / str(run_id)
     artifact_dir.mkdir(parents=True, exist_ok=True)
+    ic_component = resolve_ic_calculation_component(
+        config.ic_engine,
+        allowed_module_prefixes= allowed_module_prefixes
+    )
+    validation_component = resolve_ic_validation_component(
+        config.validation_engine,
+        allowed_module_prefixes= allowed_module_prefixes,
+    )
 
-    connections = ConnectionRegistry.from_environment(required_research_connection_refs(config))
+
+    connections = ConnectionRegistry.from_environment(required_research_connection_refs(config, ic_component= ic_component, validation_component= validation_component))
     context = SourceContext(connections= connections, run_id= run_id, artifact_dir= artifact_dir,)
 
     try:
@@ -103,7 +118,9 @@ def execute_persisted_ic_research(
             factors=factor_artifacts.factors,
             context= context,
             membership=None,
-            allowed_module_prefixes= allowed_module_prefixes
+            allowed_module_prefixes= allowed_module_prefixes,
+            ic_component= ic_component,
+            validation_component= validation_component
         )
 
         publish_ic_research_artifacts(
@@ -119,6 +136,9 @@ def execute_persisted_ic_research(
 
 def required_research_connection_refs(
         config: ResearchRunConfig,
+        *,
+        ic_component: ICCalculationComponent | None = None,
+        validation_component: ICValidationComponent | None = None,
 ) -> tuple[str, ...]:
     """Return every external connection required by one research run."""
 
@@ -131,6 +151,13 @@ def required_research_connection_refs(
             if eligibility_binding is not None
             else None
         ),
+        (
+            ic_component.connection_ref if ic_component is not None else None
+        ),
+        (
+            validation_component.connection_ref if validation_component is not None
+            else None
+        )
     )
 
     return tuple(

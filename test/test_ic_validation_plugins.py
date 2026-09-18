@@ -23,6 +23,8 @@ from quantmine.plugins.ic_validators import (
     validate_ic_component,
 )
 from quantmine.storage.connections import ConnectionRegistry
+from quantmine.workflows import ic as ic_workflow_module
+from quantmine.workflows.ic import run_ic_workflow
 
 
 def _variant() -> ICVariant:
@@ -348,3 +350,67 @@ def test_python_validation_factory_and_allowlisted_resolution() -> None:
 def test_python_validation_factory_rejects_unknown_parameters() -> None:
     with pytest.raises(ValueError, match="unsupported.*unexpected"):
         create_python_ic_validation_engine(unexpected=True)
+
+
+def test_ic_workflow_uses_injected_validation_component(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    variant = _variant()
+    summary = pd.DataFrame({"t_stat": [3.1], "p_value": [0.01]})
+    context = _context(tmp_path)
+
+    class RecordingPlugin:
+        request = None
+        context = None
+
+        def validate(self, request, received_context):
+            self.request = request
+            self.context = received_context
+            return ICValidationResult(
+                test_results={
+                    "custom_raw": {
+                        "variant_name": "raw",
+                        "test_method": "custom_test",
+                        "sample_scope": "train",
+                        "summary": summary,
+                        "multiple_testing": None,
+                    }
+                },
+                metadata={"backend": "custom"},
+            )
+
+    monkeypatch.setattr(
+        ic_workflow_module,
+        "prepare_raw_variant",
+        lambda **kwargs: variant,
+    )
+    plugin = RecordingPlugin()
+    component = ICValidationComponent(id="custom", plugin=plugin)
+
+    variants, test_results = run_ic_workflow(
+        close=object(),
+        factors={},
+        research_config={
+            "periods": [1],
+            "train_end": "2024-01-31",
+            "test_start": "2024-02-01",
+            "processors": [],
+            "tests": [
+                {
+                    "id": "custom_raw",
+                    "input": "raw",
+                    "name": "custom_test",
+                    "params": {"samples": 500},
+                }
+            ],
+        },
+        validation_component=component,
+        context=context,
+    )
+
+    assert variants == {"raw": variant}
+    assert test_results["custom_raw"]["summary"] is summary
+    assert plugin.request.variants == {"raw": variant}
+    assert plugin.request.tests[0]["params"] == {"samples": 500}
+    assert plugin.context is context

@@ -28,6 +28,14 @@ from quantmine.plugins.contracts import (
     PluginSpec,
     VersionedDatasetBinding,
 )
+from quantmine.plugins.ic_engines import (
+    ICCalculationComponent,
+    PythonICCalculationPlugin,
+)
+from quantmine.plugins.ic_validators import (
+    ICValidationComponent,
+    PythonICValidationPlugin,
+)
 from quantmine.research_config import ResearchRunConfig
 
 
@@ -189,6 +197,51 @@ def test_required_research_connections_deduplicates_aliases() -> None:
     ) == ("cn_lake",)
 
 
+def test_required_research_connections_include_engine_components() -> None:
+    ic_component = ICCalculationComponent(
+        id="remote_ic",
+        plugin=PythonICCalculationPlugin(),
+        connection_ref="ic_service",
+        requires_connection=True,
+    )
+    validation_component = ICValidationComponent(
+        id="remote_validation",
+        plugin=PythonICValidationPlugin(),
+        connection_ref="validation_service",
+        requires_connection=True,
+    )
+
+    assert required_research_connection_refs(
+        _connection_config("cn_market", "cn_eligibility"),
+        ic_component=ic_component,
+        validation_component=validation_component,
+    ) == (
+        "cn_market",
+        "cn_eligibility",
+        "ic_service",
+        "validation_service",
+    )
+
+
+def test_required_research_connections_deduplicate_engine_aliases() -> None:
+    ic_component = ICCalculationComponent(
+        id="remote_ic",
+        plugin=PythonICCalculationPlugin(),
+        connection_ref="shared_service",
+    )
+    validation_component = ICValidationComponent(
+        id="remote_validation",
+        plugin=PythonICValidationPlugin(),
+        connection_ref="shared_service",
+    )
+
+    assert required_research_connection_refs(
+        _connection_config("shared_service", None),
+        ic_component=ic_component,
+        validation_component=validation_component,
+    ) == ("shared_service",)
+
+
 def test_persisted_run_execution_uses_env_connections_and_configured_plugins(
     monkeypatch,
     tmp_path: Path,
@@ -323,6 +376,41 @@ def test_persisted_ic_execution_loads_one_run_snapshot_and_verified_inputs(
     factor = close.pct_change()
     resolved_bundle = object()
     observed: dict[str, object] = {}
+    ic_component = ICCalculationComponent(
+        id="remote_ic",
+        plugin=PythonICCalculationPlugin(),
+        connection_ref="ic_service",
+        requires_connection=True,
+    )
+    validation_component = ICValidationComponent(
+        id="remote_validation",
+        plugin=PythonICValidationPlugin(),
+        connection_ref="validation_service",
+        requires_connection=True,
+    )
+
+    monkeypatch.setattr(
+        execution_module,
+        "resolve_ic_calculation_component",
+        lambda spec, *, allowed_module_prefixes: (
+            observed.update(
+                ic_spec=spec,
+                ic_allowlist=allowed_module_prefixes,
+            )
+            or ic_component
+        ),
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "resolve_ic_validation_component",
+        lambda spec, *, allowed_module_prefixes: (
+            observed.update(
+                validation_spec=spec,
+                validation_allowlist=allowed_module_prefixes,
+            )
+            or validation_component
+        ),
+    )
 
     monkeypatch.setattr(
         execution_module.ConnectionRegistry,
@@ -396,6 +484,8 @@ def test_persisted_ic_execution_loads_one_run_snapshot_and_verified_inputs(
     assert observed["connection_refs"] == (
         "cn_market",
         "cn_eligibility",
+        "ic_service",
+        "validation_service",
     )
     assert observed["bundle_definition"] == config.bundle
     assert observed["bundle_allowlist"] == ("quantmine", "vendor_ic")
@@ -414,6 +504,8 @@ def test_persisted_ic_execution_loads_one_run_snapshot_and_verified_inputs(
         "quantmine",
         "vendor_ic",
     )
+    assert workflow_kwargs["ic_component"] is ic_component
+    assert workflow_kwargs["validation_component"] is validation_component
     assert observed["published_variants"] is variants
     assert observed["published_test_results"] is test_results
     assert observed["publication_run_id"] == 701

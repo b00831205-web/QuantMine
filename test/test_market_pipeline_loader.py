@@ -7,6 +7,7 @@ import pytest
 from quantmine.market_pipeline_loader import (
     load_market_pipeline_definitions,
 )
+from quantmine.plugins.contracts import PluginSpec
 from quantmine.research_config import ResearchRunConfig
 
 
@@ -191,7 +192,7 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     }
 
     research_config = definition.stages[4].plugin.params["config"]
-    assert research_config["schema_version"] == 4
+    assert research_config["schema_version"] == 5
     assert research_config["bundle"]["id"] == "cn_a_share_v1"
     assert research_config["data_binding"]["connection_ref"] == (
         "cn_market_data"
@@ -207,6 +208,10 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "quantmine.plugins.ic_engines:"
         "create_python_ic_calculation_engine"
     )
+    assert research_config["validation_engine"]["entry_point"] == (
+        "quantmine.plugins.ic_validators:"
+        "create_python_ic_validation_engine"
+    )
     assert research_config["ic_research"]["periods"] == [1, 5, 20]
 
     restored_research_config = ResearchRunConfig.from_snapshot(
@@ -214,6 +219,10 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     )
     assert restored_research_config.bundle.id == "cn_a_share_v1"
     assert restored_research_config.data_binding.version == "{as_of_date}"
+    assert restored_research_config.validation_engine == PluginSpec(
+        "quantmine.plugins.ic_validators:"
+        "create_python_ic_validation_engine"
+    )
     assert restored_research_config.ic_research["periods"] == [1, 5, 20]
     assert definition.stages[1].plugin.params["config"] == (
         definition.stages[2].plugin.params["config"]

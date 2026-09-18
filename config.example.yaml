@@ -47,7 +47,7 @@ ic_research: &ic_research_config
         lag_multiplier: 2
 
 a_share_research_run: &a_share_research_run
-  schema_version: 4
+  schema_version: 5
 
   bundle:
     id: cn_a_share_v1
@@ -89,6 +89,10 @@ a_share_research_run: &a_share_research_run
 
   ic_engine:
     entry_point: quantmine.plugins.ic_engines:create_python_ic_calculation_engine
+    params: {}
+
+  validation_engine:
+    entry_point: quantmine.plugins.ic_validators:create_python_ic_validation_engine
     params: {}
 
   ic_research: *ic_research_config

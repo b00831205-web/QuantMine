@@ -20,13 +20,18 @@ from .plugins.contracts import (
     VersionedDatasetBinding,
 )
 
-RESEARCH_RUN_CONFIG_VERSION = 4
+RESEARCH_RUN_CONFIG_VERSION = 5
 
 def _default_ic_engine_spec() -> PluginSpec:
     return PluginSpec(
         entry_point=(
             "quantmine.plugins.ic_engines:create_python_ic_calculation_engine"
         )
+    )
+
+def _default_validation_engine_spec() -> PluginSpec:
+    return PluginSpec(
+        entry_point= "quantmine.plugins.ic_validators:create_python_ic_validation_engine"
     )
 
 @dataclass(frozen = True)
@@ -41,6 +46,7 @@ class ResearchRunConfig:
     data_binding: DataBinding
     factor_parameters: Mapping[str, Any]
     ic_engine: PluginSpec = field(default_factory=_default_ic_engine_spec)
+    validation_engine: PluginSpec = field(default_factory=_default_validation_engine_spec)
     ic_research: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -52,6 +58,7 @@ class ResearchRunConfig:
         factor_parameters: Mapping[str, Any] | None = None,
         ic_engine: PluginSpec | None = None,
         ic_research: Mapping[str, Any] | None = None,
+        validation_engine: PluginSpec | None = None,
     )-> ResearchRunConfig:
         return cls(
             bundle = get_research_bundle(bundle_id),
@@ -60,7 +67,8 @@ class ResearchRunConfig:
             ic_engine = (
                 ic_engine if ic_engine is not None else _default_ic_engine_spec()
             ),
-            ic_research = dict(ic_research or {})
+            ic_research = dict(ic_research or {}),
+            validation_engine = validation_engine if validation_engine is not None else _default_validation_engine_spec()
         )
 
     def to_snapshot(self) -> dict[str, Any]:
@@ -101,6 +109,7 @@ class ResearchRunConfig:
             "factor_parameters": dict(self.factor_parameters),
             "ic_engine": _plugin_spec_snapshot(self.ic_engine),
             "ic_research": dict(self.ic_research),
+            "validation_engine": _plugin_spec_snapshot(self.validation_engine)
         }
         return _json_copy(snap_shot, label = "ResearchRunConfig")
 
@@ -115,7 +124,7 @@ class ResearchRunConfig:
         version = payload.get("schema_version")
         ic_research = _mapping(payload.get("ic_research", {}), label = "ic_research")
 
-        if version not in {1, 2, 3, RESEARCH_RUN_CONFIG_VERSION}:
+        if version not in {1, 2, 3, 4,RESEARCH_RUN_CONFIG_VERSION}:
             raise ValueError(
                 "Unsupported research-run config schema version "
                 f"{version!r}; expected 1 or {RESEARCH_RUN_CONFIG_VERSION}"
@@ -217,11 +226,25 @@ class ResearchRunConfig:
                 ic_engine = _default_ic_engine_spec()
             else:
                 raise TypeError(
-                    "version-4 research-run config requires ic_engine"
+                    "version-4+ research-run config requires ic_engine"
                 )
 
         else:
             ic_engine = _plugin_spec_from_snapshot(ic_engine_payload)
+
+        validation_engine_payload = payload.get("validation_engine")
+
+        if validation_engine_payload is None:
+            if version in {1,2,3,4}:
+                validation_engine = _default_validation_engine_spec()
+
+            else:
+                raise TypeError(
+                    "version-5 research-run config requires validation_engine"
+                )
+
+        else:
+            validation_engine = _plugin_spec_from_snapshot(validation_engine_payload)
 
         return cls(
             bundle = bundle,
@@ -229,6 +252,7 @@ class ResearchRunConfig:
             factor_parameters = factor_parameters,
             ic_engine = ic_engine,
             ic_research = ic_research,
+            validation_engine = validation_engine
         )
 
 def resolve_research_run_config_for_as_of_date(
