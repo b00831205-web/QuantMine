@@ -12,11 +12,18 @@ import pytest
 from quantmine import execution as execution_module
 from quantmine.datareader import MarketData
 from quantmine.execution import (
+    build_backtest_request,
     execute_persisted_research,
     required_research_connection_refs,
 )
+from quantmine.ic_calculator import ICVariant
 from quantmine.plugins import builtins as builtin_plugins
 from quantmine.plugins import us_equity as us_equity_plugins
+from quantmine.plugins.backtest_engines import (
+    BacktestComponent,
+    BacktestResult,
+    PythonQuantileBacktestPlugin,
+)
 from quantmine.plugins.bundles import ResearchBundle
 from quantmine.plugins.context import SourceContext
 from quantmine.plugins.contracts import (
@@ -36,7 +43,15 @@ from quantmine.plugins.ic_validators import (
     ICValidationComponent,
     PythonICValidationPlugin,
 )
+from quantmine.plugins.market_rules import (
+    MarketRulesComponent,
+    UnrestrictedMarketRulesPlugin,
+)
 from quantmine.research_config import ResearchRunConfig
+from quantmine.workflows.ic_research_artifacts import (
+    ICResearchArtifacts,
+    ICResearchPublication,
+)
 
 
 class InMemoryStore:
@@ -80,6 +95,29 @@ class DisposableConnections:
 
     def dispose(self) -> None:
         self.disposed = True
+
+
+class StubMarketStateProvider:
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def status_on(
+        self,
+        trade_date: pd.Timestamp,
+        ticker: str,
+    ) -> dict[str, object]:
+        del trade_date, ticker
+        return {
+            "is_suspended": False,
+            "is_limit_up": False,
+            "is_limit_down": False,
+        }
+
+
+class StubMembershipUniverse:
+    def get_constituents(self, date: pd.Timestamp) -> list[str]:
+        del date
+        return ["AAA"]
 
 
 class FixtureYFinanceSource:
@@ -173,6 +211,117 @@ def _connection_config(
     )
 
 
+def _ic_artifacts(tmp_path: Path) -> ICResearchArtifacts:
+    return ICResearchArtifacts(
+        publication=ICResearchPublication(
+            run_id=701,
+            output_dir=tmp_path / "ic_research" / "701",
+            manifest_path=(
+                tmp_path / "ic_research" / "701" / "manifest.json"
+            ),
+            variant_count=1,
+            test_count=0,
+            variant_names=("raw",),
+            test_ids=(),
+        ),
+        variants={"raw": ICVariant(train={}, test={}, transforms=[])},
+        test_results={},
+    )
+
+
+def _market_rules_component() -> MarketRulesComponent:
+    return MarketRulesComponent(
+        id="unrestricted_market_rules",
+        plugin=UnrestrictedMarketRulesPlugin(),
+        market="US",
+    )
+
+
+def test_build_backtest_request_preserves_verified_inputs(
+    tmp_path: Path,
+) -> None:
+    close = pd.DataFrame(
+        {"AAA": [10.0, 11.0]},
+        index=pd.date_range("2026-09-17", periods=2, freq="B"),
+    )
+    market_cap = close * 1_000_000
+    universe = StubMembershipUniverse()
+    market_data = MarketDataBundle(
+        market=MarketData(close=close, market_cap=market_cap),
+        universe=universe,
+    )
+    artifacts = _ic_artifacts(tmp_path)
+    market_rules = _market_rules_component()
+
+    request = build_backtest_request(
+        _connection_config(None, None),
+        market_data,
+        artifacts,
+        market_rules,
+    )
+
+    assert request.close is close
+    assert request.market_cap is market_cap
+    assert request.market_data is market_data
+    assert request.variants is artifacts.variants
+    assert request.test_results is artifacts.test_results
+    assert request.constituents is universe
+    assert request.market_rules is market_rules
+    assert request.market_state_provider is None
+
+
+def test_build_backtest_request_discovers_bundle_market_state_provider(
+    tmp_path: Path,
+) -> None:
+    provider = StubMarketStateProvider("bundle")
+    market_data = MarketDataBundle(
+        market=MarketData(close=pd.DataFrame({"AAA": [10.0]})),
+        universe=provider,
+    )
+
+    request = build_backtest_request(
+        _connection_config(None, None),
+        market_data,
+        _ic_artifacts(tmp_path),
+        _market_rules_component(),
+    )
+
+    assert request.constituents is provider
+    assert request.market_state_provider is provider
+
+
+def test_build_backtest_request_prefers_explicit_market_state_provider(
+    tmp_path: Path,
+) -> None:
+    bundle_provider = StubMarketStateProvider("bundle")
+    explicit_provider = StubMarketStateProvider("explicit")
+    market_data = MarketDataBundle(
+        market=MarketData(close=pd.DataFrame({"AAA": [10.0]})),
+        universe=bundle_provider,
+    )
+
+    request = build_backtest_request(
+        _connection_config(None, None),
+        market_data,
+        _ic_artifacts(tmp_path),
+        _market_rules_component(),
+        market_state_provider=explicit_provider,
+    )
+
+    assert request.constituents is bundle_provider
+    assert request.market_state_provider is explicit_provider
+
+
+def test_build_backtest_request_requires_close_prices(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="close"):
+        build_backtest_request(
+            _connection_config(None, None),
+            MarketDataBundle(market=MarketData()),
+            _ic_artifacts(tmp_path),
+            _market_rules_component(),
+        )
+
+
 def test_required_research_connections_supports_connection_free_source() -> None:
     assert required_research_connection_refs(
         _connection_config(None, None)
@@ -223,6 +372,33 @@ def test_required_research_connections_include_engine_components() -> None:
     )
 
 
+def test_required_research_connections_include_backtest_components() -> None:
+    backtest_component = BacktestComponent(
+        id="remote_backtest",
+        plugin=PythonQuantileBacktestPlugin(),
+        connection_ref="backtest_service",
+        requires_connection=True,
+    )
+    market_rules_component = MarketRulesComponent(
+        id="remote_market_rules",
+        plugin=UnrestrictedMarketRulesPlugin(),
+        market="CN",
+        connection_ref="market_rules_service",
+        requires_connection=True,
+    )
+
+    assert required_research_connection_refs(
+        _connection_config("cn_market", "cn_eligibility"),
+        backtest_component=backtest_component,
+        market_rules_component=market_rules_component,
+    ) == (
+        "cn_market",
+        "cn_eligibility",
+        "backtest_service",
+        "market_rules_service",
+    )
+
+
 def test_required_research_connections_deduplicate_engine_aliases() -> None:
     ic_component = ICCalculationComponent(
         id="remote_ic",
@@ -234,11 +410,24 @@ def test_required_research_connections_deduplicate_engine_aliases() -> None:
         plugin=PythonICValidationPlugin(),
         connection_ref="shared_service",
     )
+    backtest_component = BacktestComponent(
+        id="remote_backtest",
+        plugin=PythonQuantileBacktestPlugin(),
+        connection_ref="shared_service",
+    )
+    market_rules_component = MarketRulesComponent(
+        id="remote_market_rules",
+        plugin=UnrestrictedMarketRulesPlugin(),
+        market="CN",
+        connection_ref="shared_service",
+    )
 
     assert required_research_connection_refs(
         _connection_config("shared_service", None),
         ic_component=ic_component,
         validation_component=validation_component,
+        backtest_component=backtest_component,
+        market_rules_component=market_rules_component,
     ) == ("shared_service",)
 
 
@@ -573,6 +762,191 @@ def test_persisted_ic_execution_disposes_connections_when_workflow_fails(
             InMemoryStore(config),
             701,
             artifact_root=tmp_path / "artifacts",
+        )
+
+    assert connections.disposed is True
+
+
+def test_persisted_backtest_execution_resolves_and_runs_components(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config = _connection_config("cn_market", "cn_eligibility")
+    connections = DisposableConnections()
+    observed: dict[str, object] = {}
+    close = pd.DataFrame(
+        {"AAA": [10.0, 11.0]},
+        index=pd.date_range("2026-09-17", periods=2, freq="B"),
+    )
+    provider = StubMarketStateProvider("bundle")
+    market_data = MarketDataBundle(
+        market=MarketData(close=close),
+        universe=provider,
+    )
+    ic_artifacts = _ic_artifacts(tmp_path)
+    backtest_component = BacktestComponent(
+        id="remote_backtest",
+        plugin=PythonQuantileBacktestPlugin(),
+        connection_ref="backtest_service",
+        requires_connection=True,
+    )
+    market_rules_component = MarketRulesComponent(
+        id="remote_market_rules",
+        plugin=UnrestrictedMarketRulesPlugin(),
+        market="CN",
+        connection_ref="market_rules_service",
+        requires_connection=True,
+    )
+    expected = BacktestResult(
+        job_results={},
+        metadata={"backend": "stub"},
+    )
+
+    monkeypatch.setattr(
+        execution_module,
+        "resolve_backtest_component",
+        lambda spec, *, allowed_module_prefixes: (
+            observed.update(
+                backtest_spec=spec,
+                backtest_allowlist=allowed_module_prefixes,
+            )
+            or backtest_component
+        ),
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "resolve_market_rules_component",
+        lambda spec, *, allowed_module_prefixes: (
+            observed.update(
+                market_rules_spec=spec,
+                market_rules_allowlist=allowed_module_prefixes,
+            )
+            or market_rules_component
+        ),
+    )
+    monkeypatch.setattr(
+        execution_module.ConnectionRegistry,
+        "from_environment",
+        lambda refs: observed.update(connection_refs=refs) or connections,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "resolve_research_bundle_definition",
+        lambda definition, *, allowed_module_prefixes: (
+            observed.update(
+                bundle_definition=definition,
+                bundle_allowlist=allowed_module_prefixes,
+            )
+            or object()
+        ),
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "load_research_market_data",
+        lambda bundle, binding, context: (
+            observed.update(
+                resolved_bundle=bundle,
+                binding=binding,
+                market_context=context,
+            )
+            or market_data
+        ),
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "load_ic_research_artifacts",
+        lambda *, root, run_id: (
+            observed.update(ic_root=root, ic_run_id=run_id)
+            or ic_artifacts
+        ),
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "run_backtest_component",
+        lambda component, request, context: (
+            observed.update(
+                executed_component=component,
+                request=request,
+                execution_context=context,
+            )
+            or expected
+        ),
+    )
+
+    actual = execution_module.execute_persisted_backtest(
+        InMemoryStore(config),
+        701,
+        artifact_root=tmp_path / "artifacts",
+        allowed_module_prefixes=("quantmine", "vendor_backtest"),
+    )
+
+    assert actual is expected
+    assert observed["backtest_spec"] == config.backtest_engine
+    assert observed["market_rules_spec"] == config.market_rules
+    assert observed["backtest_allowlist"] == (
+        "quantmine",
+        "vendor_backtest",
+    )
+    assert observed["market_rules_allowlist"] == (
+        "quantmine",
+        "vendor_backtest",
+    )
+    assert observed["connection_refs"] == (
+        "cn_market",
+        "cn_eligibility",
+        "backtest_service",
+        "market_rules_service",
+    )
+    assert observed["bundle_definition"] == config.bundle
+    assert observed["binding"] == config.data_binding
+    assert observed["ic_root"] == tmp_path / "artifacts" / "ic_research"
+    assert observed["ic_run_id"] == 701
+    assert observed["executed_component"] is backtest_component
+    assert observed["execution_context"] is observed["market_context"]
+
+    request = observed["request"]
+    assert request.market_data is market_data
+    assert request.market_rules is market_rules_component
+    assert request.market_state_provider is provider
+    assert request.variants is ic_artifacts.variants
+    assert request.test_results is ic_artifacts.test_results
+    assert connections.disposed is True
+
+
+def test_persisted_backtest_execution_disposes_connections_on_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    config = _connection_config(None, None)
+    connections = DisposableConnections()
+
+    monkeypatch.setattr(
+        execution_module.ConnectionRegistry,
+        "from_environment",
+        lambda refs: connections,
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "load_ic_research_artifacts",
+        lambda **kwargs: _ic_artifacts(tmp_path),
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "run_backtest_component",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("backtest failed")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="backtest failed"):
+        execution_module.execute_persisted_backtest(
+            InMemoryStore(config),
+            701,
+            artifact_root=tmp_path / "artifacts",
+            allowed_module_prefixes=(
+                "quantmine",
+                "test_persisted_research_execution",
+            ),
         )
 
     assert connections.disposed is True

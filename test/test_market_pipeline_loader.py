@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from quantmine.market_pipeline_loader import (
     load_market_pipeline_definitions,
@@ -192,7 +193,7 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     }
 
     research_config = definition.stages[4].plugin.params["config"]
-    assert research_config["schema_version"] == 5
+    assert research_config["schema_version"] == 6
     assert research_config["bundle"]["id"] == "cn_a_share_v1"
     assert research_config["data_binding"]["connection_ref"] == (
         "cn_market_data"
@@ -212,6 +213,35 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "quantmine.plugins.ic_validators:"
         "create_python_ic_validation_engine"
     )
+    assert research_config["backtest_engine"]["entry_point"] == (
+        "quantmine.plugins.backtest_engines:"
+        "create_python_backtest_engine"
+    )
+    assert research_config["market_rules"] == {
+        "entry_point": (
+            "quantmine.plugins.market_rules:"
+            "create_a_stock_market_rules"
+        ),
+        "params": {
+            "market": "CN",
+            "lot_size": 100,
+            "commission_rate": 0.0003,
+            "minimum_commission": 5.0,
+            "stamp_duty_rate": 0.0005,
+            "transfer_fee_rate": 0.00001,
+        },
+    }
+    assert [
+        job["id"] for job in research_config["backtest"]["jobs"]
+    ] == [
+        "raw_quintile",
+        "orthogonalized_quintile",
+        "mcap_quintile",
+    ]
+    raw_example = yaml.safe_load(
+        example_path.read_text(encoding="utf-8")
+    )
+    assert research_config["backtest"] == raw_example["backtest"]
     assert research_config["ic_research"]["periods"] == [1, 5, 20]
 
     restored_research_config = ResearchRunConfig.from_snapshot(
@@ -223,6 +253,22 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "quantmine.plugins.ic_validators:"
         "create_python_ic_validation_engine"
     )
+    assert restored_research_config.backtest_engine == PluginSpec(
+        "quantmine.plugins.backtest_engines:"
+        "create_python_backtest_engine"
+    )
+    assert restored_research_config.market_rules == PluginSpec(
+        "quantmine.plugins.market_rules:create_a_stock_market_rules",
+        params={
+            "market": "CN",
+            "lot_size": 100,
+            "commission_rate": 0.0003,
+            "minimum_commission": 5.0,
+            "stamp_duty_rate": 0.0005,
+            "transfer_fee_rate": 0.00001,
+        },
+    )
+    assert restored_research_config.backtest == research_config["backtest"]
     assert restored_research_config.ic_research["periods"] == [1, 5, 20]
     assert definition.stages[1].plugin.params["config"] == (
         definition.stages[2].plugin.params["config"]

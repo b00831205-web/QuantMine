@@ -58,7 +58,7 @@ def test_research_run_config_round_trips_as_a_safe_json_snapshot() -> None:
     serialized = json.dumps(snapshot, sort_keys=True, allow_nan=False)
     restored = ResearchRunConfig.from_snapshot(json.loads(serialized))
 
-    assert snapshot["schema_version"] == 5
+    assert snapshot["schema_version"] == 6
     assert snapshot["data_binding"]["connection_ref"] == "cn_equity_lake"
     assert snapshot["data_binding"]["version"] == "20260909"
     assert snapshot["data_binding"]["tickers"] == ["000001", "000002"]
@@ -79,6 +79,15 @@ def test_research_run_config_round_trips_as_a_safe_json_snapshot() -> None:
         "quantmine.plugins.ic_validators:"
         "create_python_ic_validation_engine"
     )
+    assert snapshot["backtest_engine"]["entry_point"] == (
+        "quantmine.plugins.backtest_engines:"
+        "create_python_backtest_engine"
+    )
+    assert snapshot["market_rules"]["entry_point"] == (
+        "quantmine.plugins.market_rules:"
+        "create_unrestricted_market_rules"
+    )
+    assert snapshot["backtest"] == {"jobs": []}
     assert "postgresql://" not in serialized
     assert restored == config
 
@@ -133,12 +142,62 @@ def test_research_run_config_round_trips_an_overridden_validation_engine() -> No
     )
 
 
+def test_research_run_config_round_trips_backtest_and_market_rules() -> None:
+    config = ResearchRunConfig.from_bundle_id(
+        "cn_a_share_v1",
+        _binding(),
+        backtest_engine=PluginSpec(
+            "vendor_backtest:create_cuda_position_engine",
+            params={"device": 1},
+        ),
+        market_rules=PluginSpec(
+            "quantmine.plugins.market_rules:"
+            "create_a_stock_market_rules",
+            params={"market": "CN", "lot_size": 100},
+        ),
+        backtest={
+            "jobs": [
+                {
+                    "id": "raw_quintile",
+                    "variant": "raw",
+                    "selection_test": "newey_raw",
+                    "part": 5,
+                }
+            ]
+        },
+    )
+
+    restored = ResearchRunConfig.from_snapshot(config.to_snapshot())
+
+    assert restored.backtest_engine == PluginSpec(
+        "vendor_backtest:create_cuda_position_engine",
+        params={"device": 1},
+    )
+    assert restored.market_rules == PluginSpec(
+        "quantmine.plugins.market_rules:create_a_stock_market_rules",
+        params={"market": "CN", "lot_size": 100},
+    )
+    assert restored.backtest == {
+        "jobs": [
+            {
+                "id": "raw_quintile",
+                "variant": "raw",
+                "selection_test": "newey_raw",
+                "part": 5,
+            }
+        ]
+    }
+
+
 def test_research_run_config_reads_v3_without_an_ic_engine() -> None:
     config = ResearchRunConfig.from_bundle_id("us_equity_v1", _binding())
     legacy_snapshot = config.to_snapshot()
     legacy_snapshot["schema_version"] = 3
     legacy_snapshot.pop("ic_engine")
     legacy_snapshot.pop("validation_engine")
+    legacy_snapshot.pop("backtest_engine")
+    legacy_snapshot.pop("market_rules")
+    legacy_snapshot.pop("backtest")
 
     restored = ResearchRunConfig.from_snapshot(legacy_snapshot)
 
@@ -150,6 +209,15 @@ def test_research_run_config_reads_v3_without_an_ic_engine() -> None:
         "quantmine.plugins.ic_validators:"
         "create_python_ic_validation_engine"
     )
+    assert restored.backtest_engine == PluginSpec(
+        "quantmine.plugins.backtest_engines:"
+        "create_python_backtest_engine"
+    )
+    assert restored.market_rules == PluginSpec(
+        "quantmine.plugins.market_rules:"
+        "create_unrestricted_market_rules"
+    )
+    assert restored.backtest == {"jobs": []}
 
 
 def test_research_run_config_reads_v4_without_a_validation_engine() -> None:
@@ -157,6 +225,9 @@ def test_research_run_config_reads_v4_without_a_validation_engine() -> None:
     legacy_snapshot = config.to_snapshot()
     legacy_snapshot["schema_version"] = 4
     legacy_snapshot.pop("validation_engine")
+    legacy_snapshot.pop("backtest_engine")
+    legacy_snapshot.pop("market_rules")
+    legacy_snapshot.pop("backtest")
 
     restored = ResearchRunConfig.from_snapshot(legacy_snapshot)
 
@@ -165,10 +236,43 @@ def test_research_run_config_reads_v4_without_a_validation_engine() -> None:
         "quantmine.plugins.ic_validators:"
         "create_python_ic_validation_engine"
     )
+    assert restored.backtest_engine == config.backtest_engine
+    assert restored.market_rules == config.market_rules
+    assert restored.backtest == {"jobs": []}
 
 
-@pytest.mark.parametrize("missing", ["ic_engine", "validation_engine"])
-def test_research_run_config_v5_requires_both_engine_specs(
+def test_research_run_config_reads_v5_without_backtest_plugins() -> None:
+    config = ResearchRunConfig.from_bundle_id("us_equity_v1", _binding())
+    legacy_snapshot = config.to_snapshot()
+    legacy_snapshot["schema_version"] = 5
+    legacy_snapshot.pop("backtest_engine")
+    legacy_snapshot.pop("market_rules")
+    legacy_snapshot.pop("backtest")
+
+    restored = ResearchRunConfig.from_snapshot(legacy_snapshot)
+
+    assert restored.backtest_engine == PluginSpec(
+        "quantmine.plugins.backtest_engines:"
+        "create_python_backtest_engine"
+    )
+    assert restored.market_rules == PluginSpec(
+        "quantmine.plugins.market_rules:"
+        "create_unrestricted_market_rules"
+    )
+    assert restored.backtest == {"jobs": []}
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "ic_engine",
+        "validation_engine",
+        "backtest_engine",
+        "market_rules",
+        "backtest",
+    ],
+)
+def test_research_run_config_v6_requires_all_plugin_specs(
     missing: str,
 ) -> None:
     snapshot = ResearchRunConfig.from_bundle_id(
@@ -178,6 +282,17 @@ def test_research_run_config_v5_requires_both_engine_specs(
     snapshot.pop(missing)
 
     with pytest.raises(TypeError, match=missing):
+        ResearchRunConfig.from_snapshot(snapshot)
+
+
+def test_research_run_config_requires_backtest_jobs_list() -> None:
+    snapshot = ResearchRunConfig.from_bundle_id(
+        "us_equity_v1",
+        _binding(),
+    ).to_snapshot()
+    snapshot["backtest"] = {"jobs": {}}
+
+    with pytest.raises(TypeError, match="backtest.jobs must be a JSON list"):
         ResearchRunConfig.from_snapshot(snapshot)
 
 

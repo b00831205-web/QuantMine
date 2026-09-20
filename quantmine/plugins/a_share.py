@@ -361,6 +361,7 @@ class AStockEligibilityUniverse:
             )
 
         return {
+            "is_suspended": bool(status["is_suspended"]),
             "is_limit_up": bool(status["is_limit_up"]),
             "is_limit_down": bool(status["is_limit_down"]),
         }

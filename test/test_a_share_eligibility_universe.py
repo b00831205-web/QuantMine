@@ -41,7 +41,19 @@ def test_limit_flags_are_preserved_but_not_used_for_signal_day_membership() -> N
 
     assert "EEE" in universe.get_constituents(pd.Timestamp("2024-01-02"))
     assert universe.status_on(pd.Timestamp("2024-01-02"), "EEE") == {
+        "is_suspended": False,
         "is_limit_up": True,
+        "is_limit_down": False,
+    }
+
+
+def test_execution_status_is_available_for_excluded_securities() -> None:
+    universe = AStockEligibilityUniverse.from_frame(_eligibility_table())
+
+    assert "CCC" not in universe.get_constituents(pd.Timestamp("2024-01-02"))
+    assert universe.status_on(pd.Timestamp("2024-01-02"), "CCC") == {
+        "is_suspended": True,
+        "is_limit_up": False,
         "is_limit_down": False,
     }
 

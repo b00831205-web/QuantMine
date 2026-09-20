@@ -20,7 +20,7 @@ from .plugins.contracts import (
     VersionedDatasetBinding,
 )
 
-RESEARCH_RUN_CONFIG_VERSION = 5
+RESEARCH_RUN_CONFIG_VERSION = 6
 
 def _default_ic_engine_spec() -> PluginSpec:
     return PluginSpec(
@@ -32,6 +32,18 @@ def _default_ic_engine_spec() -> PluginSpec:
 def _default_validation_engine_spec() -> PluginSpec:
     return PluginSpec(
         entry_point= "quantmine.plugins.ic_validators:create_python_ic_validation_engine"
+    )
+
+def _default_backtest_engine_spec() -> PluginSpec:
+    return PluginSpec(
+        entry_point=(
+            "quantmine.plugins.backtest_engines:create_python_backtest_engine"
+        )
+    )
+
+def _default_market_rules_spec()->PluginSpec:
+    return PluginSpec(
+        entry_point="quantmine.plugins.market_rules:create_unrestricted_market_rules"
     )
 
 @dataclass(frozen = True)
@@ -47,6 +59,9 @@ class ResearchRunConfig:
     factor_parameters: Mapping[str, Any]
     ic_engine: PluginSpec = field(default_factory=_default_ic_engine_spec)
     validation_engine: PluginSpec = field(default_factory=_default_validation_engine_spec)
+    backtest_engine: PluginSpec = field(default_factory=_default_backtest_engine_spec)
+    market_rules: PluginSpec = field(default_factory=_default_market_rules_spec)
+    backtest: Mapping[str, Any] = field(default_factory=lambda: {"jobs": []})
     ic_research: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -59,6 +74,9 @@ class ResearchRunConfig:
         ic_engine: PluginSpec | None = None,
         ic_research: Mapping[str, Any] | None = None,
         validation_engine: PluginSpec | None = None,
+        backtest_engine: PluginSpec | None = None,
+        market_rules: PluginSpec | None = None,
+        backtest: Mapping[str, Any] | None = None,
     )-> ResearchRunConfig:
         return cls(
             bundle = get_research_bundle(bundle_id),
@@ -68,7 +86,10 @@ class ResearchRunConfig:
                 ic_engine if ic_engine is not None else _default_ic_engine_spec()
             ),
             ic_research = dict(ic_research or {}),
-            validation_engine = validation_engine if validation_engine is not None else _default_validation_engine_spec()
+            validation_engine = validation_engine if validation_engine is not None else _default_validation_engine_spec(),
+            backtest_engine= backtest_engine if backtest_engine is not None else _default_backtest_engine_spec(),
+            market_rules = market_rules if market_rules is not None else _default_market_rules_spec(),
+            backtest= dict(backtest if backtest is not None else {"jobs": []})
         )
 
     def to_snapshot(self) -> dict[str, Any]:
@@ -90,7 +111,7 @@ class ResearchRunConfig:
                     _plugin_spec_snapshot(spec)
                     for spec in self.bundle.factor_packs
                 ],
-                "defaults": dict(self.bundle.defaults)
+                "defaults": dict(self.bundle.defaults),
             },
             "data_binding": {
                 "connection_ref": self.data_binding.connection_ref,
@@ -109,7 +130,14 @@ class ResearchRunConfig:
             "factor_parameters": dict(self.factor_parameters),
             "ic_engine": _plugin_spec_snapshot(self.ic_engine),
             "ic_research": dict(self.ic_research),
-            "validation_engine": _plugin_spec_snapshot(self.validation_engine)
+            "validation_engine": _plugin_spec_snapshot(self.validation_engine),
+            "backtest_engine": _plugin_spec_snapshot(
+                                self.backtest_engine
+            ),
+            "market_rules": _plugin_spec_snapshot(
+                                self.market_rules
+            ),
+            "backtest": dict(self.backtest),
         }
         return _json_copy(snap_shot, label = "ResearchRunConfig")
 
@@ -124,7 +152,7 @@ class ResearchRunConfig:
         version = payload.get("schema_version")
         ic_research = _mapping(payload.get("ic_research", {}), label = "ic_research")
 
-        if version not in {1, 2, 3, 4,RESEARCH_RUN_CONFIG_VERSION}:
+        if version not in {1, 2, 3, 4,5, RESEARCH_RUN_CONFIG_VERSION}:
             raise ValueError(
                 "Unsupported research-run config schema version "
                 f"{version!r}; expected 1 or {RESEARCH_RUN_CONFIG_VERSION}"
@@ -246,13 +274,63 @@ class ResearchRunConfig:
         else:
             validation_engine = _plugin_spec_from_snapshot(validation_engine_payload)
 
+        backtest_engine_payload = payload.get("backtest_engine")
+        if backtest_engine_payload is None:
+            if version in {1,2,3,4,5}:
+                backtest_engine = _default_backtest_engine_spec()
+            else:
+                raise TypeError(
+                    "version-6 research-run config requires backtest_engine"
+                )
+
+        else:
+            backtest_engine = _plugin_spec_from_snapshot(
+                backtest_engine_payload
+            )
+
+        market_rules_payload = payload.get("market_rules")
+        if market_rules_payload is None:
+            if version in {1,2,3,4,5}:
+                market_rules = _default_market_rules_spec()
+
+            else:
+                raise TypeError(
+                    "version-6 research-run config requires market_rules"
+                )
+        else:
+            market_rules = _plugin_spec_from_snapshot(
+                market_rules_payload
+            )
+
+        backtest_payload = payload.get("backtest")
+        if backtest_payload is None:
+            if version in {1,2,3,4,5}:
+                backtest = {"jobs": []}
+            else:
+                raise TypeError(
+                    "version-6 research-run config requires backtest"
+                )
+        else:
+            backtest = _mapping(
+                backtest_payload,
+                label = "backtest",
+            )
+            jobs = backtest.get("jobs")
+            if not isinstance(jobs, list):
+                raise TypeError(
+                    "backtest.jobs must be a JSON list"
+                )
+
         return cls(
             bundle = bundle,
             data_binding = binding,
             factor_parameters = factor_parameters,
             ic_engine = ic_engine,
             ic_research = ic_research,
-            validation_engine = validation_engine
+            validation_engine = validation_engine,
+            backtest_engine = backtest_engine,
+            market_rules = market_rules,
+            backtest = backtest
         )
 
 def resolve_research_run_config_for_as_of_date(
