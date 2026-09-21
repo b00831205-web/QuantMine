@@ -52,6 +52,8 @@ from quantmine.workflows.ic_research_artifacts import (
     ICResearchArtifacts,
     ICResearchPublication,
 )
+from quantmine.workflows.portfolio_execution import PortfolioState
+from quantmine.workflows.position_backtest import PositionBacktestResult
 
 
 class InMemoryStore:
@@ -234,6 +236,37 @@ def _market_rules_component() -> MarketRulesComponent:
         id="unrestricted_market_rules",
         plugin=UnrestrictedMarketRulesPlugin(),
         market="US",
+    )
+
+
+def _position_backtest_result() -> PositionBacktestResult:
+    dates = pd.DatetimeIndex(["2026-09-17", "2026-09-18"])
+    columns = pd.Index(["AAA"])
+    numeric = pd.DataFrame([[1.0], [1.0]], index=dates, columns=columns)
+    shares = pd.DataFrame([[10.0], [0.0]], index=dates, columns=columns)
+
+    return PositionBacktestResult(
+        equity_curve=pd.Series([1_000.0, 1_010.0], index=dates, name="equity"),
+        daily_returns=pd.Series([float("nan"), 0.01], index=dates, name="return"),
+        cash_curve=pd.Series([900.0, 900.0], index=dates, name="cash"),
+        positions=shares,
+        sellable_positions=shares,
+        requested_shares=shares,
+        executed_shares=shares,
+        fees=numeric,
+        reasons=pd.DataFrame([[""], [""]], index=dates, columns=columns),
+        final_state=PortfolioState(
+            positions=pd.Series([1.0], index=columns),
+            sellable_positions=pd.Series([1.0], index=columns),
+            cash=900.0,
+        ),
+        valuation_prices=numeric,
+        tradable=pd.DataFrame([[True], [True]], index=dates, columns=columns),
+        price_sources=pd.DataFrame(
+            [["observed"], ["observed"]],
+            index=dates,
+            columns=columns,
+        ),
     )
 
 
@@ -950,3 +983,104 @@ def test_persisted_backtest_execution_disposes_connections_on_failure(
         )
 
     assert connections.disposed is True
+
+
+def test_position_backtest_outputs_are_published_and_run_is_indexed(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    first = _position_backtest_result()
+    second = _position_backtest_result()
+    result = BacktestResult(
+        job_results={
+            "top_quantile": {
+                "portfolio_results": {
+                    ("momentum", 5): first,
+                    ("value", 20): second,
+                }
+            }
+        }
+    )
+    observed: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        execution_module,
+        "publish_position_backtest_artifact",
+        lambda portfolio_result, **kwargs: (
+            observed.setdefault("publications", []).append(
+                (portfolio_result, kwargs)
+            )
+            or SimpleNamespace(**kwargs)
+        ),
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "publish_position_backtest_run_manifest",
+        lambda **kwargs: observed.update(run_manifest=kwargs),
+    )
+
+    publications = execution_module._publish_position_backtest_results(
+        result,
+        run_id=701,
+        root=tmp_path / "position_backtests",
+    )
+
+    assert len(publications) == 2
+    assert observed["publications"] == [
+        (
+            first,
+            {
+                "run_id": 701,
+                "job_id": "top_quantile",
+                "factor_name": "momentum",
+                "period": 5,
+                "root": tmp_path / "position_backtests",
+            },
+        ),
+        (
+            second,
+            {
+                "run_id": 701,
+                "job_id": "top_quantile",
+                "factor_name": "value",
+                "period": 20,
+                "root": tmp_path / "position_backtests",
+            },
+        ),
+    ]
+    assert observed["run_manifest"] == {
+        "root": tmp_path / "position_backtests",
+        "run_id": 701,
+    }
+
+
+def test_legacy_backtest_outputs_do_not_publish_position_artifacts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    result = BacktestResult(
+        job_results={
+            "legacy": {
+                "portfolio_results": {
+                    ("momentum", 5): {"annual_return": 0.1},
+                }
+            }
+        }
+    )
+
+    monkeypatch.setattr(
+        execution_module,
+        "publish_position_backtest_artifact",
+        lambda *args, **kwargs: pytest.fail("legacy output was published"),
+    )
+    monkeypatch.setattr(
+        execution_module,
+        "publish_position_backtest_run_manifest",
+        lambda *args, **kwargs: pytest.fail("legacy run was indexed"),
+    )
+
+    assert execution_module._publish_position_backtest_results(
+        result,
+        run_id=701,
+        root=tmp_path / "position_backtests",
+    ) == ()

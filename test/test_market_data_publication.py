@@ -16,6 +16,7 @@ from quantmine.plugins.contracts import (
     MarketDataCapability,
 )
 from quantmine.plugins.sources import ParquetWideFrameDataSourcePlugin
+from quantmine.plugins.sources import VersionedParquetMarketDataSourcePlugin
 from quantmine.storage.connections import (
     ConnectionKind,
     ConnectionRegistry,
@@ -25,6 +26,7 @@ from quantmine.workflows.market_data_publication import (
     MarketDataPublishSpec,
     load_latest_market_data_before,
     publish_market_data_bundle,
+    resolve_latest_market_data_version,
 )
 
 
@@ -160,6 +162,222 @@ def test_load_latest_market_data_before_returns_latest_prior_version(
     assert publication != first
     assert bundle.market.close.loc["2024-01-02", "000001"] == 22.0
     assert bundle.market.volume.loc["2024-01-03", "600000"] == 1_100
+
+
+def test_same_day_revision_is_the_latest_version_for_that_session(
+    tmp_path: Path,
+) -> None:
+    base = publish_market_data_bundle(
+        _bundle(),
+        root=tmp_path,
+        spec=MarketDataPublishSpec(
+            dataset_id="cn_a_share_daily_bars",
+            market="CN",
+            version="20240103",
+            source="fixture",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+    )
+    revision = publish_market_data_bundle(
+        _bundle(close_shift=3.0),
+        root=tmp_path,
+        spec=MarketDataPublishSpec(
+            dataset_id="cn_a_share_daily_bars",
+            market="CN",
+            version="20240103-r1",
+            source="coverage_backfill",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+    )
+
+    assert resolve_latest_market_data_version(
+        tmp_path,
+        dataset_id="cn_a_share_daily_bars",
+        as_of_date="2024-01-03",
+    ) == "20240103-r1"
+
+    loaded = load_latest_market_data_before(
+        tmp_path,
+        dataset_id="cn_a_share_daily_bars",
+        as_of_date="2024-01-04",
+    )
+
+    assert loaded is not None
+    publication, bundle = loaded
+    assert publication == revision
+    assert publication != base
+    assert bundle.market.close.loc["2024-01-02", "000001"] == 23.0
+
+
+def test_versioned_parquet_reader_resolves_a_base_date_to_its_latest_revision(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    lake_root = tmp_path / "lake"
+    spec = MarketDataPublishSpec(
+        dataset_id="cn_a_share_daily_bars",
+        market="CN",
+        version="20240103",
+        source="fixture",
+        frequency="daily",
+        adjustment="hfq",
+    )
+    publish_market_data_bundle(_bundle(), root=lake_root, spec=spec)
+    publish_market_data_bundle(
+        _bundle(close_shift=4.0),
+        root=lake_root,
+        spec=MarketDataPublishSpec(
+            dataset_id=spec.dataset_id,
+            market="CN",
+            version="20240103-r1",
+            source="coverage_backfill",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+    )
+    monkeypatch.setenv("QUANTMINE_TEST_MARKET_DATA_ROOT", str(lake_root))
+    context = SourceContext(
+        connections=ConnectionRegistry(
+            {
+                "market_data_lake": DataConnectionConfig(
+                    kind=ConnectionKind.PARQUET,
+                    root_env="QUANTMINE_TEST_MARKET_DATA_ROOT",
+                )
+            }
+        ),
+        run_id=1,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    loaded = VersionedParquetMarketDataSourcePlugin().load(
+        DataBinding(
+            connection_ref="market_data_lake",
+            dataset="cn_a_share_daily_bars",
+            version="20240103",
+            start="2024-01-02",
+            end="2024-01-02",
+            tickers=("000001",),
+        ),
+        context,
+    )
+
+    assert loaded.metadata["version"] == "20240103-r1"
+    assert loaded.market.close.loc["2024-01-02", "000001"] == 24.0
+
+
+def test_versioned_parquet_reader_keeps_an_explicit_revision_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    lake_root = tmp_path / "lake"
+    spec = MarketDataPublishSpec(
+        dataset_id="cn_a_share_daily_bars",
+        market="CN",
+        version="20240103",
+        source="fixture",
+        frequency="daily",
+        adjustment="hfq",
+    )
+    publish_market_data_bundle(_bundle(), root=lake_root, spec=spec)
+    publish_market_data_bundle(
+        _bundle(close_shift=5.0),
+        root=lake_root,
+        spec=MarketDataPublishSpec(
+            dataset_id=spec.dataset_id,
+            market="CN",
+            version="20240103-r1",
+            source="coverage_backfill",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+    )
+    publish_market_data_bundle(
+        _bundle(close_shift=6.0),
+        root=lake_root,
+        spec=MarketDataPublishSpec(
+            dataset_id=spec.dataset_id,
+            market="CN",
+            version="20240103-r2",
+            source="coverage_backfill",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+    )
+    monkeypatch.setenv("QUANTMINE_TEST_MARKET_DATA_ROOT", str(lake_root))
+    context = SourceContext(
+        connections=ConnectionRegistry(
+            {
+                "market_data_lake": DataConnectionConfig(
+                    kind=ConnectionKind.PARQUET,
+                    root_env="QUANTMINE_TEST_MARKET_DATA_ROOT",
+                )
+            }
+        ),
+        run_id=1,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    loaded = VersionedParquetMarketDataSourcePlugin().load(
+        DataBinding(
+            connection_ref="market_data_lake",
+            dataset=spec.dataset_id,
+            version="20240103-r1",
+            start="2024-01-02",
+            end="2024-01-02",
+            tickers=("000001",),
+        ),
+        context,
+    )
+
+    assert loaded.metadata["version"] == "20240103-r1"
+    assert loaded.market.close.loc["2024-01-02", "000001"] == 25.0
+
+
+def test_versioned_parquet_reader_rejects_an_unknown_date_without_revision(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    lake_root = tmp_path / "lake"
+    publish_market_data_bundle(
+        _bundle(),
+        root=lake_root,
+        spec=MarketDataPublishSpec(
+            dataset_id="cn_a_share_daily_bars",
+            market="CN",
+            version="20240103",
+            source="fixture",
+            frequency="daily",
+            adjustment="hfq",
+        ),
+    )
+    monkeypatch.setenv("QUANTMINE_TEST_MARKET_DATA_ROOT", str(lake_root))
+    context = SourceContext(
+        connections=ConnectionRegistry(
+            {
+                "market_data_lake": DataConnectionConfig(
+                    kind=ConnectionKind.PARQUET,
+                    root_env="QUANTMINE_TEST_MARKET_DATA_ROOT",
+                )
+            }
+        ),
+        run_id=1,
+        artifact_dir=tmp_path / "artifacts",
+    )
+
+    with pytest.raises(FileNotFoundError, match="20240104"):
+        VersionedParquetMarketDataSourcePlugin().load(
+            DataBinding(
+                connection_ref="market_data_lake",
+                dataset="cn_a_share_daily_bars",
+                version="20240104",
+                start="2024-01-02",
+                end="2024-01-02",
+                tickers=("000001",),
+            ),
+            context,
+        )
 
 
 def test_load_latest_market_data_before_returns_none_without_prior_version(

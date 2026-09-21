@@ -8,6 +8,7 @@ import yaml
 from quantmine.market_pipeline_loader import (
     load_market_pipeline_definitions,
 )
+from quantmine.market_pipeline_config import PipelineStageKind
 from quantmine.plugins.contracts import PluginSpec
 from quantmine.research_config import ResearchRunConfig
 
@@ -149,8 +150,13 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
         "reference_refresh",
         "daily_production",
         "market_data_refresh",
+        "coverage_audit",
+        "history_backfill",
+        "repair_publication",
+        "research_readiness_gate",
         "factor_research",
         "ic_research",
+        "backtest",
     )
     assert definition.connection_refs == (
         "cn_raw",
@@ -177,22 +183,53 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     )
     assert definition.stages[3].upstream == ("daily_production",)
     assert definition.stages[4].plugin.entry_point == (
-        "quantmine.plugins.research_stages:"
-        "create_persisted_factor_research_stage"
+        "quantmine.plugins.market_stages:"
+        "create_a_share_market_data_coverage_audit"
     )
     assert definition.stages[4].upstream == ("market_data_refresh",)
     assert definition.stages[5].plugin.entry_point == (
+        "quantmine.plugins.market_stages:create_a_share_history_backfill"
+    )
+    assert definition.stages[5].upstream == ("coverage_audit",)
+    assert definition.stages[6].plugin.entry_point == (
+        "quantmine.plugins.market_stages:create_a_share_repair_publication"
+    )
+    assert definition.stages[6].upstream == ("history_backfill",)
+    assert definition.stages[7].plugin.entry_point == (
+        "quantmine.plugins.market_stages:create_research_readiness_gate"
+    )
+    assert definition.stages[7].kind is PipelineStageKind.SESSION_GATE
+    assert definition.stages[7].upstream == ("repair_publication",)
+    assert definition.stages[7].plugin.params == {
+        "market_data_connection_ref": "cn_market_data",
+        "dataset_id": "cn_a_share_daily_bars",
+        "market": "CN",
+        "plan_connection_ref": "cn_market_checkpoint",
+    }
+    assert definition.stages[8].plugin.entry_point == (
+        "quantmine.plugins.research_stages:"
+        "create_persisted_factor_research_stage"
+    )
+    assert definition.stages[8].upstream == ("research_readiness_gate",)
+    assert definition.stages[9].plugin.entry_point == (
         "quantmine.plugins.ic_stages:create_persisted_ic_research_stage"
     )
-    assert definition.stages[5].upstream == ("factor_research",)
-    assert definition.stages[4].plugin.params[
+    assert definition.stages[9].upstream == ("factor_research",)
+    assert definition.stages[10].plugin.entry_point == (
+        "quantmine.plugins.backtest_stage:create_persisted_backtest_stage"
+    )
+    assert definition.stages[10].upstream == ("ic_research",)
+    assert definition.stages[8].plugin.params[
         "research_run_connection_ref"
     ] == "research_db"
-    assert definition.stages[5].plugin.params == {
+    assert definition.stages[9].plugin.params == {
+        "research_run_connection_ref": "research_db"
+    }
+    assert definition.stages[10].plugin.params == {
         "research_run_connection_ref": "research_db"
     }
 
-    research_config = definition.stages[4].plugin.params["config"]
+    research_config = definition.stages[8].plugin.params["config"]
     assert research_config["schema_version"] == 6
     assert research_config["bundle"]["id"] == "cn_a_share_v1"
     assert research_config["data_binding"]["connection_ref"] == (
@@ -215,7 +252,7 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     )
     assert research_config["backtest_engine"]["entry_point"] == (
         "quantmine.plugins.backtest_engines:"
-        "create_python_backtest_engine"
+        "create_python_position_backtest_engine"
     )
     assert research_config["market_rules"] == {
         "entry_point": (
@@ -236,12 +273,17 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     ] == [
         "raw_quintile",
         "orthogonalized_quintile",
-        "mcap_quintile",
     ]
     raw_example = yaml.safe_load(
         example_path.read_text(encoding="utf-8")
     )
-    assert research_config["backtest"] == raw_example["backtest"]
+    assert raw_example["backtest"]["jobs"][-1]["id"] == "mcap_quintile"
+    assert research_config["backtest"]["initial_cash"] == 1000000.0
+    assert research_config["backtest"]["gross_exposure"] == 1.0
+    assert all(
+        job["position_group"] == "Q5"
+        for job in research_config["backtest"]["jobs"]
+    )
     assert research_config["ic_research"]["periods"] == [1, 5, 20]
 
     restored_research_config = ResearchRunConfig.from_snapshot(
@@ -255,7 +297,7 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     )
     assert restored_research_config.backtest_engine == PluginSpec(
         "quantmine.plugins.backtest_engines:"
-        "create_python_backtest_engine"
+        "create_python_position_backtest_engine"
     )
     assert restored_research_config.market_rules == PluginSpec(
         "quantmine.plugins.market_rules:create_a_stock_market_rules",

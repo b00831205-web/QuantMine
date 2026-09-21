@@ -1,6 +1,7 @@
 """Built-in market-specific plugins for generic pipeline stages."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -14,6 +15,10 @@ from quantmine.market_pipeline_config import (
 from quantmine.pipeline_stages import PipelineStageRequest
 from quantmine.plugins.context import SourceContext
 from quantmine.plugins.contracts import PluginSpec
+from quantmine.plugins.contracts import (
+    DataSourceComponent,
+    MarketDataCapability,
+)
 from quantmine.storage.connections import ConnectionRegistry
 from quantmine.workflows.a_share_daily_pipeline import (
     AStockDailyPipelineResult,
@@ -27,6 +32,11 @@ from quantmine.workflows.market_status_publication import (
     MarketStatusPublication,
 )
 from quantmine.workflows.market_data_publication import MarketDataPublication
+from quantmine.workflows.coverage_audit import (
+    BackfillPlan,
+    BackfillTask,
+    CoverageAudit,
+)
 
 
 def _request(tmp_path: Path) -> PipelineStageRequest:
@@ -354,4 +364,210 @@ def test_a_share_cumulative_market_data_stage_forwards_runtime_controls(
         "date_count": 1600,
         "ticker_count": 5200,
         "market_data_content_sha256": "market-data-sha",
+    }
+
+
+def test_a_share_history_backfill_stage_consumes_the_persisted_audit_plan(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    task = BackfillTask(
+        start=pd.Timestamp("2026-08-10"),
+        end=pd.Timestamp("2026-08-11"),
+        symbols=("000001.SZ",),
+        fields=("close", "volume"),
+        reason="coverage_gap",
+        checkpoint_key="repair-001",
+    )
+    audit = CoverageAudit(
+        market="CN",
+        published_version="20260904",
+        coverage_ratio=0.99,
+        gap_count=2,
+        missing_dates=(task.start, task.end),
+        missing_symbols=task.symbols,
+        missing_fields=task.fields,
+        complete=False,
+        daily_production_ready=True,
+        backfill_plan=BackfillPlan(
+            plan_id="plan-001",
+            tasks=(task,),
+            deferred_gap_count=3,
+        ),
+    )
+    observed = {}
+
+    class FakeConnections:
+        def parquet_root(self, connection_ref: str) -> Path:
+            observed["plan_connection_ref"] = connection_ref
+            return tmp_path
+
+    class FakeSource:
+        def load(self, binding, context):  # pragma: no cover - never loaded
+            raise AssertionError("staging helper should be mocked")
+
+    request = _request(tmp_path)
+    request.context.connections = FakeConnections()
+
+    monkeypatch.setattr(
+        market_stages,
+        "load_coverage_audit",
+        lambda path: observed.setdefault("audit_path", path) and audit,
+    )
+    monkeypatch.setattr(
+        market_stages,
+        "resolve_plugin",
+        lambda *args, **kwargs: DataSourceComponent(
+            id="fixture_source",
+            capabilities=frozenset({
+                MarketDataCapability.CLOSE,
+                MarketDataCapability.VOLUME,
+            }),
+            plugin=FakeSource(),
+        ),
+    )
+
+    def fake_stage(context, **kwargs):
+        observed["context"] = context
+        observed.update(kwargs)
+        return SimpleNamespace(output_dir=tmp_path / "staged")
+
+    monkeypatch.setattr(
+        market_stages,
+        "stage_market_data_backfill",
+        fake_stage,
+    )
+
+    plugin = market_stages.create_a_share_history_backfill(
+        config=_a_share_daily_market_data_config(),
+        plan_connection_ref="cn_market_checkpoint",
+        staging_connection_ref="cn_market_checkpoint",
+    )
+    result = plugin.run(request)
+
+    assert observed["plan_connection_ref"] == "cn_market_checkpoint"
+    assert observed["audit_path"] == (
+        tmp_path
+        / "coverage_audits"
+        / "market=CN"
+        / "version=20260904"
+        / "coverage_audit.json"
+    )
+    assert observed["context"] is request.context
+    assert observed["plan_id"] == "plan-001"
+    assert observed["task"] == task
+    assert observed["staging_connection_ref"] == "cn_market_checkpoint"
+    assert result.metadata == {
+        "market_data_version": "20260904",
+        "backfill_plan_id": "plan-001",
+        "staged_task_count": 1,
+        "deferred_gap_count": 3,
+        "staged_output_dirs": [str(tmp_path / "staged")],
+    }
+
+
+def test_a_share_repair_publication_stage_publishes_a_revision_from_staged_tasks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    task = BackfillTask(
+        start=pd.Timestamp("2026-08-10"),
+        end=pd.Timestamp("2026-08-11"),
+        symbols=("000001.SZ",),
+        fields=("close", "volume"),
+        reason="coverage_gap",
+        checkpoint_key="repair-001",
+    )
+    audit = CoverageAudit(
+        market="CN",
+        published_version="20260904",
+        coverage_ratio=0.99,
+        gap_count=2,
+        missing_dates=(task.start, task.end),
+        missing_symbols=task.symbols,
+        missing_fields=task.fields,
+        complete=False,
+        daily_production_ready=True,
+        backfill_plan=BackfillPlan(
+            plan_id="plan-001",
+            tasks=(task,),
+            deferred_gap_count=0,
+        ),
+    )
+    observed = {}
+
+    class FakeConnections:
+        def parquet_root(self, connection_ref: str) -> Path:
+            observed["read_connection_ref"] = connection_ref
+            return tmp_path
+
+        def writable_parquet_root(self, connection_ref: str) -> Path:
+            observed["write_connection_ref"] = connection_ref
+            return tmp_path
+
+    request = _request(tmp_path)
+    request.context.connections = FakeConnections()
+
+    monkeypatch.setattr(
+        market_stages,
+        "load_coverage_audit",
+        lambda path: observed.setdefault("audit_path", path) and audit,
+    )
+    def fake_load_staged(context, **kwargs):
+        observed["staged"] = kwargs
+        return "bundle"
+
+    monkeypatch.setattr(
+        market_stages,
+        "load_staged_market_data_backfill",
+        fake_load_staged,
+    )
+    revision_dir = tmp_path / "cn_a_share_daily_bars" / "versions" / "20260904-r1"
+    def fake_publish(**kwargs):
+        observed["publication"] = kwargs
+        return MarketDataPublication(
+            output_dir=revision_dir,
+            close_path=revision_dir / "close.parquet",
+            volume_path=revision_dir / "volume.parquet",
+            manifest_path=revision_dir / "manifest.json",
+            date_count=1600,
+            ticker_count=5200,
+            content_sha256="revision-sha",
+        )
+
+    monkeypatch.setattr(
+        market_stages,
+        "publish_market_data_repair_revision",
+        fake_publish,
+    )
+
+    plugin = market_stages.create_a_share_repair_publication(
+        market_data_connection_ref="cn_market_data",
+        dataset_id="cn_a_share_daily_bars",
+        plan_connection_ref="cn_market_checkpoint",
+        staging_connection_ref="cn_market_checkpoint",
+    )
+    result = plugin.run(request)
+
+    assert observed["read_connection_ref"] == "cn_market_checkpoint"
+    assert observed["write_connection_ref"] == "cn_market_data"
+    assert observed["staged"] == {
+        "plan_id": "plan-001",
+        "task": task,
+        "staging_connection_ref": "cn_market_checkpoint",
+    }
+    assert observed["publication"] == {
+        "root": tmp_path,
+        "dataset_id": "cn_a_share_daily_bars",
+        "base_version": "20260904",
+        "repairs": ("bundle",),
+        "coverage_complete": False,
+    }
+    assert result.metadata == {
+        "base_market_data_version": "20260904",
+        "market_data_version": "20260904-r1",
+        "backfill_plan_id": "plan-001",
+        "applied_task_count": 1,
+        "market_data_dir": str(revision_dir),
+        "market_data_content_sha256": "revision-sha",
     }

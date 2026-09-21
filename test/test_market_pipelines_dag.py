@@ -45,6 +45,10 @@ class FakeOperator:
         return other
 
 
+class FakeShortCircuitOperator(FakeOperator):
+    pass
+
+
 def _install_fake_airflow(monkeypatch) -> None:
     module_names = (
         "airflow",
@@ -60,7 +64,7 @@ def _install_fake_airflow(monkeypatch) -> None:
         "airflow.providers.standard.operators.python"
     ]
     python_module.PythonOperator = FakeOperator
-    python_module.ShortCircuitOperator = FakeOperator
+    python_module.ShortCircuitOperator = FakeShortCircuitOperator
     for name, module in modules.items():
         monkeypatch.setitem(sys.modules, name, module)
 
@@ -95,10 +99,16 @@ def test_dag_file_discovers_configured_a_share_pipeline(
         "reference_refresh",
         "daily_production",
         "market_data_refresh",
+        "coverage_audit",
+        "history_backfill",
+        "repair_publication",
+        "research_readiness_gate",
         "factor_research",
         "ic_research",
+        "backtest",
     ]
     tasks = {task.task_id: task for task in dag.tasks}
+    assert isinstance(tasks["research_readiness_gate"], FakeShortCircuitOperator)
     assert tasks["session_gate"].downstream == [
         tasks["reference_refresh"]
     ]
@@ -109,12 +119,27 @@ def test_dag_file_discovers_configured_a_share_pipeline(
         tasks["market_data_refresh"]
     ]
     assert tasks["market_data_refresh"].downstream == [
+        tasks["coverage_audit"]
+    ]
+    assert tasks["coverage_audit"].downstream == [
+        tasks["history_backfill"]
+    ]
+    assert tasks["history_backfill"].downstream == [
+        tasks["repair_publication"]
+    ]
+    assert tasks["repair_publication"].downstream == [
+        tasks["research_readiness_gate"]
+    ]
+    assert tasks["research_readiness_gate"].downstream == [
         tasks["factor_research"]
     ]
     assert tasks["factor_research"].downstream == [
         tasks["ic_research"]
     ]
-    assert tasks["ic_research"].downstream == []
+    assert tasks["ic_research"].downstream == [
+        tasks["backtest"]
+    ]
+    assert tasks["backtest"].downstream == []
     assert tasks["market_data_refresh"].op_kwargs[
         "environment_file"
     ] == str(PROJECT_ROOT / ".env")

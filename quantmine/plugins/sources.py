@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 from typing import Mapping
 
 import pandas as pd
@@ -16,6 +17,9 @@ from .contracts import (
     MarketDataBundle,
     MarketDataCapability,
 )
+
+_BASE_VERSION = re.compile(r"(?P<date>\d{8})\Z")
+_REVISION_VERSION = re.compile(r"\d{8}-r[1-9]\d*\Z")
 
 _MARKET_DATA_FIELDS: Mapping[MarketDataCapability, str] = {
     MarketDataCapability.CLOSE: 'close',
@@ -300,7 +304,15 @@ class ParquetWideFrameDataSourcePlugin: #读取宽表 Parquet；它只允许访�
 
 @dataclass(frozen = True)
 class VersionedParquetMarketDataSourcePlugin:
-    """Load one immutable close-and-volume market-data publication."""
+    """Load one immutable close-and-volume market-data publication.
+
+    The binding version is resolved against the published version directories:
+
+    * an explicit ``YYYYMMDD-rN`` request loads exactly that revision;
+    * a base ``YYYYMMDD`` request resolves to the highest ``YYYYMMDD-rN`` through
+      the same trading date, so a reader follows same-day repairs automatically;
+    * an unknown date has no fallback and raises ``FileNotFoundError``.
+    """
 
     close_file: str = "close.parquet"
     volume_file: str = "volume.parquet"
@@ -323,20 +335,89 @@ class VersionedParquetMarketDataSourcePlugin:
                 "DataBinding.version must be a safe path segment"
             )
 
+        connection_ref = _require_connection_ref(
+            binding,
+            "VersionedParquetMarketDataSourcePlugin",
+        )
+        versions_dir = (
+            context.connections.parquet_root(connection_ref)
+            / binding.dataset
+            / "versions"
+        ).resolve()
+        resolved = _resolve_published_version(versions_dir, version)
+
         return ParquetWideFrameDataSourcePlugin(
             field_files = {
                 MarketDataCapability.CLOSE: (
-                    f"versions/{version}/{self.close_file}"
+                    f"versions/{resolved}/{self.close_file}"
                 ),
                 MarketDataCapability.VOLUME:(
-                    f"versions/{version}/{self.volume_file}"
+                    f"versions/{resolved}/{self.volume_file}"
                 ),
             },
             metadata = {
                 **self.metadata,
-                "version": version
+                "version": resolved,
+                "requested_version": version,
             },
         ).load(binding, context)
+
+def _resolve_published_version(
+        versions_dir: Path,
+        requested: str,
+) -> str:
+    """Return the immutable version directory a binding should actually read.
+
+    An explicit ``YYYYMMDD-rN`` request is honoured exactly.  A base
+    ``YYYYMMDD`` request resolves to the highest same-day revision, so research
+    automatically follows the latest immutable repair publication.
+    """
+
+    revision_match = _REVISION_VERSION.fullmatch(requested)
+
+    if revision_match is not None:
+        if (versions_dir / requested).is_dir():
+            return requested
+        raise FileNotFoundError(
+            f"market-data version {requested!r} does not exist under "
+            f"{versions_dir}"
+        )
+
+    base_match = _BASE_VERSION.fullmatch(requested)
+    if base_match is None:
+        raise FileNotFoundError(
+            f"market-data version {requested!r} does not exist under "
+            f"{versions_dir}"
+        )
+
+    base = base_match.group("date")
+    highest_revision = 0
+
+    if versions_dir.is_dir():
+        revision_pattern = re.compile(
+            re.escape(base) + r"-r(?P<revision>[1-9]\d*)\Z"
+        )
+        for candidate in versions_dir.iterdir():
+            if not candidate.is_dir():
+                continue
+            match = revision_pattern.fullmatch(candidate.name)
+            if match is None:
+                continue
+            highest_revision = max(
+                highest_revision,
+                int(match.group("revision")),
+            )
+
+    if highest_revision:
+        return f"{base}-r{highest_revision}"
+
+    if (versions_dir / requested).is_dir():
+        return requested
+
+    raise FileNotFoundError(
+        f"market-data version {requested!r} does not exist under "
+        f"{versions_dir}"
+    )
 
 def _require_connection_ref(binding: DataBinding, source_name: str) -> str:
     if binding.connection_ref is None:

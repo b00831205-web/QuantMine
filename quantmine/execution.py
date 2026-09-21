@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from .plugins.backtest_engines import BacktestComponent, BacktestRequest
 from .plugins.bundles import resolve_research_bundle_definition
@@ -35,6 +35,8 @@ from .workflows.ic_research_artifacts import (
     ICResearchArtifacts,
     load_ic_research_artifacts,
 )
+from .workflows.position_backtest import PositionBacktestResult
+from .workflows.position_backtest_artifacts import PositionBacktestPublication, publish_position_backtest_artifact, publish_position_backtest_run_manifest
 
 
 
@@ -185,11 +187,18 @@ def execute_persisted_backtest(
             run_id = run_id,
         )
         request = build_backtest_request(config, market_data, ic_artifacts, market_rules_component)
-        return run_backtest_component(
+        result = run_backtest_component(
             backtest_component,
             request,
-            context,
+            context
         )
+        _publish_position_backtest_results(
+            result,
+            run_id= run_id,
+            root = artifact_root / "position_backtests"
+        )
+
+        return result
     finally:
         connections.dispose()
 
@@ -266,3 +275,49 @@ def required_research_connection_refs(
             if connection_ref is not None
         )
     )
+
+def _publish_position_backtest_results(
+        result: BacktestResult,
+        *,
+        run_id: int,
+        root: Path,
+) -> tuple[PositionBacktestPublication, ...]:
+    """Publish position_engine outputs without changing BacktestResult."""
+
+    publications: list[PositionBacktestPublication] = []
+
+    for job_id, job_result in result.job_results.items():
+        if not isinstance(job_result, Mapping):
+            continue
+
+        portfolio_results = job_result.get("portfolio_results")
+        if not isinstance(portfolio_results, Mapping):
+            continue
+
+        for factor_period, portfolio_result in portfolio_results.items():
+            if not isinstance(portfolio_result, PositionBacktestResult):
+                continue
+
+            if not isinstance(factor_period ,tuple) or len(factor_period) != 2:
+                raise TypeError("position-backtest factor_period must be a (factor_name, period) tuple")
+
+            factor_name, period = factor_period
+
+            publications.append(
+                publish_position_backtest_artifact(
+                    portfolio_result,
+                    run_id = run_id,
+                    job_id = job_id,
+                    factor_name = factor_name,
+                    period = period,
+                    root = root,
+                )
+            )
+
+    if publications:
+        publish_position_backtest_run_manifest(
+            root = root,
+            run_id = run_id,
+        )
+
+    return tuple(publications)

@@ -96,7 +96,7 @@ a_share_research_run: &a_share_research_run
     params: {}
 
   backtest_engine:
-    entry_point: quantmine.plugins.backtest_engines:create_python_backtest_engine
+    entry_point: quantmine.plugins.backtest_engines:create_python_position_backtest_engine
     params: {}
 
   market_rules:
@@ -111,12 +111,15 @@ a_share_research_run: &a_share_research_run
 
   ic_research: *ic_research_config
 
-  backtest: &a_share_backtest_config
+  backtest:
+    initial_cash: 1000000.0
+    gross_exposure: 1.0
     jobs:
       - id: raw_quintile
         variant: raw
         selection_test: newey_raw
         part: 5
+        position_group: Q5
         cost_per_trade: 0.001
         selector:
           name: bh
@@ -129,6 +132,7 @@ a_share_research_run: &a_share_research_run
         variant: orthogonalized
         selection_test: newey_orthogonalized
         part: 5
+        position_group: Q5
         cost_per_trade: 0.001
         selector:
           name: bh
@@ -137,28 +141,46 @@ a_share_research_run: &a_share_research_run
           enabled: false
           random_seed: 42
 
-      # Same factors and selection as the job above, weighted by market cap
-      # instead of equally. Equal weighting quietly tilts a portfolio towards the
-      # smallest names in each bucket, so a factor can look profitable on a book
-      # nobody could actually run; comparing the two jobs shows how much of the
-      # result survives at realistic position sizes.
-      # Falls back to equal weighting on dates where no member has a positive
-      # market cap, so early windows degrade instead of producing NaN.
-      - id: mcap_quintile
-        variant: orthogonalized
-        selection_test: newey_orthogonalized
-        part: 5
-        cost_per_trade: 0.001
-        weighting:
-          name: mcap
-          params: {}
-        selector:
-          name: bh
-          params: {}
-        sensitivity:
-          enabled: false
-          random_seed: 42
-backtest: *a_share_backtest_config
+backtest: &a_share_backtest_config
+  jobs:
+    - id: raw_quintile
+      variant: raw
+      selection_test: newey_raw
+      part: 5
+      cost_per_trade: 0.001
+      selector:
+        name: bh
+        params: {}
+      sensitivity:
+        enabled: false
+        random_seed: 42
+
+    - id: orthogonalized_quintile
+      variant: orthogonalized
+      selection_test: newey_orthogonalized
+      part: 5
+      cost_per_trade: 0.001
+      selector:
+        name: bh
+        params: {}
+      sensitivity:
+        enabled: false
+        random_seed: 42
+
+    - id: mcap_quintile
+      variant: orthogonalized
+      selection_test: newey_orthogonalized
+      part: 5
+      cost_per_trade: 0.001
+      weighting:
+        name: mcap
+        params: {}
+      selector:
+        name: bh
+        params: {}
+      sensitivity:
+        enabled: false
+        random_seed: 42
 
 carhart_attribution:
   maxlags: 20               # maximum lag for HAC standard errors
@@ -275,22 +297,84 @@ market_pipelines:
           entry_point: quantmine.plugins.market_stages:create_a_share_cumulative_market_data_refresh
           params:
             config: *a_share_daily_market_data_refresh
-      - id: factor_research
+
+      - id: coverage_audit
         kind: task
         upstream:
           - market_data_refresh
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_market_data_coverage_audit
+          params:
+            market_data_connection_ref: cn_market_data
+            dataset_id: cn_a_share_daily_bars
+            reference_connection_ref: cn_reference
+            reference_dataset: cn_a_share_reference
+            plan_connection_ref: cn_market_checkpoint
+            policy:
+              minimum_coverage_ratio: 0.995
+              max_backfill_tasks: 12
+              max_symbols_per_task: 50
+
+      - id: history_backfill
+        kind: task
+        upstream:
+          - coverage_audit
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_history_backfill
+          params:
+            config: *a_share_daily_market_data_refresh
+            plan_connection_ref: cn_market_checkpoint
+            staging_connection_ref: cn_market_checkpoint
+
+      - id: repair_publication
+        kind: task
+        upstream:
+          - history_backfill
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_repair_publication
+          params:
+            market_data_connection_ref: cn_market_data
+            dataset_id: cn_a_share_daily_bars
+            plan_connection_ref: cn_market_checkpoint
+            staging_connection_ref: cn_market_checkpoint
+
+      - id: research_readiness_gate
+        kind: session_gate
+        upstream:
+          - repair_publication
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_research_readiness_gate
+          params:
+            market_data_connection_ref: cn_market_data
+            dataset_id: cn_a_share_daily_bars
+            market: CN
+            plan_connection_ref: cn_market_checkpoint
+
+      - id: factor_research
+        kind: task
+        upstream:
+          - research_readiness_gate
         plugin:
           entry_point: quantmine.plugins.research_stages:create_persisted_factor_research_stage
           params:
             research_run_connection_ref: research_db
             config: *a_share_research_run
-
+      
       - id: ic_research
         kind: task
         upstream:
           - factor_research
         plugin:
           entry_point: quantmine.plugins.ic_stages:create_persisted_ic_research_stage
+          params:
+            research_run_connection_ref: research_db
+
+      - id: backtest
+        kind: task
+        upstream:
+          - ic_research
+        plugin:
+          entry_point: quantmine.plugins.backtest_stage:create_persisted_backtest_stage
           params:
             research_run_connection_ref: research_db
     metadata:

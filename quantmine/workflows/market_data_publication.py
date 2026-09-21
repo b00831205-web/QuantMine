@@ -17,6 +17,9 @@ from ..datareader import MarketData
 
 
 _SAFE_SEGMENT = re.compile(r"[A-Za-z0-9_.-]+\Z")
+_DATE_VERSION = re.compile(
+    r"(?P<date>\d{8})(?:-r(?P<revision>[1-9]\d*))?\Z"
+)
 
 @dataclass(frozen = True)
 class MarketDataPublishSpec:
@@ -78,6 +81,7 @@ class MarketDataPublication:
     date_count: int
     ticker_count: int
     content_sha256: str
+    coverage_complete: bool | None = None
 
 def load_latest_market_data_before(
         root: Path,
@@ -102,25 +106,28 @@ def load_latest_market_data_before(
     if not versions_dir.is_dir():
         return None
 
-    candidates: list[tuple[pd.Timestamp, Path, dict[str, object]]] = []
+    candidates: list[tuple[pd.Timestamp, int,Path, dict[str, object]]] = []
 
     for output_dir in versions_dir.iterdir():
         if not output_dir.is_dir() or output_dir.name.startswith("."):
             continue
 
+        match = _DATE_VERSION.fullmatch(output_dir.name)
+        if match is None:
+            continue
+
         try:
             version_date = pd.to_datetime(
-                output_dir.name,
-                format = "%Y%m%d",
-                errors = "raise"
+                match.group("date"),
+                format="%Y%m%d",
+                errors="raise",
             ).normalize()
         except (TypeError, ValueError):
             continue
 
-        if (
-            output_dir.name != version_date.strftime("%Y%m%d")
-            or version_date >= date
-        ):
+        revision = int(match.group("revision") or 0)
+
+        if version_date >= date:
             continue
 
         close_path = output_dir / "close.parquet"
@@ -159,12 +166,12 @@ def load_latest_market_data_before(
                 f"{output_dir}"
             )
 
-        candidates.append((version_date, output_dir, manifest))
+        candidates.append((version_date, revision, output_dir, manifest))
 
     if not candidates:
         return None
 
-    _, output_dir, manifest = max(candidates, key = lambda item: item[0])
+    _, _, output_dir, manifest = max(candidates, key = lambda item: (item[0], item[1]))
     close = pd.read_parquet(output_dir / "close.parquet")
     volume = pd.read_parquet(output_dir / "volume.parquet")
 
@@ -177,7 +184,8 @@ def load_latest_market_data_before(
                 "version": manifest["version"],
                 "source": manifest["source"],
                 "frequency": manifest["frequency"],
-                "adjustment": manifest["adjustment"]
+                "adjustment": manifest["adjustment"],
+                "coverage_complete": manifest.get("coverage_complete"),
             }
         )
     )
@@ -186,9 +194,16 @@ def publish_market_data_bundle(
         bundle: MarketDataBundle,
         *,
         root: Path,
-        spec: MarketDataPublishSpec
+        spec: MarketDataPublishSpec,
+        coverage_complete: bool | None = None,
 ) -> MarketDataPublication:
-    """Publish one immutable close-and-volume market-data version"""
+    """Publish one immutable close-and-volume market-data version.
+
+    ``coverage_complete`` records whether the published frames already satisfy
+    the market-data coverage policy.  It is provenance only: it is not part of
+    the content hash, so a coverage verdict can be refreshed without
+    re-publishing the frames.
+    """
 
     if not isinstance(bundle, MarketDataBundle):
         raise TypeError("bundle must be a MarketDataBundle")
@@ -253,6 +268,9 @@ def publish_market_data_bundle(
         "ticker_count": len(close.columns),
         "version": spec.version,
     }
+
+    if coverage_complete is not None:
+        manifest["coverage_complete"] = bool(coverage_complete)
 
     if output_dir.exists():
         return _load_existing_publication(
@@ -438,6 +456,27 @@ def _load_existing_publication(
             "already exists with different provenance"
         )
 
+    # A coverage verdict may be refined after publication.  Keep the freshest
+    # knowledge rather than failing the run that learned it.
+    if (
+        "coverage_complete" in expected_manifest
+        and existing.get("coverage_complete")
+        != expected_manifest["coverage_complete"]
+    ):
+        existing = {
+            **existing,
+            "coverage_complete": expected_manifest["coverage_complete"],
+        }
+        manifest_path.write_text(
+            json.dumps(
+                existing,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+
     return _publication_from_manifest(
         output_dir,
         existing,
@@ -447,6 +486,8 @@ def _publication_from_manifest(
         output_dir: Path,
         manifest: dict[str, object]
 ) -> MarketDataPublication:
+    coverage_complete = manifest.get("coverage_complete")
+
     return MarketDataPublication(
         output_dir = output_dir,
         close_path = output_dir / "close.parquet",
@@ -454,7 +495,10 @@ def _publication_from_manifest(
         manifest_path = output_dir /"manifest.json",
         date_count= int(manifest["date_count"]),
         ticker_count = int(manifest["ticker_count"]),
-        content_sha256=str(manifest["content_sha256"])
+        content_sha256=str(manifest["content_sha256"]),
+        coverage_complete=(
+            None if coverage_complete is None else bool(coverage_complete)
+        ),
     )
 
 def _require_within(
@@ -469,3 +513,25 @@ def _require_within(
         raise ValueError(
             f"{label} escapes its configured root"
         ) from error
+
+def resolve_latest_market_data_version(
+    root: Path,
+    *,
+    dataset_id: str,
+    as_of_date: pd.Timestamp | str,
+) -> str | None:
+    """Return the highest immutable base/revision version through a date."""
+    date = pd.Timestamp(as_of_date).normalize()
+    if pd.isna(date):
+        raise ValueError("as_of_date must not be NaT")
+
+    loaded = load_latest_market_data_before(
+        root,
+        dataset_id=dataset_id,
+        as_of_date=date + pd.Timedelta(days=1),
+    )
+    if loaded is None:
+        return None
+
+    publication, _bundle = loaded
+    return publication.output_dir.name
