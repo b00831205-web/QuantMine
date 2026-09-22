@@ -24,7 +24,7 @@ time_series_stationary_test:
   rolling_period: 126       # rolling IC window (~half a year)
   periods: [1, 5, 20]       # ACF lags
 
-ic_research:
+ic_research: &ic_research_config
   train_end: "2023-12-31"
   test_start: "2024-02-01"
   periods: [1, 5, 20]
@@ -46,7 +46,102 @@ ic_research:
       params:
         lag_multiplier: 2
 
-backtest:
+a_share_research_run: &a_share_research_run
+  schema_version: 6
+
+  bundle:
+    id: cn_a_share_v1
+    display_name: China A-shares (versioned Parquet / audited eligibility)
+    data_source:
+      entry_point: quantmine.plugins.sources:create_versioned_parquet_market_data_source
+      params: {}
+    universe:
+      entry_point: quantmine.plugins.a_share:create_cn_a_share_eligibility_universe
+      params: {}
+    factor_packs:
+      - entry_point: quantmine.plugins.builtins:create_cn_a_share_price_volume_factor_pack
+        params: {}
+    defaults:
+      market: CN
+      currency: CNY
+      adjustment: hfq
+      storage: versioned_parquet
+
+  data_binding:
+    connection_ref: cn_market_data
+    dataset: cn_a_share_daily_bars
+    version: "{as_of_date}"
+    universe_dataset: null
+    benchmark_dataset: null
+    benchmark_ticker: null
+    adjustment: hfq
+    start: "2020-01-01"
+    end: null
+    tickers: []
+    metadata: {}
+    eligibility_binding:
+      connection_ref: cn_eligibility
+      dataset: cn_a_share_eligibility
+      market: CN
+      version: "{as_of_date}"
+
+  factor_parameters: {}
+
+  ic_engine:
+    entry_point: quantmine.plugins.ic_engines:create_python_ic_calculation_engine
+    params: {}
+
+  validation_engine:
+    entry_point: quantmine.plugins.ic_validators:create_python_ic_validation_engine
+    params: {}
+
+  backtest_engine:
+    entry_point: quantmine.plugins.backtest_engines:create_python_position_backtest_engine
+    params: {}
+
+  market_rules:
+    entry_point: quantmine.plugins.market_rules:create_a_stock_market_rules
+    params:
+      market: CN
+      lot_size: 100
+      commission_rate: 0.0003
+      minimum_commission: 5.0
+      stamp_duty_rate: 0.0005
+      transfer_fee_rate: 0.00001
+
+  ic_research: *ic_research_config
+
+  backtest:
+    initial_cash: 1000000.0
+    gross_exposure: 1.0
+    jobs:
+      - id: raw_quintile
+        variant: raw
+        selection_test: newey_raw
+        part: 5
+        position_group: Q5
+        cost_per_trade: 0.001
+        selector:
+          name: bh
+          params: {}
+        sensitivity:
+          enabled: false
+          random_seed: 42
+
+      - id: orthogonalized_quintile
+        variant: orthogonalized
+        selection_test: newey_orthogonalized
+        part: 5
+        position_group: Q5
+        cost_per_trade: 0.001
+        selector:
+          name: bh
+          params: {}
+        sensitivity:
+          enabled: false
+          random_seed: 42
+
+backtest: &a_share_backtest_config
   jobs:
     - id: raw_quintile
       variant: raw
@@ -72,13 +167,6 @@ backtest:
         enabled: false
         random_seed: 42
 
-    # Same factors and selection as the job above, weighted by market cap
-    # instead of equally. Equal weighting quietly tilts a portfolio towards the
-    # smallest names in each bucket, so a factor can look profitable on a book
-    # nobody could actually run; comparing the two jobs shows how much of the
-    # result survives at realistic position sizes.
-    # Falls back to equal weighting on dates where no member has a positive
-    # market cap, so early windows degrade instead of producing NaN.
     - id: mcap_quintile
       variant: orthogonalized
       selection_test: newey_orthogonalized
@@ -96,3 +184,251 @@ backtest:
 
 carhart_attribution:
   maxlags: 20               # maximum lag for HAC standard errors
+
+a_share_daily_pipeline: &a_share_daily_pipeline
+  schema_version: 1
+  raw_connection_ref: cn_raw
+  reference_binding:
+    connection_ref: cn_reference
+    dataset: cn_a_share_reference
+    market: CN
+    version: "{as_of_date}"
+  status_binding:
+    connection_ref: cn_status
+    dataset: cn_a_share_status
+    market: CN
+    version: "history_v1"
+  eligibility_binding:
+    connection_ref: cn_eligibility
+    dataset: cn_a_share_eligibility
+    market: CN
+    version: "{as_of_date}"
+  eligibility_rule_version: cn_equity_v1
+  spot_coverage:
+    max_missing_count: 5
+    max_missing_ratio: 0.001
+
+a_share_daily_market_data_refresh: &a_share_daily_market_data_refresh
+  schema_version: 1
+
+  source:
+    entry_point: quantmine.plugins.akshare:create_akshare_a_stock_data_source
+    params:
+      default_adjustment: hfq
+      request_interval_seconds: 0.5
+      continue_on_transient_failure: true
+      retry_policy:
+        attempts: 5
+        initial_delay_seconds: 2.0
+        backoff_multiplier: 2.0
+        max_delay_seconds: 30.0
+
+  binding:
+    connection_ref: null
+    dataset: akshare_a_share_history
+    start: "{as_of_date}"
+    end: "{as_of_date}"
+    adjustment: hfq
+    metadata: {}
+
+  reference_binding:
+    connection_ref: cn_reference
+    dataset: cn_a_share_reference
+    market: CN
+    version: "{as_of_date}"
+
+  output_connection_ref: cn_market_data
+
+  publication:
+    dataset_id: cn_a_share_daily_bars
+    market: CN
+    version: "{as_of_date}"
+    source: akshare_stock_zh_a_hist
+    frequency: daily
+    adjustment: hfq
+    schema_version: market_data_bundle_v1
+
+  policy:
+    batch_size: 50
+    max_retries: 3
+    checkpoint_connection_ref: cn_market_checkpoint
+    resume: true
+
+market_pipelines:
+  - schema_version: 1
+    id: cn_a_share_daily
+    dag_id: quantmine_cn_a_share_daily
+    display_name: Daily A-share raw, status, and eligibility production
+    schedule: "0 18 * * 1-5"
+
+    connection_refs:
+      - cn_raw
+      - cn_reference
+      - cn_status
+      - cn_eligibility
+      - cn_market_data
+      - cn_market_checkpoint
+      - research_db
+    stages:
+      - id: session_gate
+        kind: session_gate
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_exchange_calendar_session_gate
+          params:
+            calendar_name: XSHG
+
+      - id: reference_refresh
+        kind: task
+        upstream:
+          - session_gate
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_reference_refresh
+          params:
+            config: *a_share_daily_pipeline
+      
+      - id: daily_production
+        kind: task
+        upstream:
+          - reference_refresh
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_daily_production
+          params:
+            config: *a_share_daily_pipeline
+
+      - id: market_data_refresh
+        kind: task
+        upstream:
+          - daily_production
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_cumulative_market_data_refresh
+          params:
+            config: *a_share_daily_market_data_refresh
+
+      - id: coverage_audit
+        kind: task
+        upstream:
+          - market_data_refresh
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_market_data_coverage_audit
+          params:
+            market_data_connection_ref: cn_market_data
+            dataset_id: cn_a_share_daily_bars
+            reference_connection_ref: cn_reference
+            reference_dataset: cn_a_share_reference
+            plan_connection_ref: cn_market_checkpoint
+            policy:
+              minimum_coverage_ratio: 0.995
+              max_backfill_tasks: 12
+              max_symbols_per_task: 50
+
+      - id: history_backfill
+        kind: task
+        upstream:
+          - coverage_audit
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_history_backfill
+          params:
+            config: *a_share_daily_market_data_refresh
+            plan_connection_ref: cn_market_checkpoint
+            staging_connection_ref: cn_market_checkpoint
+
+      - id: repair_publication
+        kind: task
+        upstream:
+          - history_backfill
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_a_share_repair_publication
+          params:
+            market_data_connection_ref: cn_market_data
+            dataset_id: cn_a_share_daily_bars
+            plan_connection_ref: cn_market_checkpoint
+            staging_connection_ref: cn_market_checkpoint
+
+      - id: research_readiness_gate
+        kind: session_gate
+        upstream:
+          - repair_publication
+        plugin:
+          entry_point: quantmine.plugins.market_stages:create_research_readiness_gate
+          params:
+            market_data_connection_ref: cn_market_data
+            dataset_id: cn_a_share_daily_bars
+            market: CN
+            plan_connection_ref: cn_market_checkpoint
+
+      - id: factor_research
+        kind: task
+        upstream:
+          - research_readiness_gate
+        plugin:
+          entry_point: quantmine.plugins.research_stages:create_persisted_factor_research_stage
+          params:
+            research_run_connection_ref: research_db
+            config: *a_share_research_run
+      
+      - id: ic_research
+        kind: task
+        upstream:
+          - factor_research
+        plugin:
+          entry_point: quantmine.plugins.ic_stages:create_persisted_ic_research_stage
+          params:
+            research_run_connection_ref: research_db
+
+      - id: backtest
+        kind: task
+        upstream:
+          - ic_research
+        plugin:
+          entry_point: quantmine.plugins.backtest_stage:create_persisted_backtest_stage
+          params:
+            research_run_connection_ref: research_db
+    metadata:
+      market: CN
+      frequency: daily
+      purpose: production
+
+a_share_history_refresh:
+  schema_version: 2
+
+  source:
+    entry_point: quantmine.plugins.akshare_routed:create_akshare_routed_a_stock_data_source
+    params:
+      default_adjustment: hfq
+      request_interval_seconds: 0.5
+      retry_policy:
+        attempts: 6
+        initial_delay_seconds: 2.0
+        backoff_multiplier: 2.0
+        max_delay_seconds: 30.0
+
+  binding:
+    connection_ref: null
+    dataset: akshare_a_share_history
+    start: "2020-01-01"
+    end: "2026-09-10"
+    adjustment: hfq
+    metadata: {}
+
+  reference_binding:
+    connection_ref: cn_reference
+    dataset: cn_a_share_reference
+    market: CN
+    version: "20260910"
+
+  output_connection_ref: cn_market_data
+
+  publication:
+    dataset_id: cn_a_share_daily_bars
+    market: CN
+    version: "20260910"
+    source: akshare_routed_history
+    frequency: daily
+    adjustment: hfq
+    schema_version: market_data_bundle_v1
+
+  policy:
+    batch_size: 5
+    max_retries: 0
+    checkpoint_connection_ref: cn_market_checkpoint
+    resume: true

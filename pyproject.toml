@@ -13,6 +13,7 @@ dependencies = [
     "pyarrow>=24.0",
     "pyyaml>=6.0",
     "fastapi>=0.136.3",
+    "exchange-calendars>=4.13.2",
 ]
 
 [project.scripts]
@@ -21,7 +22,7 @@ dependencies = [
 quantmine-dev = "quantmine.dev:main"
 
 [project.optional-dependencies]
-data = ["yfinance>=1.4", "beautifulsoup4>=4.14", "pandas-datareader>=0.11", "curl-cffi>=0.15"]
+data = ["yfinance>=1.4", "beautifulsoup4>=4.14", "pandas-datareader>=0.11", "curl-cffi>=0.15", "akshare>=1.18,<2", "requests>=2.32"]
 viz = ["plotly>=6.8"]
 db = ["sqlalchemy>=2.0", "psycopg2-binary>=2.9.12"]
 
@@ -41,7 +42,7 @@ dev = [
 # 异步引擎，psycopg2 顶不上。缺了它 scheduler / api-server / dag-processor 三个进程
 # 全部起不来，而 systemctl status 只显示 exit-code=1，真因（ModuleNotFoundError:
 # No module named 'asyncpg'）只在进程自己的日志里。
-pipeline = ["apache-airflow>=3.2", "asyncpg>=0.30"]
+pipeline = ["apache-airflow>=3.2", "asyncpg>=0.30", "apache-airflow-providers-standard>=1.18", "exchange-calendars>=4.10,<5", "psycopg2-binary>=2.9.12"]
 
 [build-system]
 requires = ["hatchling"]

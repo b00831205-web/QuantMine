@@ -6,7 +6,7 @@ import { runAwarePollMs, usePolledAsync } from '@/hooks/usePolledAsync';
 import {
   fetchAIConfig,
   fetchAIModels,
-  fetchLatestMarketDate,
+  fetchMarketDataReadiness,
   fetchWorkflows,
   saveAIConfig,
   fetchMe,
@@ -60,11 +60,14 @@ export const TopBar = () => {
 
   // 数据日期原本也只在挂载时取一次，于是库空着时拿到 404 后永远停在 "-"，DAG 跑完
   // 也不会变——跟上面那个指示器是同一个毛病，当时漏了这一处。共用同一个轮询节奏。
-  const latestDatePoll = usePolledAsync((s) => fetchLatestMarketDate(s), [], {
+  const readinessPoll = usePolledAsync((s) => fetchMarketDataReadiness(s), [], {
     pollMs: runAwarePollMs(hasActiveRun),
   });
-  const latestTradeDate =
-    latestDatePoll.state.status === 'success' ? latestDatePoll.state.data.latestTradeDate : null;
+  const readiness = readinessPoll.state.status === "success" ? readinessPoll.state.data: null;
+
+  const dataVersion = readiness?.marketDataVersion ?? "-";
+
+  const coverageLabel = readiness === null ? "-" : readiness.researchReady ? `${Math.round((readiness.coverageRatio ?? 0) * 100)}%` : readiness.reason;
 
   const latestRun = useMemo(() => {
     if (workflowsPoll.state.status !== 'success') return null;
@@ -121,7 +124,10 @@ export const TopBar = () => {
     <header className={styles.bar}>
       <div className={styles.left}>
         <span className={styles.label}>{t('topbar.dataDate')}</span>
-        <span className={styles.value}>{latestTradeDate ?? '-'}</span>
+        <span className={styles.value}>{dataVersion}</span>
+        <span className={styles.badge} data-ready={readiness?.researchReady ? "true" : "false"}>
+          {coverageLabel}
+        </span>
         <span className={styles.sep}>·</span>
         <span className={styles.label}>{t('topbar.latestTask')}</span>
         <span
