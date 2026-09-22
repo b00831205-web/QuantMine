@@ -23,6 +23,7 @@ from .v1.reports.router import router as reports_router
 from .v1.research.report_xlsx import router as report_xlsx_router
 from .v1.ai.router import router as ai_router
 from .v1.services.router import router as services_router
+from .v1.market.readiness import router as market_readiness_router
 
 api_router = APIRouter()
 
@@ -43,6 +44,7 @@ protected.include_router(data_router, tags=['data'])
 protected.include_router(reports_router, tags=["reports"])
 protected.include_router(report_xlsx_router, tags=["research"])
 protected.include_router(ai_router, tags=["ai"])
+protected.include_router(market_readiness_router, tags=["market"])
 # 注意：目前 auth_users 没有角色列，protected 里所有路由权限相同 —— 任何登录用户
 # 都能改开机自启。单用户自托管下可接受；将来加多用户时这组路由应先收紧。
 protected.include_router(services_router, tags=["services"])

@@ -216,6 +216,12 @@ a_share_daily_market_data_refresh: &a_share_daily_market_data_refresh
     params:
       default_adjustment: hfq
       request_interval_seconds: 0.5
+      continue_on_transient_failure: true
+      retry_policy:
+        attempts: 5
+        initial_delay_seconds: 2.0
+        backoff_multiplier: 2.0
+        max_delay_seconds: 30.0
 
   binding:
     connection_ref: null
@@ -392,9 +398,9 @@ a_share_history_refresh:
       request_interval_seconds: 0.5
       retry_policy:
         attempts: 6
-        initial_delay_seconds: 15.0
+        initial_delay_seconds: 2.0
         backoff_multiplier: 2.0
-        max_delay_seconds: 120.0
+        max_delay_seconds: 30.0
 
   binding:
     connection_ref: null

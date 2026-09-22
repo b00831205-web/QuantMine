@@ -132,6 +132,59 @@ components:
                 type: array
                 items: { $ref: '#/components/schemas/SeriesPoint' }
 
+        MarketDataReadiness:
+      type: object
+      required:
+        - market
+        - datasetId
+        - asOfDate
+        - revision
+        - researchReady
+        - reason
+      properties:
+        market:
+          type: string
+          example: CN
+        datasetId:
+          type: string
+          example: cn_a_share_daily_bars
+        asOfDate:
+          type: string
+          format: date
+        marketDataVersion:
+          type: [string, "null"]
+          example: 20240103-r2
+        baseMarketDataVersion:
+          type: [string, "null"]
+          example: "20240103"
+        revision:
+          type: integer
+          minimum: 0
+          example: 2
+        researchReady:
+          type: boolean
+        reason:
+          type: string
+          enum:
+            - ready
+            - no_published_version
+            - coverage_audit_missing
+            - coverage_audit_invalid
+            - coverage_incomplete
+            - coverage_pending
+        coverageRatio:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+        gapCount:
+          type: [integer, "null"]
+          minimum: 0
+        deferredGapCount:
+          type: [integer, "null"]
+          minimum: 0
+        coverageAuditPath:
+          type: [string, "null"]
+
     # —— Rebalance ——
     RebalanceSummary:
       type: object
@@ -420,6 +473,30 @@ paths:
                   breadth: { type: number }
                   taskStatus: { type: string }
         default: { $ref: '#/components/responses/Error' }
+
+    /api/v1/market/data-readiness:
+    get:
+      tags: [market]
+      summary: 市场数据版本与研究就绪状态
+      parameters:
+        - in: query
+          name: asOfDate
+          required: false
+          description: 解析截至该日期的最新基础版或同日修订版；省略时使用当前中国日期。
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: 当前市场数据状态；没有已发布版本时仍返回未就绪状态。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketDataReadiness'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        default:
+          $ref: '#/components/responses/Error'
 
   # —— Rebalance ——
   /api/v1/rebalances:

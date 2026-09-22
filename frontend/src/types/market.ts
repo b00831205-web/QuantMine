@@ -76,3 +76,18 @@ export interface MarketOverview {
   /** 上涨家数占比 0~1 */
   breadth: number;
 }
+
+export interface MarketDataReadiness{
+  market: string;
+  datasetId: string;
+  asOfDate: string;
+  marketDataVersion: string | null;
+  baseMarketDataVersion: string | null;
+  revision: number;
+  researchReady: boolean;
+  reason: string;
+  coverageRatio: number | null;
+  gapCount: number | null;
+  deferredGapCount: number | null;
+  coverageAuditPath: string | null;
+}

@@ -319,6 +319,13 @@ def test_example_config_defines_the_a_share_daily_pipeline() -> None:
     assert market_data_config["source"]["params"] == {
         "default_adjustment": "hfq",
         "request_interval_seconds": 0.5,
+        "continue_on_transient_failure": True,
+        "retry_policy": {
+            "attempts": 5,
+            "initial_delay_seconds": 2.0,
+            "backoff_multiplier": 2.0,
+            "max_delay_seconds": 30.0,
+        },
     }
     assert market_data_config["binding"]["start"] == "{as_of_date}"
     assert market_data_config["binding"]["end"] == "{as_of_date}"

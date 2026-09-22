@@ -226,6 +226,36 @@ def test_akshare_plugin_uses_configured_http_retry_policy(
     assert sleeps == [10.0, 30.0]
 
 
+def test_akshare_plugin_records_an_exhausted_transient_ticker_and_continues(
+    tmp_path: Path,
+) -> None:
+    attempts: list[str] = []
+
+    def history_loader(**kwargs: str) -> pd.DataFrame:
+        ticker = kwargs["symbol"]
+        attempts.append(ticker)
+        if ticker == "000001":
+            raise requests.exceptions.ConnectionError("provider disconnected")
+        return pd.DataFrame(
+            {
+                "日期": ["2024-01-02"],
+                "收盘": [10.0],
+                "成交量": [100.0],
+            }
+        )
+
+    result = AkShareAStockDataSourcePlugin(
+        history_loader=history_loader,
+        continue_on_transient_failure=True,
+        retry_policy=RetryPolicy(attempts=2),
+        sleeper=lambda _: None,
+    ).load(_binding(), _context(tmp_path))
+
+    assert attempts == ["600000", "000001", "000001"]
+    assert list(result.market.close.columns) == ["600000"]
+    assert result.metadata["failed_tickers"] == ("000001",)
+
+
 def test_akshare_factory_converts_retry_policy_mapping() -> None:
     component = create_akshare_a_stock_data_source(
         retry_policy={

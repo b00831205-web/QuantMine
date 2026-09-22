@@ -45,6 +45,7 @@ class AkShareAStockDataSourcePlugin:
     retry_policy: RetryPolicy = DEFAULT_HTTP_RETRY_POLICY
 
     default_adjustment: str = "hfq"
+    continue_on_transient_failure: bool = False
 
     def __post_init__(self) -> None:
         if self.default_adjustment not in _SUPPORTED_ADJUSTMENTS:
@@ -66,10 +67,13 @@ class AkShareAStockDataSourcePlugin:
         if not isinstance(self.retry_policy, RetryPolicy):
             raise TypeError("retry_policy must be a RetryPolicy")
 
+        if not isinstance(self.continue_on_transient_failure, bool):
+            raise TypeError("continue_on_transient_failure must be a bool")
+
     def load(
             self,
             binding: DataBinding,
-            context: SourceContext
+            context: SourceContext,
     ) -> MarketDataBundle:
         del context
 
@@ -98,6 +102,8 @@ class AkShareAStockDataSourcePlugin:
 
         close_frames : dict[str, pd.Series] = {}
         volume_frames: dict[str, pd.Series] = {}
+        failed_tickers: list[str] = []
+        last_transient_error: Exception | None = None
 
         for position, ticker in enumerate(binding.tickers):
             if position >0 and self.request_interval_seconds > 0:
@@ -111,13 +117,20 @@ class AkShareAStockDataSourcePlugin:
                     end_date = end_date,
                     adjust = adjustment
                 )
+            try:
+                frame = retry_http_call(
+                    load_ticker,
+                    label = f"AkShare history request for {ticker}",
+                    policy = self.retry_policy,
+                    sleeper = self.sleeper
+                )
+            except Exception as error:
+                if not self.continue_on_transient_failure or not is_transient_http_error(error):
+                    raise
 
-            frame = retry_http_call(
-                load_ticker,
-                label = f"AkShare history request for {ticker}",
-                policy = self.retry_policy,
-                sleeper = self.sleeper
-            )
+                failed_tickers.append(ticker)
+                last_transient_error = error
+                continue
 
             _validate_provider_frame(frame, ticker)
 
@@ -139,6 +152,11 @@ class AkShareAStockDataSourcePlugin:
                 errors = 'raise'
             ).rename(ticker)
 
+        if not close_frames:
+            raise RuntimeError(
+                "AkShare did not return data for any requested ticker"
+            ) from last_transient_error
+
         close = pd.concat(close_frames, axis = 1, sort = False).sort_index().sort_index(axis =1)
         volume = pd.concat(volume_frames,axis=1, sort = False).sort_index().sort_index(axis=1)
 
@@ -150,7 +168,8 @@ class AkShareAStockDataSourcePlugin:
                 "dataset": binding.dataset,
                 "adjustment": adjustment,
                 "period": "daily",
-                "volume_unit": "lot"
+                "volume_unit": "lot",
+                "failed_tickers": tuple(failed_tickers),
             },
         )
 

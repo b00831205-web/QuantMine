@@ -1,6 +1,5 @@
 import { http } from '@/api/http';
-import type { SeriesQuery, SeriesResponse } from '@/types/market';
-import type { MarketLatestDateResponse, MarketOverview } from '@/types/market';
+import type { MarketDataReadiness, MarketLatestDateResponse, MarketOverview, SeriesQuery, SeriesResponse} from '@/types/market'
 
 /**
  * GET /api/v1/market/series
@@ -39,4 +38,12 @@ export function fetchLatestMarketDate(signal?: AbortSignal): Promise<MarketLates
 /** GET /api/v1/market/overview —— 上涨家数 / 市场宽度 */
 export function fetchMarketOverview(signal?: AbortSignal): Promise<MarketOverview> {
   return http<MarketOverview>('/api/v1/market/overview', { signal });
+}
+
+export function fetchMarketDataReadiness(
+  signal?: AbortSignal,
+): Promise<MarketDataReadiness>{
+  return http<MarketDataReadiness>(
+    '/api/v1/market/data-readiness', {signal}
+  )
 }

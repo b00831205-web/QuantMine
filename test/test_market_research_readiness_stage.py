@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -177,6 +178,30 @@ def test_readiness_gate_allows_research_for_a_complete_version(
         plan_connection_ref="cn_market_checkpoint",
     )
     assert plugin.allows(request) is True
+    assert json.loads(
+        (request.context.artifact_dir / "market_data_readiness.json").read_text(
+            encoding="utf-8"
+        )
+    ) == {
+        "as_of_date": "2024-01-03",
+        "base_market_data_version": "20240103",
+        "coverage_audit_path": str(
+            readiness_audit_path(
+                plan_root,
+                market="CN",
+                version="20240103",
+            )
+        ),
+        "coverage_ratio": 1.0,
+        "dataset_id": DATASET_ID,
+        "deferred_gap_count": 0,
+        "gap_count": 0,
+        "market": "CN",
+        "market_data_version": "20240103",
+        "reason": "ready",
+        "research_ready": True,
+        "revision": 0,
+    }
 
 
 def test_readiness_gate_blocks_research_until_the_revision_is_published(
@@ -198,6 +223,11 @@ def test_readiness_gate_blocks_research_until_the_revision_is_published(
         plan_connection_ref="cn_market_checkpoint",
     )
     assert plugin.allows(request) is False
+    assert json.loads(
+        (request.context.artifact_dir / "market_data_readiness.json").read_text(
+            encoding="utf-8"
+        )
+    )["reason"] == "coverage_incomplete"
 
     _publish(
         market_root,
@@ -208,6 +238,11 @@ def test_readiness_gate_blocks_research_until_the_revision_is_published(
     _persist(plan_root, version="20240103-r1", missing_first_session=False)
 
     assert plugin.allows(request) is True
+    assert json.loads(
+        (request.context.artifact_dir / "market_data_readiness.json").read_text(
+            encoding="utf-8"
+        )
+    )["market_data_version"] == "20240103-r1"
 
 
 def test_readiness_gate_blocks_research_before_any_version_exists(
@@ -223,6 +258,24 @@ def test_readiness_gate_blocks_research_before_any_version_exists(
         plan_connection_ref="cn_market_checkpoint",
     )
     assert plugin.allows(request) is False
+    assert json.loads(
+        (request.context.artifact_dir / "market_data_readiness.json").read_text(
+            encoding="utf-8"
+        )
+    ) == {
+        "as_of_date": "2024-01-03",
+        "base_market_data_version": None,
+        "coverage_audit_path": None,
+        "coverage_ratio": None,
+        "dataset_id": DATASET_ID,
+        "deferred_gap_count": None,
+        "gap_count": None,
+        "market": "CN",
+        "market_data_version": None,
+        "reason": "no_published_version",
+        "research_ready": False,
+        "revision": 0,
+    }
 
 
 def test_readiness_gate_exposes_a_session_gate_plugin_factory() -> None:

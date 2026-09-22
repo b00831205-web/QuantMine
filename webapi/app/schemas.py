@@ -169,3 +169,18 @@ class IcSeriesResponse(BaseModel):
 
     model_config = {'populate_by_name': True}
     
+class MarketDataReadinessResponse(BaseModel):
+    market: str
+    dataset_id: str = Field(alias="datasetId")
+    as_of_date: date = Field(alias="asOfDate")
+    market_data_version: str | None = Field(alias="marketDataVersion")
+    base_market_data_version: str | None = Field(alias="baseMarketDataVersion")
+    revision: int
+    research_ready: bool = Field(alias="researchReady")
+    reason: str
+    coverage_ratio: float | None = Field(alias="coverageRatio")
+    gap_count: int | None = Field(alias="gapCount")
+    deferred_gap_count: int | None = Field(alias="deferredGapCount")
+    coverage_audit_path: str | None = Field(alias="coverageAuditPath")
+
+    model_config = {"populate_by_name": True}

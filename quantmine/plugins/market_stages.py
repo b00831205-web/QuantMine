@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Mapping
+import json
 
 from ..pipeline_stages import PipelineStageRequest, PipelineStageResult
 from ..workflows.a_share_daily_pipeline import(
@@ -512,41 +513,6 @@ def create_a_share_repair_publication(
         staging_connection_ref=staging_connection_ref,
     )
 
-@dataclass(frozen=True)
-class ResearchReadinessGateStage:
-    """Report whether the latest market-data version may feed research.
-
-    This is a task stage rather than a session gate: the DAG needs the resolved
-    version and its coverage numbers for artifact provenance, and downstream
-    stages decide from ``research_ready`` whether to run.
-    """
-
-    market_data_connection_ref: str
-    dataset_id: str
-    market: str
-    plan_connection_ref: str
-
-    def run(
-        self,
-        request: PipelineStageRequest,
-    ) -> PipelineStageResult:
-        market_root = request.context.connections.parquet_root(
-            self.market_data_connection_ref
-        )
-        plan_root = request.context.connections.parquet_root(
-            self.plan_connection_ref
-        )
-
-        readiness = assess_market_data_readiness(
-            market_root,
-            dataset_id=self.dataset_id,
-            market=self.market,
-            as_of_date=request.as_of_date,
-            coverage_root=plan_root,
-        )
-
-        return PipelineStageResult(metadata=readiness.to_mapping())
-
 def create_research_readiness_gate(
     *,
     market_data_connection_ref: str,
@@ -575,5 +541,20 @@ class ResearchReadinessGateStage:
         plan_root = request.context.connections.parquet_root(self.plan_connection_ref)
 
         readiness = assess_market_data_readiness(market_root, dataset_id= self.dataset_id, market= self.market, as_of_date= request.as_of_date, coverage_root=plan_root)
+        artifact_dir = request.context.artifact_dir
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        output = artifact_dir / "market_data_readiness.json"
+        staging = output.with_suffix(".json.tmp")
+        staging.write_text(
+            json.dumps(
+                readiness.to_mapping(),
+                ensure_ascii= False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8"
+        )
+        staging.replace(output)
 
         return readiness.ready
